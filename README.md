@@ -1,4 +1,3 @@
-
 # 📘 **Documentación General – Proyecto Lateral 360°**
 
 ---
@@ -254,4 +253,56 @@ refactor: mejora interna
  └── 🔹 Historial de decisiones
 ```
 
-	
+## 🧑‍💻 **10. Sprints – Proyecto Lateral 360°**
+
+---
+
+### **Sprint 1 – Administrador**
+
+- Configuración inicial del repositorio, ramas y Docker.
+- Setup de backend (Django REST Framework, PostgreSQL) y frontend (Remix, TailwindCSS, DaisyUI).
+- Implementación de autenticación JWT con roles y cookies HttpOnly.
+- CRUD de lotes y usuarios.
+- Gestión de perfiles (dueños y desarrolladores).
+- Visualización de estadísticas simples (número de lotes).
+- Validación y edición de documentos.
+- Panel de control administrativo.
+- Endpoints y vistas administrativas.
+- Documentación técnica inicial (API, entidades, endpoints).
+
+---
+
+### **Sprint 2 – Dueños de Lote (Vendedor)**
+
+- Dashboard de propietario.
+- Registro manual de lotes (matrícula, dirección, mapa, documentos PDF).
+- Subida y gestión de documentos por lote.
+- Asociación de múltiples lotes a un mismo dueño.
+- Posibilidad de añadir notas y archivos.
+- Visualización del estado de sus lotes.
+- Definición de vistas finales por rol y navegación entre rutas.
+- Implementación de mensajes globales (error, éxito, carga).
+
+---
+
+### **Sprint 3 – Desarrolladores (Comprador)**
+
+- Registro y login de desarrollador.
+- Dashboard de desarrollador.
+- Filtros básicos para búsqueda de lotes (área, uso del suelo, fase).
+- Detalle de lote y contacto con propietario.
+- Gestión de favoritos.
+- Endpoints y vistas específicas para desarrolladores.
+- Reportes y estadísticas para administrador.
+- Adaptación responsive y layouts por rol.
+- Optimización de endpoints y queries.
+- Pruebas de integración y validación final.
+
+---
+
+**Notas:**  
+- Cada sprint incluye tareas de documentación, revisión de código y despliegue en ambiente Docker.
+- Los sprints pueden ajustarse según feedback y prioridades
+
+
+
