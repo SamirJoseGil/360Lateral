@@ -4,6 +4,7 @@ charset-normalizer==3.4.2
 colorama==0.4.6
 Django==5.2.4
 django-cors-headers==4.7.0
+django-extensions==3.2.3
 djangorestframework==3.16.0
 drf-yasg==1.21.7
 factory_boy==3.3.1
