@@ -1,0 +1,188 @@
+# ==============================================
+# 🔒 LATERAL 360° - GITIGNORE
+# ==============================================
+
+# ==============================================
+# 🐍 PYTHON & DJANGO
+# ==============================================
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Django específico
+*.log
+local_settings.py
+db.sqlite3
+db.sqlite3-journal
+/Backend/media/
+/Backend/static/
+/Backend/staticfiles/
+/Backend/logs/
+
+# Migraciones (descomenta si no quieres versionar)
+# */migrations/*.py
+# !*/migrations/__init__.py
+
+# ==============================================
+# 🌐 NODE.JS & FRONTEND
+# ==============================================
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# Build outputs
+/Frontend/build/
+Frontend/dist/
+Frontend/.next/
+Frontend/out/
+
+# Dependencies
+package-lock.json
+yarn.lock
+.pnpm-lock.yaml
+
+# Cache
+.cache/
+.parcel-cache/
+.eslintcache
+.turbo
+
+# ==============================================
+# 🔑 VARIABLES DE ENTORNO
+# ==============================================
+.env
+.env.local
+.env.development
+.env.production
+.env.staging
+.env.test
+
+# ==============================================
+# 🐳 DOCKER
+# ==============================================
+*.pid
+*.seed
+*.pid.lock
+docker-compose.override.yml
+
+# ==============================================
+# 💾 BASES DE DATOS
+# ==============================================
+*.sql
+*.dump
+*.backup
+*.db
+
+# ==============================================
+# 🔐 CERTIFICADOS Y CLAVES
+# ==============================================
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
+
+# ==============================================
+# 🖥️ SISTEMAS OPERATIVOS
+# ==============================================
+# macOS
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# Linux
+*~
+
+# ==============================================
+# 💻 IDEs Y EDITORES
+# ==============================================
+.vscode/
+.idea/
+*.swp
+*.swo
+*.sublime-project
+*.sublime-workspace
+
+# ==============================================
+# 🧪 TESTING Y COVERAGE
+# ==============================================
+htmlcov/
+.tox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+.hypothesis/
+.pytest_cache/
+.nyc_output/
+
+# ==============================================
+# 📁 ARCHIVOS TEMPORALES
+# ==============================================
+tmp/
+temp/
+*.tmp
+*.temp
+
+# ==============================================
+# 📋 TAREAS Y NOTAS PERSONALES
+# ==============================================
+todo.md
+TODO.md
+notes.md
+NOTES.md
+
+# ==============================================
+# 🏗️ BUILD ARTIFACTS
+# ==============================================
+/Backend/static/
+Frontend/build/
+Frontend/dist/
+
+# ==============================================
+# 🚀 DEPLOYMENT
+# ==============================================
+# Terraform (si se usa)
+*.tfstate
+*.tfstate.backup
+.terraform/
+
+# Kubernetes
+*.kubeconfig
+
+# ==============================================
+# 📊 LOGS
+# ==============================================
+logs/
+*.log
+/Backend/logs/
+/Frontend/logs/

@@ -1,0 +1,105 @@
+services:
+  # Base de datos PostgreSQL
+  db:
+    image: postgres:14-alpine
+    container_name: lateral360_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${DB_NAME:-lateral360}
+      POSTGRES_USER: ${DB_USER:-postgres}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-postgres123}
+      PGDATA: /var/lib/postgresql/data/pgdata
+    volumes:
+      - postgres_data:/var/lib/postgresql/data/pgdata
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-postgres} -d ${DB_NAME:-lateral360}"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    networks:
+      - lateral360_network
+
+  # Redis para cache y sesiones
+  redis:
+    image: redis:7-alpine
+    container_name: lateral360_redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes --maxmemory 512mb --maxmemory-policy allkeys-lru
+    volumes:
+      - redis_data:/data
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    networks:
+      - lateral360_network
+
+  # Backend Django
+  backend:
+    build:
+      context: ./Backend
+      dockerfile: Dockerfile
+    container_name: lateral360_backend
+    restart: unless-stopped
+    environment:
+      - DEBUG=${DEBUG:-True}
+      - SECRET_KEY=${SECRET_KEY:-django-insecure-change-me-in-production}
+      - DB_NAME=${DB_NAME:-lateral360}
+      - DB_USER=${DB_USER:-postgres}
+      - DB_PASSWORD=${DB_PASSWORD:-postgres123}
+      - DB_HOST=db
+      - DB_PORT=5432
+      - REDIS_URL=redis://redis:6379/0
+      - DJANGO_SETTINGS_MODULE=config.settings.development
+      - PYTHONPATH=/app
+    volumes:
+      - media_files:/app/media
+      - static_files:/app/static
+      - ./Backend/logs:/app/logs
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - lateral360_network
+
+  # Frontend Remix
+  frontend:
+    build:
+      context: ./Frontend
+      dockerfile: Dockerfile
+    container_name: lateral360_frontend
+    restart: unless-stopped
+    ports:
+      - "3000:80"
+    depends_on:
+      - backend
+    networks:
+      - lateral360_network
+
+# Volúmenes persistentes
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+  media_files:
+    driver: local
+  static_files:
+    driver: local
+
+# Red personalizada
+networks:
+  lateral360_network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16

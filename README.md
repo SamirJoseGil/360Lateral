@@ -1,308 +1,308 @@
-# 📘 **Documentación General – Proyecto Lateral 360°**
+# 🏗️ Lateral 360° - Plataforma de Gestión de Lotes Inmobiliarios
 
----
+Una plataforma integral para la gestión, visualización y administración de lotes inmobiliarios con capacidades de mapeo 360°, gestión de documentos y análisis de datos.
 
-## 🧱 **0. Estructura General del Proyecto**
+## 📋 Tabla de Contenidos
 
-### 🛠 Stack Tecnológico
+- [🚀 Características Principales](#-características-principales)
+- [🛠️ Tecnologías](#️-tecnologías)
+- [⚡ Inicio Rápido](#-inicio-rápido)
+- [🐳 Instalación con Docker](#-instalación-con-docker)
+- [🔧 Desarrollo Local](#-desarrollo-local)
+- [📁 Estructura del Proyecto](#-estructura-del-proyecto)
+- [🌐 API y Endpoints](#-api-y-endpoints)
+- [⚙️ Variables de Entorno](#️-variables-de-entorno)
+- [👥 Equipo de Desarrollo](#-equipo-de-desarrollo)
 
-- **Frontend**: Remix + TailwindCSS + DaisyUI
-- **Backend**: Django REST Framework
-- **Base de Datos**: PostgreSQL
-- **Autenticación**: JWT con cookies seguras (HttpOnly)
-- **Infraestructura**: Docker
-- **Gestión del Proyecto**: Notion + GitHub
+## ⚡ Inicio Rápido
 
----
+### Docker (Recomendado)
+```bash
+# Clonar el repositorio
+git clone https://github.com/tu-usuario/360Lateral.git
+cd 360Lateral
 
-## 🧠 **1. FRONTEND – Lineamientos y Organización**
+# Ejecutar con Docker
+docker-compose up -d
 
-### ✅ Confirmado:
-
-- **Framework**: Remix
-- **Estilos**: TailwindCSS + DaisyUI
-- **Arquitectura visual**: Atomic Design
-- **Responsividad**: Obligatoria (desktop-first con adaptación mobile)
-- **Cliente HTTP**: Axios
-- **Autenticación**: JWT + Cookies HttpOnly
-
-### 📁 Estructura Recomendada:
-
-```plaintext
-/app
- ├── components/       # Atomic Design (atoms, molecules, organisms)
- ├── routes/           # Páginas por ruta
- ├── services/         # Axios y llamadas a la API
- ├── contexts/         # Context o Zustand
- ├── styles/           # Configs de Tailwind y DaisyUI
- ├── utils/            # Funciones auxiliares
- └── layout/           # Layouts por rol
+# Acceder a la aplicación
+# Frontend: http://localhost:3000
+# Backend API: http://localhost:8000
+# Admin Panel: http://localhost:8000/admin
+# API Docs: http://localhost:8000/swagger
 ```
 
-### 📌 Tareas pendientes:
+### Desarrollo Local
+```bash
+# Backend
+cd Backend
+python -m venv venv
+source venv/bin/activate  # En Windows: venv\Scripts\activate
+pip install -r requirements.txt
+python manage.py migrate
+python manage.py runserver
 
-- Definir vistas finales por rol
-- Especificar navegación entre rutas
-- Estructurar mensajes globales (error, éxito, carga)
-
----
-
-## 🔧 **2. BACKEND – Arquitectura y Configuración**
-
-### ✅ Confirmado:
-
-- **Framework**: Django REST Framework
-- **Base de datos**: PostgreSQL
-- **Autenticación**: JWT con roles embebidos
-- **Arquitectura**: MVC
-- **Despliegue**: Docker
-- **Servicios externos**: No por ahora, pero dejar posibilidad
-
-### 📚 Librerías Sugeridas:
-
-```plaintext
-- djangorestframework
-- djangorestframework-simplejwt
-- django-cors-headers
-- psycopg2
-- python-decouple
-- drf-yasg (documentación Swagger)
+# Frontend (en otra terminal)
+cd Frontend
+npm install
+npm run dev
 ```
 
-### 📁 Estructura recomendada:
+## 🚀 Características Principales
 
-```plaintext
-/backend
- ├── core/              # App principal (lógica de negocio)
- │   ├── models/
- │   ├── views/
- │   ├── serializers/
- │   ├── urls/
- │   ├── permissions/
- │   └── tasks/
- ├── users/             # Autenticación y perfiles
- ├── documents/         # Manejo y verificación de archivos
- ├── utils/             # Funciones auxiliares
- ├── stats/             # Lógica de estadísticas
- ├── config/            # Configuración principal Django
- └── Dockerfile
+### 🏡 Gestión de Lotes
+- **Registro completo** de lotes con información detallada
+- **Visualización en mapas** con integración de geolocalización
+- **Estados y categorías** personalizables
+- **Historial de cambios** y auditoría completa
+
+### 📄 Gestión de Documentos
+- **Subida y almacenamiento** seguro de documentos
+- **Categorización automática** por tipo de documento
+- **Versionado de documentos** con historial
+- **Vista previa** de documentos directamente en la plataforma
+
+### 📊 Dashboard y Estadísticas
+- **Métricas en tiempo real** de ventas y disponibilidad
+- **Gráficos interactivos** con filtros avanzados
+- **Reportes exportables** en PDF y Excel
+- **Análisis de tendencias** y proyecciones
+
+### 👤 Sistema de Usuarios
+- **Autenticación segura** con JWT
+- **Roles diferenciados**: Admin, Propietario, Desarrollador
+- **Permisos granulares** por funcionalidad
+- **Perfil de usuario** personalizable
+
+## 🛠️ Tecnologías
+
+### Backend
+- **Django 5.2** - Framework web principal
+- **Django REST Framework** - API REST
+- **PostgreSQL** - Base de datos principal
+- **Redis** - Cache y sesiones
+- **Swagger/OpenAPI** - Documentación de API
+
+### Frontend
+- **Remix** - Framework React full-stack
+- **TailwindCSS + DaisyUI** - Diseño y componentes
+- **TypeScript** - Tipado estático
+- **Vite** - Bundler y dev server
+
+### DevOps
+- **Docker & Docker Compose** - Containerización
+- **nginx** - Proxy reverso y servidor web
+- **PostgreSQL** - Base de datos
+- **Redis** - Cache y sesiones
+
+## ⚙️ Variables de Entorno
+
+### Backend Local (`Backend/.env`)
+```bash
+# Database
+DB_NAME=lateral360_local
+DB_HOST=localhost
+DB_PORT=5432
+
+# API
+CORS_ALLOWED_ORIGINS=http://localhost:3000
+SECRET_KEY=your-secret-key
 ```
 
-### 📌 Tareas pendientes:
+### Frontend Local (`Frontend/.env`)
+```bash
+# API
+VITE_API_URL=http://localhost:8000/api
+VITE_APP_NAME="Lateral 360°"
 
-- Definir entidades (Usuario, Lote, Documento...)
-- Crear modelo de datos general
-- Confirmar roles y encapsular permisos en tokens
-- Definir endpoints REST finales
-
----
-
-## 🎨 **3. MOCKUP – Diseño en Figma**
-
-### ✅ Confirmado:
-
-- Herramienta: Figma
-- Estilo: Moderno, basado en [https://360lateral.com/](https://360lateral.com/)
-- Enfoque: Desktop-first con diseño responsive
-
-### 🧩 Vistas mínimas por rol:
-
-#### 🔷 Dueño de lote
-
-- Login / Registro
-- Dashboard
-- Registro de lote (formulario)
-- Subida de documentos
-- Estado del lote
-
-#### 🔶 Desarrollador
-
-- Login / Registro
-- Dashboard
-- Buscador de lotes
-- Detalle de lote
-- Contacto con propietario
-
-#### 🟢 Administrador
-
-- Login
-- Panel de control
-- Validación de documentos
-- Estadísticas del sistema
-
-### 📌 Tareas pendientes:
-
-- Confirmar flujo de navegación completo
-- Definir tipografías y paleta (basada en el branding web actual)
-- Crear wireframes rápidos por vista
-- Montar prototipos funcionales
-
----
-
-## 🔁 **4. Flujo de Navegación General**
-
-```plaintext
-1. Login (con detección de rol)
-2. Redirección al dashboard correspondiente
-3. Acciones por usuario (registro, búsqueda, contacto, edición)
-4. Sistema de validación (documentos, cambios, estado)
-5. Reportes y estadísticas para administrador
+# Features
+VITE_ENABLE_DEBUG=true
 ```
 
----
+### Docker
+Las variables para Docker están en:
+- `Backend/.env.docker`
+- `Frontend/.env.docker`
 
-## 🌐 **5. Endpoints Preliminares por Rol**
+## 🐳 Instalación con Docker
 
-### 🔷 Dueño de Lote
+```bash
+# Clonar repositorio
+git clone https://github.com/tu-usuario/360Lateral.git
+cd 360Lateral
 
-- `POST /api/auth/register`
-- `POST /api/auth/login`
-- `GET /api/lotes`
-- `POST /api/lotes`
-- `PUT /api/lotes/:id`
-- `POST /api/lotes/:id/documentos`
-- `GET /api/lotes/:id/estado`
+# Construir y ejecutar servicios
+docker-compose up --build -d
 
-### 🔶 Desarrollador
+# Ver logs
+docker-compose logs -f
 
-- `POST /api/auth/register`
-- `POST /api/auth/login`
-- `GET /api/lotes?filtro=...`
-- `GET /api/lotes/:id`
-- `POST /api/favoritos/:lote_id`
-- `POST /api/contacto/:lote_id`
+# Ejecutar migraciones (primera vez)
+docker-compose exec backend python manage.py migrate
 
-### 🟢 Administrador
+# Crear superusuario
+docker-compose exec backend python manage.py createsuperuser
 
-- `POST /api/auth/login`
-- `GET /api/admin/dashboard`
-- `GET /api/admin/usuarios`
-- `PUT /api/lotes/:id/estado`
-- `GET /api/documentos`
-- `PUT /api/documentos/:id`
+# Parar servicios
+docker-compose down
 
----
-
-## 📊 **6. Estadísticas para el Admin**
-
-Métricas recomendadas:
-
-- Total de lotes registrados
-- Lotes por estado
-- Documentos cargados vs. validados
-- Zonas con mayor actividad
-- Usuarios activos por rol
-- Logs recientes por usuario
-
----
-
-## 📁 **7. Documentos y Validación**
-
-Modelo sugerido:
-
-```python
-class DocumentoLote(models.Model):
-    lote = models.ForeignKey(Lote, on_delete=models.CASCADE)
-    tipo = models.CharField(choices=TIPOS_DOCUMENTO)
-    archivo = models.FileField(upload_to='documentos/')
-    fecha_subida = models.DateTimeField(auto_now_add=True)
-    editable_hasta = models.DateTimeField()
-    aprobado = models.BooleanField(default=False)
+# Parar y eliminar volúmenes
+docker-compose down -v
 ```
 
----
+## 🔧 Desarrollo Local
 
-## 🧪 **8. Git & Buenas Prácticas**
+### Prerrequisitos
+- Python 3.11+
+- Node.js 18+
+- PostgreSQL 14+
+- Redis 7+
 
-### 🧬 Ramas
+### Backend
+```bash
+cd Backend
 
-```plaintext
-- main
-- develop
-- feature/*
-- hotfix/*
+# Crear entorno virtual
+python -m venv venv
+source venv/bin/activate  # Windows: venv\Scripts\activate
+
+# Instalar dependencias
+pip install -r requirements.txt
+
+# Configurar variables de entorno
+cp .env.example .env
+# Editar .env con tus configuraciones
+
+# Ejecutar migraciones
+python manage.py makemigrations
+python manage.py migrate
+
+# Crear superusuario
+python manage.py createsuperuser
+
+# Ejecutar servidor de desarrollo
+python manage.py runserver
 ```
 
-### 🧾 Convención de commits
+### Frontend
+```bash
+cd Frontend
 
-```plaintext
-feat: nueva funcionalidad
-fix: corrección de bug
-chore: cambios menores
-docs: documentación
-refactor: mejora interna
+# Instalar dependencias
+npm install
+
+# Configurar variables de entorno
+cp .env.example .env
+# Editar .env con tus configuraciones
+
+# Ejecutar servidor de desarrollo
+npm run dev
+
+# Construir para producción
+npm run build
 ```
 
-### 🔀 Pull Requests
+## 📁 Estructura del Proyecto
 
-- Desde `feature/*` a `develop`
-- Revisado por mínimo un compañero
-- Nombres descriptivos
-
----
-
-## 🗃️ **9. Notion – Organización Sugerida**
-
-```plaintext
-📁 Proyecto Lateral 360°
- ├── 🔹 Vision general del proyecto
- ├── 🔹 Tareas por sprint
- ├── 🔹 Stack tecnológico
- ├── 🔹 Diseño (mockups, wireframes)
- ├── 🔹 Documentación técnica (API, entidades, endpoints)
- └── 🔹 Historial de decisiones
+```
+360Lateral/
+├── Backend/                 # Django REST API
+│   ├── apps/               # Aplicaciones Django
+│   │   ├── users/          # Gestión de usuarios
+│   │   ├── lotes/          # Gestión de lotes
+│   │   ├── documents/      # Gestión de documentos
+│   │   └── stats/          # Estadísticas
+│   ├── config/             # Configuración Django
+│   │   ├── settings/       # Settings por ambiente
+│   │   ├── urls.py         # URLs principales
+│   │   └── wsgi.py         # WSGI config
+│   ├── utils/              # Utilidades y helpers
+│   ├── requirements.txt    # Dependencias Python
+│   ├── Dockerfile          # Docker para backend
+│   ├── .env                # Variables locales
+│   └── .env.docker         # Variables Docker
+├── Frontend/               # Remix Frontend
+│   ├── app/                # Código de la aplicación
+│   │   ├── routes/         # Rutas de Remix
+│   │   ├── components/     # Componentes React
+│   │   ├── utils/          # Utilidades
+│   │   └── styles/         # Estilos CSS
+│   ├── public/             # Archivos estáticos
+│   ├── package.json        # Dependencias Node.js
+│   ├── Dockerfile          # Docker para frontend
+│   ├── .env                # Variables locales
+│   └── .env.docker         # Variables Docker
+├── docker-compose.yml      # Orquestación Docker
+├── .gitignore              # Archivos ignorados por Git
+└── README.md               # Esta documentación
 ```
 
-## 🧑‍💻 **10. Sprints – Proyecto Lateral 360°**
+## 🌐 API y Endpoints
+
+### Principales Endpoints
+
+#### Autenticación
+- `POST /api/auth/login/` - Iniciar sesión
+- `POST /api/auth/logout/` - Cerrar sesión
+- `POST /api/auth/register/` - Registrar usuario
+- `GET /api/auth/users/me/` - Perfil del usuario actual
+
+#### Health Checks
+- `GET /api/health/` - Estado completo del sistema
+- `GET /api/health/simple/` - Health check simple
+
+#### Documentación
+- `GET /swagger/` - Documentación Swagger UI
+- `GET /redoc/` - Documentación ReDoc
+
+### Acceso a Servicios
+
+**Desarrollo Local:**
+- Frontend: http://localhost:3000
+- Backend API: http://localhost:8000
+- Admin Panel: http://localhost:8000/admin
+- API Docs: http://localhost:8000/swagger
+
+**Docker:**
+- Frontend: http://localhost:3000
+- Backend API: http://localhost:8000
+- Admin Panel: http://localhost:8000/admin
+- API Docs: http://localhost:8000/swagger
+
+## 👥 Equipo de Desarrollo
+
+**🏗️ Hecho con ❤️ por el equipo de Guartinajas**
 
 ---
 
-### **Sprint 1 – Administrador**
+### 📝 Notas de Desarrollo
 
-- Configuración inicial del repositorio, ramas y Docker.
-- Setup de backend (Django REST Framework, PostgreSQL) y frontend (Remix, TailwindCSS, DaisyUI).
-- Implementación de autenticación JWT con roles y cookies HttpOnly.
-- CRUD de lotes y usuarios.
-- Gestión de perfiles (dueños y desarrolladores).
-- Visualización de estadísticas simples (número de lotes).
-- Validación y edición de documentos.
-- Panel de control administrativo.
-- Endpoints y vistas administrativas.
-- Documentación técnica inicial (API, entidades, endpoints).
+- Las migraciones se ejecutan automáticamente en Docker
+- Los archivos de log se encuentran en `Backend/logs/`
+- Los archivos de media se almacenan en `Backend/media/`
+- El hot reload está habilitado en desarrollo
 
----
+### 🐛 Solución de Problemas
 
-### **Sprint 2 – Dueños de Lote (Vendedor)**
+**Error de conexión a la base de datos:**
+```bash
+# Verificar que PostgreSQL esté corriendo
+docker-compose ps
 
-- Dashboard de propietario.
-- Registro manual de lotes (matrícula, dirección, mapa, documentos PDF).
-- Subida y gestión de documentos por lote.
-- Asociación de múltiples lotes a un mismo dueño.
-- Posibilidad de añadir notas y archivos.
-- Visualización del estado de sus lotes.
-- Definición de vistas finales por rol y navegación entre rutas.
-- Implementación de mensajes globales (error, éxito, carga).
+# Ver logs de la base de datos
+docker-compose logs db
+```
 
----
+**Error en el frontend:**
+```bash
+# Limpiar node_modules
+rm -rf Frontend/node_modules
+cd Frontend && npm install
+```
 
-### **Sprint 3 – Desarrolladores (Comprador)**
-
-- Registro y login de desarrollador.
-- Dashboard de desarrollador.
-- Filtros básicos para búsqueda de lotes (área, uso del suelo, fase).
-- Detalle de lote y contacto con propietario.
-- Gestión de favoritos.
-- Endpoints y vistas específicas para desarrolladores.
-- Reportes y estadísticas para administrador.
-- Adaptación responsive y layouts por rol.
-- Optimización de endpoints y queries.
-- Pruebas de integración y validación final.
-
----
-
-**Notas:**  
-- Cada sprint incluye tareas de documentación, revisión de código y despliegue en ambiente Docker.
-- Los sprints pueden ajustarse según feedback y prioridades
-
-
-
+**Problemas con Docker:**
+```bash
+# Reconstruir contenedores
+docker-compose down
+docker-compose up --build
+```
