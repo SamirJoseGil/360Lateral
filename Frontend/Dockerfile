@@ -1,38 +1,31 @@
 # ==============================================
-# 🏗️ DOCKERFILE OPTIMIZADO PARA REMIX
+# 🏗️ DOCKERFILE PARA REMIX
 # ==============================================
+FROM node:18-alpine
 
-FROM node:18-alpine AS builder
-
-# Instalar dependencias del sistema
+# Instalar dependencias básicas
 RUN apk add --no-cache libc6-compat
 
-# Configurar directorio de trabajo
+# Directorio de trabajo
 WORKDIR /app
 
-# Copiar package.json
-COPY package.json ./
+# Copiar archivos de dependencias
+COPY package.json package-lock.json ./
 
-# Instalar dependencias usando npm install (más robusto que npm ci)
+# Instalar dependencias (incluyendo devDependencies para el build)
 RUN npm install --silent
 
-# Copiar código fuente
+# Copiar configuraciones
+COPY tailwind.config.ts postcss.config.js vite.config.ts tsconfig.json remix.config.js ./
+
+# Copiar el resto del proyecto
 COPY . .
 
-# Build usando npx directamente
-RUN npx remix vite:build
+# Build para producción (esto compilará Tailwind)
+RUN npm run build
 
-# Stage 2: Nginx
-FROM nginx:1.25-alpine
+# Exponer puerto 3000 (Remix default)
+EXPOSE 3000
 
-# Copiar configuración de Nginx
-COPY nginx.conf /etc/nginx/nginx.conf
-
-# Copiar archivos build
-COPY --from=builder /app/build/client /usr/share/nginx/html
-
-# Exponer puerto
-EXPOSE 80
-
-# Comando
-CMD ["nginx", "-g", "daemon off;"]
+# Iniciar el servidor de Remix directamente
+CMD ["npm", "start"]
