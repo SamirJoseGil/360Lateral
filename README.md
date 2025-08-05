@@ -10,6 +10,8 @@ Una plataforma integral para la gestión, visualización y administración de lo
 - [🐳 Instalación con Docker](#-instalación-con-docker)
 - [🔧 Desarrollo Local](#-desarrollo-local)
 - [📁 Estructura del Proyecto](#-estructura-del-proyecto)
+- [🧑‍💻 Sprints de Desarrollo](#-sprints-de-desarrollo)
+- [🔌 Conexiones y Seguridad](#-conexiones-y-seguridad)
 - [🌐 API y Endpoints](#-api-y-endpoints)
 - [⚙️ Variables de Entorno](#️-variables-de-entorno)
 - [👥 Equipo de Desarrollo](#-equipo-de-desarrollo)
@@ -94,6 +96,51 @@ npm run dev
 - **nginx** - Proxy reverso y servidor web
 - **PostgreSQL** - Base de datos
 - **Redis** - Cache y sesiones
+
+## 🧑‍💻 Sprints de Desarrollo
+
+### **Sprint 1 – Administrador**
+
+- ✅ CRUD de lotes y usuarios
+- ✅ Gestión de perfiles (dueños y desarrolladores)
+- ✅ Visualización de estadísticas simples (número de lotes)
+- ✅ Panel de administración Django
+- ✅ Sistema de autenticación por roles
+
+### **Sprint 2 – Dueños de Lote** (Vendedor)
+
+- 🔄 Registro de cuenta con validación por correo
+- 🔄 Registro manual de lotes (matrícula, dirección, mapa, documentos PDF)
+- 🔄 Asociación de múltiples lotes a un mismo dueño
+- 🔄 Posibilidad de añadir notas y archivos
+- 📋 Dashboard personalizado para vendedores
+
+### **Sprint 3 – Desarrolladores** (Comprador)
+
+- 📋 Filtros básicos para búsqueda de lotes (área, uso del suelo, fase)
+- 📋 Sistema de favoritos y seguimiento de lotes
+- 📋 Notificaciones de nuevos lotes disponibles
+- 📋 Dashboard de compra y negociación
+
+## 🔌 Conexiones y Seguridad
+
+### Autenticación y Autorización
+- **Autenticación básica por rol** (Admin, Dueño, Desarrollador)
+- **JWT Tokens** para sesiones seguras
+- **Validaciones de permisos** por endpoint
+- **Middleware de seguridad** Django
+
+### Base de Datos
+- **PostgreSQL** conectada para almacenar lotes, usuarios y documentos
+- **Redis** para cache y sesiones temporales
+- **Respaldos automáticos** con Docker volumes
+- **Migraciones versionadas** con Django
+
+### Validaciones
+- **Validaciones para evitar duplicados** de matrícula de lotes
+- **Errores de carga controlados** con mensajes descriptivos
+- **Sanitización de datos** de entrada
+- **Validación de archivos** PDF y formatos permitidos
 
 ## ⚙️ Variables de Entorno
 
@@ -271,7 +318,36 @@ npm run build
 
 ## 👥 Equipo de Desarrollo
 
-**🏗️ Hecho con ❤️ por el equipo de Guartinajas**
+### **🎨 Diseño y UX**
+- **Heydi Morales** - UI/UX Designer, Frontend Developer
+- **Salomon Rodriguez** - UI/UX Designer, Frontend Developer
+
+### **🗄️ Base de Datos y Backend**
+- **Sara González** - Database Designer, Backend Developer
+- **Jose Daniel Castro** - Backend Developer, API Architect
+- **Stiven Muñoz** - Backend Developer, Testing Lead
+
+### **⚛️ Frontend Development**
+- **Sofia Hernández** - Frontend Developer
+- **Alejandro Torres** - Frontend Developer
+
+### **🛠️ DevOps e Infraestructura**
+- **Samir Guartinajas** - DevOps Engineer, Full Stack Architect
+
+**🏗️ Hecho con ❤️ por el equipo de Guartinajas Tech**
+
+---
+
+### 📝 Cronograma de Sprints
+
+**Sprint 0** (Semanas 1-2): Diseño y Mockups - *Heydi & Salomon*
+**Sprint 1** (Semanas 2-3): Base de Datos - *Sara & Samir*
+**Sprint 2** (Semanas 3-5): Backend Core - *Jose Daniel, Stiven, Sara*
+**Sprint 3** (Semanas 4-6): Frontend Core - *Heydi, Salomon, Sofia, Alejandro*
+**Sprint 4** (Semanas 6-8): Funcionalidades Avanzadas - *Todo el equipo*
+**Sprint 5** (Semanas 8-9): Analytics y Reportes - *Jose Daniel & Salomon*
+**Sprint 6** (Semanas 9-10): Seguridad y Optimización - *Samir & Jose Daniel*
+**Sprint 7** (Semanas 10-11): Deployment - *Samir*
 
 ---
 
@@ -305,4 +381,20 @@ cd Frontend && npm install
 # Reconstruir contenedores
 docker-compose down
 docker-compose up --build
+
+# Si persisten problemas de permisos
+docker system prune -af --volumes
 ```
+
+### 📞 Contacto del Equipo
+
+Para dudas técnicas o colaboración, contactar:
+- **DevOps/Infraestructura**: Samir Guartinajas
+- **Backend/API**: Jose Daniel Castro
+- **Frontend/UI**: Heydi Morales  
+- **Database**: Sara González
+- **Testing**: Stiven Muñoz
+
+---
+
+*Proyecto desarrollado como parte del programa de desarrollo de software - Guartinajas Tech Solutions*
