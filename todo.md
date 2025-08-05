@@ -255,19 +255,6 @@
 
 ## 🗺️ **SPRINT 4 - FUNCIONALIDADES AVANZADAS** 📅 **Semana 6-8**
 
-### Mapas y Geolocalización - **Stiven (Backend) + Sofia (Frontend)**
-- [ ] **Integración de Mapas** - **Sofia**
-  - [ ] Google Maps en React
-  - [ ] Marcadores de lotes
-  - [ ] Mapas interactivos
-  - [ ] Filtros geográficos
-
-- [ ] **Geolocalización** - **Stiven**
-  - [ ] API de geocodificación
-  - [ ] Cálculo de distancias
-  - [ ] Búsqueda por proximidad
-  - [ ] Validación de coordenadas
-
 ### Sistema de Búsqueda Avanzada - **Jose Daniel (Backend) + Alejandro (Frontend)**
 - [ ] **Backend de Búsqueda** - **Jose Daniel**
   - [ ] Elasticsearch integration
@@ -424,7 +411,7 @@
 
 ### **⚙️ Backend**
 - **Jose Daniel**: Autenticación, Permisos, Analytics, Reportes
-- **Stiven**: CRUD Lotes, Mapas, Testing, Geolocalización
+- **Stiven**: CRUD Lotes, Mapas, Testing
 - **Sara**: Documentos, Notificaciones, Favoritos
 
 ### **⚛️ Frontend**
