@@ -99,28 +99,78 @@ npm run dev
 
 ## 🧑‍💻 Sprints de Desarrollo
 
-### **Sprint 1 – Administrador**
+### ✅ **Sprint 1 – Base de Datos**
 
-- ✅ CRUD de lotes y usuarios
-- ✅ Gestión de perfiles (dueños y desarrolladores)
-- ✅ Visualización de estadísticas simples (número de lotes)
-- ✅ Panel de administración Django
-- ✅ Sistema de autenticación por roles
+**Objetivo:** Modelado de datos, autenticación, estructura base del admin y entidades principales.
 
-### **Sprint 2 – Dueños de Lote** (Vendedor)
+| ID            | Tarea                                           |
+| ------------- | ----------------------------------------------- |
+| LOSMAQUINA-15 | Editar Información de Perfil de Usuario         |
+| LOSMAQUINA-36 | Administrar Usuarios (Dueños y Desarrolladores) |
+| LOSMAQUINA-68 | Registrar Datos de Propietario                  |
+| LOSMAQUINA-69 | Registrar Datos de Propietario de Lote          |
+| LOSMAQUINA-14 | Registrar Datos de Desarrollador                |
+| LOSMAQUINA-16 | Registrar Lote por propietario o comisionista   |
+| LOSMAQUINA-17 | Validar Duplicados de Lote por Dirección y CTL  |
+| LOSMAQUINA-34 | Gestionar Avance de Etapas                      |
+| LOSMAQUINA-35 | Gestionar Estudios y Documentación de Lotes     |
+| LOSMAQUINA-48 | Control de Acceso Basado en Roles               |
+| LOSMAQUINA-49 | Comunicación Segura Frontend-Backend            |
 
-- 🔄 Registro de cuenta con validación por correo
-- 🔄 Registro manual de lotes (matrícula, dirección, mapa, documentos PDF)
-- 🔄 Asociación de múltiples lotes a un mismo dueño
-- 🔄 Posibilidad de añadir notas y archivos
-- 📋 Dashboard personalizado para vendedores
+---
 
-### **Sprint 3 – Desarrolladores** (Comprador)
+### ✅ **Sprint 2 – Backend Core**
 
-- 📋 Filtros básicos para búsqueda de lotes (área, uso del suelo, fase)
-- 📋 Sistema de favoritos y seguimiento de lotes
-- 📋 Notificaciones de nuevos lotes disponibles
-- 📋 Dashboard de compra y negociación
+**Objetivo:** Construcción de APIs, lógica de negocio, endpoints de lotes, usuarios y roles.
+
+| ID            | Tarea                                                          |
+| ------------- | -------------------------------------------------------------- |
+| LOSMAQUINA-13 | Registrarse con Gmail                                          |
+| LOSMAQUINA-59 | CLONE - Registrarse con Gmail - revisión                       |
+| LOSMAQUINA-18 | Editar Información No Crítica del Lote por Dueño               |
+| LOSMAQUINA-19 | Solicitar Revisión de Datos Críticos del Lote por Dueño        |
+| LOSMAQUINA-20 | Ver Estado del Lote por Dueño                                  |
+| LOSMAQUINA-21 | Agregar Documentos Adicionales al Lote por Dueño               |
+| LOSMAQUINA-33 | Listar y Ver Lotes y Ofertas                                   |
+| LOSMAQUINA-40 | Gestionar Solicitudes de Revisión de Datos Críticos            |
+| LOSMAQUINA-22 | Definir Campos de Interés/Tesis de Inversión por Desarrollador |
+| LOSMAQUINA-23 | Buscar Lotes y Ver Info Básica (Anónimo para Dueño)            |
+| LOSMAQUINA-24 | Ver Información de Lotes en Etapa 1 por Desarrollador          |
+| LOSMAQUINA-25 | Comprar Acceso a Estudios Detallados del Lote                  |
+| LOSMAQUINA-26 | Obtener Exclusividad Temporal (Freezing) del Lote              |
+| LOSMAQUINA-27 | Presentar Carta de Intención por un Lote                       |
+| LOSMAQUINA-28 | Realizar Oferta/Iniciar Promesa de Compraventa                 |
+| LOSMAQUINA-29 | Remover Interés u Oferta de un Lote                            |
+| LOSMAQUINA-32 | Aceptar/Rechazar Carta o Freezing                              |
+| LOSMAQUINA-30 | Recibir Notificación de Carta/Promesa (Dueño)                  |
+| LOSMAQUINA-31 | Ver Cartas de Intención/Promesas Recibidas                     |
+| LOSMAQUINA-41 | Cargar Documentos Manualmente                                  |
+
+---
+
+### ✅ **Sprint 3 – Frontend Core**
+
+**Objetivo:** Interfaz de usuario, conexión con backend, lógica de frontend y diseño adaptado por rol.
+
+| ID            | Tarea                                                       |
+| ------------- | ----------------------------------------------------------- |
+| LOSMAQUINA-15 | Editar Información de Perfil de Usuario (Frontend)          |
+| LOSMAQUINA-33 | Listar y Ver Lotes y Ofertas (UI/UX)                        |
+| LOSMAQUINA-40 | Gestionar Solicitudes de Revisión de Datos Críticos (UI/UX) |
+| LOSMAQUINA-13 | Registrarse con Gmail (UI)                                  |
+| LOSMAQUINA-68 | Registrar Datos de Propietario (UI)                         |
+| LOSMAQUINA-16 | Registrar Lote por propietario o comisionista (UI)          |
+| LOSMAQUINA-19 | Solicitar Revisión de Datos Críticos del Lote (UI)          |
+| LOSMAQUINA-20 | Ver Estado del Lote por Dueño (UI)                          |
+| LOSMAQUINA-21 | Agregar Documentos Adicionales (UI)                         |
+| LOSMAQUINA-24 | Ver Información de Lotes (UI)                               |
+| LOSMAQUINA-27 | Presentar Carta de Intención (UI)                           |
+| LOSMAQUINA-28 | Iniciar Promesa de Compraventa (UI)                         |
+| LOSMAQUINA-32 | Aceptar/Rechazar Carta o Freezing (UI)                      |
+| LOSMAQUINA-30 | Notificación de Carta/Promesa (UI)                          |
+| LOSMAQUINA-39 | Generar Reportes de Actividad                               |
+| LOSMAQUINA-39 | Generar Reportes de Actividad                               |
+
 
 ## 🔌 Conexiones y Seguridad
 
