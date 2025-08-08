@@ -10,7 +10,8 @@ Una plataforma integral para la gestión, visualización y administración de lo
 - [🐳 Instalación con Docker](#-instalación-con-docker)
 - [🔧 Desarrollo Local](#-desarrollo-local)
 - [📁 Estructura del Proyecto](#-estructura-del-proyecto)
-- [🧑‍💻 Sprints de Desarrollo](#-sprints-de-desarrollo)
+- [📚 Documentación Detallada](#-documentación-detallada)
+- [👤 Historias de Usuario](#-historias-de-usuario)
 - [🔌 Conexiones y Seguridad](#-conexiones-y-seguridad)
 - [🌐 API y Endpoints](#-api-y-endpoints)
 - [⚙️ Variables de Entorno](#️-variables-de-entorno)
@@ -388,12 +389,170 @@ npm run build
 
 ---
 
-### 📝 Cronograma de Sprints
+## 📚 Documentación Detallada
 
-**Sprint 0** (Semanas 1-2): Diseño y Mockups - *Heydi & Salomon*
-**Sprint 1** (Semanas 2-3): Base de Datos - *Sara & Samir*
-**Sprint 2** (Semanas 3-5): Backend Core - *Jose Daniel, Stiven, Sara*
-**Sprint 3** (Semanas 4-6): Frontend Core - *Heydi, Salomon, Sofia, Alejandro*
+Para información específica de cada componente del proyecto, consulta la documentación detallada:
+
+### 🔗 Enlaces a Documentación
+
+| Componente | Descripción | Enlace |
+|------------|-------------|--------|
+| **🚀 Backend API** | Django REST API, modelos, endpoints y configuración | [📖 Backend README](./Backend/README.md) |
+| **⚛️ Frontend Web** | Remix, React, componentes y routing | [📖 Frontend README](./Frontend/README.md) |
+| **🎨 Content & Design** | Mockups, diseños, assets y documentación UX | [📖 Content README](./Content/README.md) |
+
+### 📖 Guías Rápidas
+
+- **🏃‍♂️ [Inicio Rápido Backend](./Backend/README.md#-inicio-rápido)** - Configurar y ejecutar la API
+- **🎨 [Inicio Rápido Frontend](./Frontend/README.md#-inicio-rápido)** - Configurar y ejecutar la aplicación web
+- **🎯 [Guía de Desarrollo](./Content/README.md#-guía-de-desarrollo)** - Estándares y mejores prácticas
+
+### 🔧 Documentación Técnica
+
+- **📊 [API Endpoints](./Backend/README.md#-api-endpoints)** - Lista completa de endpoints
+- **🧩 [Componentes Frontend](./Frontend/README.md#-componentes)** - Librería de componentes
+- **🎨 [Sistema de Diseño](./Content/README.md#-sistema-de-diseño)** - Guía de estilos y componentes
+
+## 👤 Historias de Usuario
+
+### 🗄️ **Sprint 1 – Base de Datos y Autenticación** (Semanas 2-3)
+*Objetivo: Modelado de datos, autenticación, estructura base del admin y entidades principales.*
+
+#### **🔐 Como Usuario del Sistema**
+| ID | Historia de Usuario |
+|---|---|
+| **LOSMAQUINA-15** | Como usuario, quiero **editar la información de mi perfil** para mantener mis datos actualizados |
+| **LOSMAQUINA-48** | Como administrador, quiero **control de acceso basado en roles** para garantizar la seguridad |
+| **LOSMAQUINA-49** | Como desarrollador, quiero **comunicación segura entre frontend y backend** para proteger los datos |
+
+#### **👤 Como Administrador**
+| ID | Historia de Usuario |
+|---|---|
+| **LOSMAQUINA-36** | Como administrador, quiero **administrar usuarios (dueños y desarrolladores)** para gestionar el acceso |
+| **LOSMAQUINA-34** | Como administrador, quiero **gestionar avance de etapas** para controlar el flujo de trabajo |
+| **LOSMAQUINA-35** | Como administrador, quiero **gestionar estudios y documentación de lotes** para mantener la información actualizada |
+
+#### **🏠 Como Propietario de Lote**
+| ID | Historia de Usuario |
+|---|---|
+| **LOSMAQUINA-68** | Como propietario, quiero **registrar mis datos personales** para crear mi perfil en la plataforma |
+| **LOSMAQUINA-69** | Como propietario, quiero **registrar mis datos como propietario de lote** para vincular mis propiedades |
+| **LOSMAQUINA-16** | Como propietario, quiero **registrar un lote** para ponerlo disponible en la plataforma |
+| **LOSMAQUINA-17** | Como propietario, quiero **validación de duplicados por dirección y CTL** para evitar registros erróneos |
+
+#### **🏢 Como Desarrollador/Comprador**
+| ID | Historia de Usuario |
+|---|---|
+| **LOSMAQUINA-14** | Como desarrollador, quiero **registrar mis datos** para acceder a las funcionalidades de búsqueda |
+
+---
+
+### ⚙️ **Sprint 2 – Backend Core y Lógica de Negocio** (Semanas 3-5)
+*Objetivo: Construcción de APIs, lógica de negocio, endpoints de lotes, usuarios y roles.*
+
+#### **🔑 Como Usuario Nuevo**
+| ID | Historia de Usuario |
+|---|---|
+| **LOSMAQUINA-13** | Como usuario nuevo, quiero **registrarme con Gmail** para acceder rápidamente a la plataforma |
+| **LOSMAQUINA-59** | Como usuario, quiero **revisión del registro con Gmail** para verificar la funcionalidad |
+
+#### **🏠 Como Propietario de Lote**
+| ID | Historia de Usuario |
+|---|---|
+| **LOSMAQUINA-18** | Como propietario, quiero **editar información no crítica de mi lote** para mantenerlo actualizado |
+| **LOSMAQUINA-19** | Como propietario, quiero **solicitar revisión de datos críticos** para modificar información importante |
+| **LOSMAQUINA-20** | Como propietario, quiero **ver el estado de mi lote** para conocer su situación actual |
+| **LOSMAQUINA-21** | Como propietario, quiero **agregar documentos adicionales** para complementar la información |
+| **LOSMAQUINA-30** | Como propietario, quiero **recibir notificaciones de cartas/promesas** para estar informado |
+| **LOSMAQUINA-31** | Como propietario, quiero **ver cartas de intención/promesas recibidas** para gestionar ofertas |
+| **LOSMAQUINA-32** | Como propietario, quiero **aceptar/rechazar cartas o freezing** para controlar las negociaciones |
+
+#### **🏢 Como Desarrollador/Comprador**
+| ID | Historia de Usuario |
+|---|---|
+| **LOSMAQUINA-22** | Como desarrollador, quiero **definir campos de interés/tesis de inversión** para personalizar búsquedas |
+| **LOSMAQUINA-23** | Como desarrollador, quiero **buscar lotes y ver información básica** para encontrar oportunidades |
+| **LOSMAQUINA-24** | Como desarrollador, quiero **ver información de lotes en etapa 1** para evaluar inversiones |
+| **LOSMAQUINA-25** | Como desarrollador, quiero **comprar acceso a estudios detallados** para tomar decisiones informadas |
+| **LOSMAQUINA-26** | Como desarrollador, quiero **obtener exclusividad temporal (freezing)** para asegurar una oportunidad |
+| **LOSMAQUINA-27** | Como desarrollador, quiero **presentar carta de intención** para mostrar interés formal |
+| **LOSMAQUINA-28** | Como desarrollador, quiero **realizar oferta/iniciar promesa de compraventa** para formalizar la compra |
+| **LOSMAQUINA-29** | Como desarrollador, quiero **remover interés u oferta** para cancelar negociaciones |
+
+#### **👨‍💼 Como Administrador**
+| ID | Historia de Usuario |
+|---|---|
+| **LOSMAQUINA-33** | Como administrador, quiero **listar y ver lotes y ofertas** para supervisar la actividad |
+| **LOSMAQUINA-40** | Como administrador, quiero **gestionar solicitudes de revisión de datos críticos** para aprobar cambios |
+| **LOSMAQUINA-41** | Como administrador, quiero **cargar documentos manualmente** para completar información |
+
+---
+
+### 🎨 **Sprint 3 – Frontend Core e Interfaz de Usuario** (Semanas 4-6)
+*Objetivo: Interfaz de usuario, conexión con backend, lógica de frontend y diseño adaptado por rol.*
+
+#### **🖥️ Como Usuario (Interfaz Web)**
+| ID | Historia de Usuario |
+|---|---|
+| **LOSMAQUINA-15** | Como usuario, quiero una **interfaz para editar mi perfil** que sea intuitiva y fácil de usar |
+| **LOSMAQUINA-13** | Como usuario nuevo, quiero una **interfaz de registro con Gmail** que sea rápida y segura |
+
+#### **🏠 Como Propietario (Dashboard)**
+| ID | Historia de Usuario |
+|---|---|
+| **LOSMAQUINA-68** | Como propietario, quiero un **formulario de registro de datos** que sea claro y completo |
+| **LOSMAQUINA-16** | Como propietario, quiero una **interfaz para registrar lotes** con validaciones en tiempo real |
+| **LOSMAQUINA-19** | Como propietario, quiero una **interfaz para solicitar revisión de datos** con seguimiento del estado |
+| **LOSMAQUINA-20** | Como propietario, quiero un **dashboard que muestre el estado de mis lotes** de forma visual |
+| **LOSMAQUINA-21** | Como propietario, quiero una **interfaz de carga de documentos** con drag & drop |
+| **LOSMAQUINA-30** | Como propietario, quiero **notificaciones visuales** cuando reciba cartas o promesas |
+| **LOSMAQUINA-32** | Como propietario, quiero **botones claros para aceptar/rechazar** ofertas y solicitudes |
+
+#### **🏢 Como Desarrollador (Portal de Búsqueda)**
+| ID | Historia de Usuario |
+|---|---|
+| **LOSMAQUINA-24** | Como desarrollador, quiero una **interfaz de búsqueda de lotes** con filtros avanzados |
+| **LOSMAQUINA-27** | Como desarrollador, quiero un **formulario para presentar cartas de intención** que sea profesional |
+| **LOSMAQUINA-28** | Como desarrollador, quiero una **interfaz para iniciar promesas de compraventa** paso a paso |
+
+#### **👨‍💼 Como Administrador (Panel de Control)**
+| ID | Historia de Usuario |
+|---|---|
+| **LOSMAQUINA-33** | Como administrador, quiero un **dashboard para listar lotes y ofertas** con métricas en tiempo real |
+| **LOSMAQUINA-40** | Como administrador, quiero una **interfaz para gestionar solicitudes** con aprobaciones rápidas |
+| **LOSMAQUINA-39** | Como administrador, quiero **generar reportes de actividad** con gráficos y exportación |
+
+---
+
+### 📊 **Historias Adicionales para Futuros Sprints**
+
+#### **🚀 Funcionalidades Avanzadas (No Incluidas en MVP)**
+| ID | Historia de Usuario |
+|---|---|
+| **LOSMAQUINA-37** | Como administrador, quiero **cargar lotes masivamente** para importar grandes volúmenes de datos |
+| **LOSMAQUINA-38** | Como administrador, quiero **asignar/bloquear lotes manualmente** para casos especiales |
+| **LOSMAQUINA-70** | Como comisionista, quiero **registrar mis datos** para actuar como intermediario |
+
+#### **🤖 Análisis e IA (Futuro)**
+| ID | Historia de Usuario |
+|---|---|
+| **LOSMAQUINA-45** | Como desarrollador, quiero **interpretación preliminar de normas** para evaluar viabilidad |
+| **LOSMAQUINA-46** | Como desarrollador, quiero **estimación básica de valor/tiempo** para planificar inversiones |
+| **LOSMAQUINA-47** | Como desarrollador, quiero **ver resultados de análisis básico** en reportes automáticos |
+
+#### **🗺️ Integración GIS (Futuro)**
+| ID | Historia de Usuario |
+|---|---|
+| **LOSMAQUINA-43** | Como usuario, quiero **integración con plataformas GIS externas** para datos geográficos |
+| **LOSMAQUINA-44** | Como desarrollador, quiero **recuperar capas de datos urbanos** para análisis de ubicación |
+
+---
+
+### 📝 Cronograma de Desarrollo
+
+**Sprint 1** (Semanas 2-3): Base de Datos y Autenticación - *Sara & Samir*
+**Sprint 2** (Semanas 3-5): Backend Core y APIs - *Jose Daniel, Stiven, Sara*
+**Sprint 3** (Semanas 4-6): Frontend Core e Interfaces - *Heydi, Salomon, Sofia, Alejandro*
 **Sprint 4** (Semanas 6-8): Funcionalidades Avanzadas - *Todo el equipo*
 **Sprint 5** (Semanas 8-9): Analytics y Reportes - *Jose Daniel & Salomon*
 **Sprint 6** (Semanas 9-10): Seguridad y Optimización - *Samir & Jose Daniel*

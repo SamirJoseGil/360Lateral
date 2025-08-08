@@ -1,16 +1,18 @@
-# 🔧 Backend - Lateral 360° API
+# 🚀 Backend API - Lateral 360°
 
-API REST desarrollada con Django y Django REST Framework para la gestión de lotes inmobiliarios.
+API REST desarrollada con Django para la gestión de lotes inmobiliarios, usuarios y documentos.
 
 ## 📋 Tabla de Contenidos
 
 - [🚀 Inicio Rápido](#-inicio-rápido)
 - [⚙️ Configuración](#️-configuración)
-- [🗄️ Base de Datos](#️-base-de-datos)
+- [🏗️ Arquitectura](#️-arquitectura)
+- [📁 Estructura del Proyecto](#-estructura-del-proyecto)
 - [🔐 Autenticación](#-autenticación)
-- [📚 API Documentation](#-api-documentation)
+- [🌐 API Endpoints](#-api-endpoints)
+- [🗄️ Base de Datos](#️-base-de-datos)
 - [🧪 Testing](#-testing)
-- [🐛 Debugging](#-debugging)
+- [🔧 Utilidades](#-utilidades)
 
 ## 🚀 Inicio Rápido
 
@@ -226,3 +228,107 @@ from rest_framework.permissions import IsAuthenticated
 class MiView(APIView):
     permission_classes = [IsAuthenticated]
 ```
+
+## 📁 Estructura del Proyecto
+
+```plaintext
+Backend/
+│
+├── config/                  # Configuración del proyecto Django
+│   ├── __init__.py
+│   ├── settings/            # Archivos de configuración por entorno
+│   │   ├── __init__.py
+│   │   ├── development.py   # Configuración para desarrollo
+│   │   ├── production.py    # Configuración para producción
+│   │   └── testing.py       # Configuración para pruebas
+│   │
+│   ├── urls.py              # Rutas del proyecto
+│   └── wsgi.py              # Punto de entrada para WSGI
+│
+├── app/                     # Aplicación principal
+│   ├── __init__.py
+│   ├── admin.py             # Configuración del admin de Django
+│   ├── apps.py              # Configuración de la aplicación
+│   ├── migrations/          # Migraciones de la base de datos
+│   ├── models.py            # Modelos de la base de datos
+│   ├── serializers.py       # Serializadores para la API
+│   ├── tests.py             # Pruebas de la aplicación
+│   └── views.py             # Vistas de la API
+│
+├── manage.py                # Script de administración de Django
+├── requirements.txt         # Dependencias del proyecto
+└── .env.example             # Ejemplo de archivo de variables de entorno
+```
+
+## 🌐 API Endpoints
+
+### Autenticación
+
+- `POST /api/auth/register/`: Registro de usuario
+- `POST /api/auth/login/`: Inicio de sesión
+- `POST /api/auth/logout/`: Cierre de sesión
+- `GET /api/auth/users/me/`: Obtener perfil de usuario
+
+### Usuarios
+
+- `GET /api/users/`: Listar usuarios
+- `GET /api/users/{id}/`: Obtener detalles de un usuario
+- `PUT /api/users/{id}/`: Actualizar usuario
+- `DELETE /api/users/{id}/`: Eliminar usuario
+
+### Lotes
+
+- `GET /api/lotes/`: Listar lotes
+- `GET /api/lotes/{id}/`: Obtener detalles de un lote
+- `POST /api/lotes/`: Crear un nuevo lote
+- `PUT /api/lotes/{id}/`: Actualizar un lote
+- `DELETE /api/lotes/{id}/`: Eliminar un lote
+
+### Documentos
+
+- `GET /api/documentos/`: Listar documentos
+- `GET /api/documentos/{id}/`: Obtener detalles de un documento
+- `POST /api/documentos/`: Subir un nuevo documento
+- `DELETE /api/documentos/{id}/`: Eliminar un documento
+
+## 🧪 Testing
+
+### Pruebas Unitarias
+
+```bash
+# Ejecutar pruebas
+python manage.py test
+
+# Ver cobertura
+coverage report
+```
+
+### Pruebas Manuales
+
+- Probar endpoints con Postman o curl
+- Verificar funcionamiento en el navegador
+
+## 🔧 Utilidades
+
+### Comandos Útiles
+
+```bash
+# Crear superusuario
+python manage.py createsuperuser
+
+# Ejecutar servidor
+python manage.py runserver
+
+# Abrir shell de Django
+python manage.py shell
+```
+
+### Scripts
+
+- `backup.sh`: Script para hacer backup de la base de datos
+- `restore.sh`: Script para restaurar la base de datos desde un backup
+
+### Notas
+
+- Asegúrate de tener PostgreSQL y Redis corriendo si no usas Docker.
+- Configura correctamente el archivo `.env` antes de iniciar el servidor.
