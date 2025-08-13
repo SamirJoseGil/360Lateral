@@ -190,7 +190,7 @@ export default function HealthCheck() {
         {/* Enlaces rápidos de acceso */}
         <div className="bg-white rounded-lg shadow-lg p-6">
           <h3 className="text-lg font-semibold text-gray-800 mb-4">Accesos Rápidos</h3>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
             <a
               href="http://127.0.0.1:8000/api/"
               target="_blank"
@@ -201,6 +201,17 @@ export default function HealthCheck() {
               <div>
                 <p className="font-medium text-blue-800">API Root</p>
                 <p className="text-sm text-blue-600">Información de la API</p>
+              </div>
+            </a>
+
+            <a
+              href="/scrapinfo"
+              className="flex items-center gap-3 p-3 bg-green-50 hover:bg-green-100 rounded-lg transition-colors"
+            >
+              <span className="text-green-600">🗺️</span>
+              <div>
+                <p className="font-medium text-green-800">MapGIS Scraping</p>
+                <p className="text-sm text-green-600">Prueba de extracción de datos</p>
               </div>
             </a>
 

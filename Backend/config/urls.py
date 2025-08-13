@@ -48,13 +48,16 @@ urlpatterns = [
     # Health checks
     path('api/health/', include('utils.urls')),
     
-    # Autenticación y usuarios
-    path('api/auth/', include('apps.users.urls')),
+    # Autenticación y usuarios - Comentado temporalmente
+    # path('api/auth/', include('apps.users.urls')),
     
     # Documentación API
     path('swagger<format>/', schema_view.without_ui(cache_timeout=0), name='schema-json'),
     path('swagger/', schema_view.with_ui('swagger', cache_timeout=0), name='schema-swagger-ui'),
     path('redoc/', schema_view.with_ui('redoc', cache_timeout=0), name='schema-redoc'),
+
+    # Rutas de lotes
+    path('api/lotes/', include('apps.lotes.urls')),
 ]
 
 # Servir archivos estáticos y media en desarrollo

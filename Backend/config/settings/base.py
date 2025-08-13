@@ -33,10 +33,10 @@ THIRD_PARTY_APPS = [
 ]
 
 LOCAL_APPS = [
-    'apps.users',
+    # 'apps.users',  # Comentado temporalmente
     'apps.lotes',
-    'apps.documents',
-    'apps.stats',
+    # 'apps.documents',  # Comentado temporalmente
+    # 'apps.stats',  # Comentado temporalmente
 ]
 
 INSTALLED_APPS = DJANGO_APPS + THIRD_PARTY_APPS + LOCAL_APPS
@@ -84,8 +84,8 @@ DATABASES = {
     }
 }
 
-# Custom User Model
-AUTH_USER_MODEL = 'users.User'
+# Custom User Model - Comentado temporalmente
+# AUTH_USER_MODEL = 'users.User'
 
 # Password validation
 AUTH_PASSWORD_VALIDATORS = [
@@ -136,9 +136,12 @@ REST_FRAMEWORK = {
     ],
 }
 
-# CORS settings
+# CORS settings - CORREGIDO
 CORS_ALLOWED_ORIGINS = config('CORS_ALLOWED_ORIGINS', default='http://localhost:3000', cast=Csv())
 CORS_ALLOW_CREDENTIALS = config('CORS_ALLOW_CREDENTIALS', default=True, cast=bool)
+
+# Redis Configuration
+REDIS_URL = config('REDIS_URL', default='redis://localhost:6379/0')
 
 # Swagger settings
 SWAGGER_SETTINGS = {
@@ -159,9 +162,6 @@ SWAGGER_SETTINGS = {
         'patch'
     ],
 }
-
-# Redis Configuration
-REDIS_URL = config('REDIS_URL', default='redis://localhost:6379/0')
 
 # Cache Configuration
 CACHES = {

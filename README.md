@@ -170,8 +170,100 @@ npm run dev
 | LOSMAQUINA-32 | Aceptar/Rechazar Carta o Freezing (UI)                      |
 | LOSMAQUINA-30 | Notificación de Carta/Promesa (UI)                          |
 | LOSMAQUINA-39 | Generar Reportes de Actividad                               |
-| LOSMAQUINA-39 | Generar Reportes de Actividad                               |
 
+---
+
+### 🚀 **Sprint 4 – Filtro, Cálculo y Viabilidad de Lote**
+
+**Objetivo:** Integración con MapGIS Medellín, cálculos urbanísticos, análisis de viabilidad y estimación financiera.
+
+| ID            | Tarea                                                    |
+| ------------- | -------------------------------------------------------- |
+| LOSMAQUINA-40 | Consulta e Identificación del Predio desde MapGIS       |
+| LOSMAQUINA-41 | Cálculo de Aprovechamiento Urbanístico del Lote         |
+| LOSMAQUINA-42 | Identificación de Condiciones Especiales                |
+| LOSMAQUINA-43 | Cálculo de Potencial Constructivo y Tipologías Viables  |
+| LOSMAQUINA-44 | Estimación de Costos de Desarrollo y Valor Objetivo del Lote |
+
+#### **LOSMAQUINA-40 – Consulta e Identificación del Predio desde MapGIS** ✅ **COMPLETADO**
+**Funcionalidad:** Permite al usuario ingresar matrícula, dirección, CBML o ubicación en mapa para obtener datos del predio desde la plataforma oficial de Medellín.
+- **Integración:** ✅ Conexión exitosa con la página MapGIS Medellín extrayendo información real del lote.
+- **Flujo:** Usuario → Ingresar Matrícula/Dirección → Consulta MapGIS → ✅ Retornar Datos Reales del Predio
+- **Datos obtenidos:** CBML, Clasificación del suelo (Urbano), Casos POT, Normativa específica
+- **Cache:** Sistema Redis guardando resultados automáticamente
+- **Status:** 🎉 **100% FUNCIONAL - DATOS REALES EXTRAÍDOS**
+
+#### **LOSMAQUINA-41 – Cálculo de Aprovechamiento Urbanístico del Lote**
+**Funcionalidad:** Procesa parámetros urbanísticos y de construcción para determinar el potencial de uso residencial, incluyendo índices, alturas, usos de suelo y aislamientos.
+- **Integración:** Toma datos del POT, microzonificación y cartografía ambiental del municipio para aplicar reglas.
+- **Flujo:** Consulta Datos Lote → Parámetros Urbanísticos → Procesar Índices y Alturas → Determinar Usos y Restricciones
+
+#### **LOSMAQUINA-42 – Identificación de Condiciones Especiales**
+**Funcionalidad:** Detecta si el predio está en zona de conservación, tiene restricciones ambientales/patrimoniales o está en plan parcial/macroproyecto.
+- **Integración:** Usa cartografía ambiental (GeoMedellín) y otras fuentes públicas para marcar afectaciones.
+- **Flujo:** Consulta Datos Lote → Verificación Restricciones Ambientales → Registrar Condiciones Especiales
+
+#### **LOSMAQUINA-43 – Cálculo de Potencial Constructivo y Tipologías Viables**
+**Funcionalidad:** Calcula área máxima ocupable, área máxima construida, número estimado de unidades y tipologías viables con base en densidad, índices y afectaciones.
+- **Integración:** Combina parámetros normativos con reglas de ocupación de zonas comunes y parqueaderos según POT.
+- **Flujo:** Parámetros Urbanísticos → Calcular Área Neta y Bruta → Determinar Área Ocupación y Construcción → Estimar Unidades y Tipologías
+
+#### **LOSMAQUINA-44 – Estimación de Costos de Desarrollo y Valor Objetivo del Lote**
+**Funcionalidad:** Genera un presupuesto aproximado de construcción, costos indirectos, financieros y valor final objetivo del lote. Considera variables como precios por m², porcentajes estándar, devolución de IVA (VIS) y utilidad proyectada.
+- **Integración:** Cruza información de mercado con reglas financieras preconfiguradas para proyecciones rápidas.
+- **Flujo:** Cálculos Potencial Constructivo → Estimar Costos de Construcción → Calcular Costo Indirecto y Financiero → Determinar Valor Objetivo
+
+---
+
+### 🚀 **Sprint 5 – Búsqueda Avanzada y Favoritos**
+
+**Objetivo:** Sistema de búsqueda complejo, filtros avanzados y gestión de favoritos.
+
+| ID            | Tarea                                                       |
+| ------------- | ----------------------------------------------------------- |
+| Búsqueda-01   | Backend de Búsqueda con Elasticsearch                      |
+| Búsqueda-02   | Frontend de Búsqueda con Filtros Dinámicos                 |
+| Favoritos-01  | Backend Sistema de Favoritos                               |
+| Favoritos-02  | Frontend Lista de Favoritos                                |
+
+---
+
+### 🚀 **Sprint 6 – Analytics y Reportes**
+
+**Objetivo:** Dashboard de métricas, generación de reportes y análisis de datos.
+
+| ID            | Tarea                                                       |
+| ------------- | ----------------------------------------------------------- |
+| Analytics-01  | Métricas Backend con KPIs                                  |
+| Analytics-02  | Charts Frontend con visualizaciones                        |
+| Reportes-01   | Generación de PDFs                                         |
+| Reportes-02   | Interface de Reportes                                      |
+
+---
+
+### 🚀 **Sprint 7 – Seguridad y Optimización**
+
+**Objetivo:** Fortalecer seguridad, optimizar performance y preparar para producción.
+
+| ID            | Tarea                                                       |
+| ------------- | ----------------------------------------------------------- |
+| Security-01   | Rate Limiting y Validaciones                               |
+| Security-02   | HTTPS/SSL y Variables Seguras                              |
+| Perf-01       | Optimización de Base de Datos                             |
+| Perf-02       | Optimización Frontend                                      |
+
+---
+
+### 🚀 **Sprint 8 – Deployment y Producción**
+
+**Objetivo:** CI/CD pipeline, deployment automatizado y monitoreo en producción.
+
+| ID            | Tarea                                                       |
+| ------------- | ----------------------------------------------------------- |
+| Deploy-01     | GitHub Actions CI/CD                                       |
+| Deploy-02     | Infrastructure as Code                                     |
+| Deploy-03     | Monitoring y Health Checks                                 |
+| Deploy-04     | Testing Final Integral                                     |
 
 ## 🔌 Conexiones y Seguridad
 
@@ -553,10 +645,11 @@ Para información específica de cada componente del proyecto, consulta la docum
 **Sprint 1** (Semanas 2-3): Base de Datos y Autenticación - *Sara & Samir*
 **Sprint 2** (Semanas 3-5): Backend Core y APIs - *Jose Daniel, Stiven, Sara*
 **Sprint 3** (Semanas 4-6): Frontend Core e Interfaces - *Heydi, Salomon, Sofia, Alejandro*
-**Sprint 4** (Semanas 6-8): Funcionalidades Avanzadas - *Todo el equipo*
-**Sprint 5** (Semanas 8-9): Analytics y Reportes - *Jose Daniel & Salomon*
-**Sprint 6** (Semanas 9-10): Seguridad y Optimización - *Samir & Jose Daniel*
-**Sprint 7** (Semanas 10-11): Deployment - *Samir*
+**Sprint 4** (Semanas 6-8): Filtro, Cálculo y Viabilidad (MapGIS) - *Todo el equipo*
+**Sprint 5** (Semanas 8-9): Búsqueda Avanzada y Favoritos - *Jose Daniel & Alejandro, Sara & Heydi*
+**Sprint 6** (Semanas 9-10): Analytics y Reportes - *Jose Daniel & Salomon, Stiven & Sofia*
+**Sprint 7** (Semanas 10-11): Seguridad y Optimización - *Samir & Jose Daniel*
+**Sprint 8** (Semanas 11-12): Deployment - *Samir*
 
 ---
 
@@ -592,7 +685,7 @@ docker-compose down
 docker-compose up --build
 
 # Si persisten problemas de permisos
-docker system prune -af --volumes
+docker system prune -af --volúmenes
 ```
 
 ### 📞 Contacto del Equipo

@@ -15,7 +15,7 @@ EMAIL_BACKEND = config(
 
 # Development specific apps
 INSTALLED_APPS += [
-    'django_extensions',  # Si lo instalamos más adelante
+    # 'django_extensions',  # Si lo instalamos más adelante
 ]
 
 # Database for development (puede usar SQLite si lo prefieres)
@@ -90,7 +90,22 @@ CACHES = {
     }
 } if config('DISABLE_CACHE', default=True, cast=bool) else CACHES
 
-print(f"🚀 Django running in DEVELOPMENT mode")
-print(f"📊 Database: {DATABASES['default']['HOST']}:{DATABASES['default']['PORT']}")
-print(f"🔗 Redis: {REDIS_URL}")
-print(f"🌐 CORS Origins: {CORS_ALLOWED_ORIGINS}")
+# INFORMACIÓN DE DEBUG - MEJORADA PARA EVITAR DUPLICACIÓN
+import os
+if not os.environ.get('DJANGO_SETTINGS_PRINTED'):
+    print(f"🚀 Django running in DEVELOPMENT mode")
+    
+    # Mostrar información de base de datos de forma segura
+    db_config = DATABASES['default']
+    if db_config['ENGINE'] == 'django.db.backends.sqlite3':
+        print(f"📊 Database: SQLite - {db_config['NAME']}")
+    else:
+        db_host = db_config.get('HOST', 'localhost')
+        db_port = db_config.get('PORT', '5432')
+        print(f"📊 Database: {db_host}:{db_port}")
+
+    print(f"🔗 Redis: {REDIS_URL}")
+    print(f"🌐 CORS Allow All: {CORS_ALLOW_ALL_ORIGINS}")
+    
+    # Marcar como impreso para evitar duplicación
+    os.environ['DJANGO_SETTINGS_PRINTED'] = 'true'
