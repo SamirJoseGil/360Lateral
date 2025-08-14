@@ -1,45 +1,34 @@
 """
 Configuración base de Django para Lateral 360°
 """
-import os
 from pathlib import Path
-from decouple import config, Csv
+import os
+from datetime import timedelta
 
-# Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = config('SECRET_KEY', default='django-insecure-change-me')
-
-# SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = config('DEBUG', default=False, cast=bool)
-
-ALLOWED_HOSTS = config('ALLOWED_HOSTS', default='localhost,127.0.0.1,backend,0.0.0.0', cast=Csv())
+SECRET_KEY = os.environ.get('SECRET_KEY', 'django-insecure-development-key-change-in-production')
 
 # Application definition
-DJANGO_APPS = [
+INSTALLED_APPS = [
     'django.contrib.admin',
     'django.contrib.auth',
     'django.contrib.contenttypes',
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
-]
-
-THIRD_PARTY_APPS = [
+    
+    # Third party apps
     'rest_framework',
+    'rest_framework_simplejwt',
     'corsheaders',
-    'drf_yasg',
-]
-
-LOCAL_APPS = [
-    # 'apps.users',  # Comentado temporalmente
+    'drf_spectacular',  # Para documentación Swagger
+    
+    # Local apps
+    'apps.users',
     'apps.lotes',
-    # 'apps.documents',  # Comentado temporalmente
-    # 'apps.stats',  # Comentado temporalmente
 ]
-
-INSTALLED_APPS = DJANGO_APPS + THIRD_PARTY_APPS + LOCAL_APPS
 
 MIDDLEWARE = [
     'corsheaders.middleware.CorsMiddleware',
@@ -72,115 +61,96 @@ TEMPLATES = [
 
 WSGI_APPLICATION = 'config.wsgi.application'
 
-# Database
-DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.postgresql',
-        'NAME': config('DB_NAME', default='lateral360'),
-        'USER': config('DB_USER', default='postgres'),
-        'PASSWORD': config('DB_PASSWORD', default='postgres'),
-        'HOST': config('DB_HOST', default='localhost'),
-        'PORT': config('DB_PORT', default='5432', cast=int),
-    }
-}
-
-# Custom User Model - Comentado temporalmente
-# AUTH_USER_MODEL = 'users.User'
-
-# Password validation
-AUTH_PASSWORD_VALIDATORS = [
-    {
-        'NAME': 'django.contrib.auth.password_validation.UserAttributeSimilarityValidator',
-    },
-    {
-        'NAME': 'django.contrib.auth.password_validation.MinimumLengthValidator',
-    },
-    {
-        'NAME': 'django.contrib.auth.password_validation.CommonPasswordValidator',
-    },
-    {
-        'NAME': 'django.contrib.auth.password_validation.NumericPasswordValidator',
-    },
-]
-
 # Internationalization
-LANGUAGE_CODE = config('LANGUAGE_CODE', default='es')
-TIME_ZONE = config('TIME_ZONE', default='America/Bogota')
+LANGUAGE_CODE = 'es'
+TIME_ZONE = 'America/Bogota'
 USE_I18N = True
 USE_TZ = True
 
 # Static files (CSS, JavaScript, Images)
-STATIC_URL = config('STATIC_URL', default='/static/')
-STATIC_ROOT = BASE_DIR / config('STATIC_ROOT', default='staticfiles')
+STATIC_URL = '/static/'
+STATIC_ROOT = BASE_DIR / 'static'
 
-# Media files
-MEDIA_URL = config('MEDIA_URL', default='/media/')
-MEDIA_ROOT = BASE_DIR / config('MEDIA_ROOT', default='media')
+MEDIA_URL = '/media/'
+MEDIA_ROOT = BASE_DIR / 'media'
 
 # Default primary key field type
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
-# REST Framework
+# REST Framework configuration
 REST_FRAMEWORK = {
+    'DEFAULT_AUTHENTICATION_CLASSES': [
+        'rest_framework_simplejwt.authentication.JWTAuthentication',
+        'rest_framework.authentication.SessionAuthentication',
+    ],
     'DEFAULT_PERMISSION_CLASSES': [
         'rest_framework.permissions.IsAuthenticated',
     ],
-    'DEFAULT_AUTHENTICATION_CLASSES': [
-        'rest_framework.authentication.SessionAuthentication',
+    'DEFAULT_RENDERER_CLASSES': [
+        'rest_framework.renderers.JSONRenderer',
     ],
     'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
     'PAGE_SIZE': 20,
-    'DEFAULT_FILTER_BACKENDS': [
-        'rest_framework.filters.SearchFilter',
-        'rest_framework.filters.OrderingFilter',
-    ],
+    'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
 }
 
-# CORS settings - CORREGIDO
-CORS_ALLOWED_ORIGINS = config('CORS_ALLOWED_ORIGINS', default='http://localhost:3000', cast=Csv())
-CORS_ALLOW_CREDENTIALS = config('CORS_ALLOW_CREDENTIALS', default=True, cast=bool)
-
-# Redis Configuration
-REDIS_URL = config('REDIS_URL', default='redis://localhost:6379/0')
-
-# Swagger settings
-SWAGGER_SETTINGS = {
-    'SECURITY_DEFINITIONS': {
-        'Bearer': {
-            'type': 'apiKey',
-            'name': 'Authorization',
-            'in': 'header'
-        }
-    },
-    'USE_SESSION_AUTH': False,
-    'JSON_EDITOR': True,
-    'SUPPORTED_SUBMIT_METHODS': [
-        'get',
-        'post',
-        'put',
-        'delete',
-        'patch'
-    ],
+# ✅ Spectacular settings para documentación API
+SPECTACULAR_SETTINGS = {
+    'TITLE': 'Lateral 360° API',
+    'DESCRIPTION': 'API REST para la gestión de lotes inmobiliarios',
+    'VERSION': '1.0.0',
+    'SERVE_INCLUDE_SCHEMA': False,
+    'COMPONENT_SPLIT_REQUEST': True,
 }
 
-# Cache Configuration
+# ✅ JWT Configuration
+SIMPLE_JWT = {
+    'ACCESS_TOKEN_LIFETIME': timedelta(minutes=15),
+    'REFRESH_TOKEN_LIFETIME': timedelta(days=7),
+    'ROTATE_REFRESH_TOKENS': True,
+    'BLACKLIST_AFTER_ROTATION': True,
+    'UPDATE_LAST_LOGIN': True,
+    
+    'ALGORITHM': 'HS256',
+    'SIGNING_KEY': SECRET_KEY,
+    'VERIFYING_KEY': None,
+    'AUDIENCE': None,
+    'ISSUER': None,
+    'JWK_URL': None,
+    'LEEWAY': 0,
+    
+    'AUTH_HEADER_TYPES': ('Bearer',),
+    'AUTH_HEADER_NAME': 'HTTP_AUTHORIZATION',
+    'USER_ID_FIELD': 'id',
+    'USER_ID_CLAIM': 'user_id',
+    'USER_AUTHENTICATION_RULE': 'rest_framework_simplejwt.authentication.default_user_authentication_rule',
+    
+    'AUTH_TOKEN_CLASSES': ('rest_framework_simplejwt.tokens.AccessToken',),
+    'TOKEN_TYPE_CLAIM': 'token_type',
+    'TOKEN_USER_CLASS': 'rest_framework_simplejwt.models.TokenUser',
+    
+    'JTI_CLAIM': 'jti',
+    
+    'SLIDING_TOKEN_REFRESH_EXP_CLAIM': 'refresh_exp',
+    'SLIDING_TOKEN_LIFETIME': timedelta(minutes=15),
+    'SLIDING_TOKEN_REFRESH_LIFETIME': timedelta(days=1),
+}
+
+# Custom user model
+AUTH_USER_MODEL = 'users.User'
+
+# CORS settings (will be overridden in environment-specific files)
+CORS_ALLOW_CREDENTIALS = True
+
+# ✅ Cache configuration (default)
 CACHES = {
     'default': {
-        'BACKEND': config(
-            'CACHE_BACKEND', 
-            default='django.core.cache.backends.locmem.LocMemCache'
-        ),
-        'LOCATION': config('CACHE_LOCATION', default='unique-snowflake'),
+        'BACKEND': 'django.core.cache.backends.locmem.LocMemCache',
+        'LOCATION': 'unique-snowflake',
     }
 }
 
-# Security Settings
-SECURE_SSL_REDIRECT = config('SECURE_SSL_REDIRECT', default=False, cast=bool)
-SECURE_BROWSER_XSS_FILTER = config('SECURE_BROWSER_XSS_FILTER', default=True, cast=bool)
-SECURE_CONTENT_TYPE_NOSNIFF = config('SECURE_CONTENT_TYPE_NOSNIFF', default=True, cast=bool)
-X_FRAME_OPTIONS = config('X_FRAME_OPTIONS', default='DENY')
-
-# Logging
+# ✅ Logging configuration
 LOGGING = {
     'version': 1,
     'disable_existing_loggers': False,
@@ -197,35 +167,31 @@ LOGGING = {
     'handlers': {
         'console': {
             'class': 'logging.StreamHandler',
-            'formatter': 'verbose',
+            'formatter': 'simple',
         },
         'file': {
             'class': 'logging.FileHandler',
-            'filename': config('LOG_FILE', default='logs/lateral360.log'),
+            'filename': BASE_DIR / 'logs' / 'django.log',
             'formatter': 'verbose',
         },
     },
     'root': {
-        'handlers': ['console', 'file'],
-        'level': config('LOG_LEVEL', default='INFO'),
+        'handlers': ['console'],
+        'level': 'INFO',
     },
     'loggers': {
         'django': {
             'handlers': ['console', 'file'],
-            'level': config('LOG_LEVEL', default='INFO'),
+            'level': 'INFO',
             'propagate': False,
         },
         'apps': {
             'handlers': ['console', 'file'],
-            'level': config('LOG_LEVEL', default='DEBUG'),
+            'level': 'DEBUG',
             'propagate': False,
         },
     },
 }
 
-# File Upload Settings
-MAX_UPLOAD_SIZE = config('MAX_UPLOAD_SIZE', default=10485760, cast=int)
-ALLOWED_DOCUMENT_TYPES = config('ALLOWED_DOCUMENT_TYPES', default='pdf,doc,docx,jpg,jpeg,png', cast=Csv())
-
-# API Configuration
-API_VERSION = config('API_VERSION', default='v1')
+# ✅ Crear directorio de logs si no existe
+(BASE_DIR / 'logs').mkdir(exist_ok=True)

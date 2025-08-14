@@ -9,6 +9,7 @@ from django.conf import settings
 import logging
 
 from .services import lotes_service
+from .services.tratamientos_service import tratamientos_service
 
 logger = logging.getLogger(__name__)
 
@@ -354,6 +355,74 @@ def consultar_restricciones_completas(request):
             'success': False,
             'error': str(e)
         }, status=500)
+
+@api_view(['GET'])
+@permission_classes([AllowAny])  # Agregar permisos para todos
+def listar_tratamientos(request):
+    """Lista todos los tratamientos disponibles del POT"""
+    try:
+        tratamientos = tratamientos_service.listar_tratamientos()
+        return Response(tratamientos, status=status.HTTP_200_OK)
+    except Exception as e:
+        logger.error(f"Error listando tratamientos: {e}")
+        return Response({
+            'error': 'Error interno del servidor'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+@api_view(['POST'])
+@permission_classes([AllowAny])  # Agregar permisos para todos
+def calcular_aprovechamiento(request):
+    """Calcula el aprovechamiento urbanístico para un lote"""
+    try:
+        data = request.data
+        tratamiento = data.get('tratamiento')
+        area_lote = data.get('area_lote')
+        tipologia = data.get('tipologia', 'multifamiliar')
+        
+        if not tratamiento or not area_lote:
+            return Response({
+                'error': 'Tratamiento y área del lote son requeridos'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        resultado = tratamientos_service.calcular_aprovechamiento(
+            tratamiento, float(area_lote), tipologia
+        )
+        
+        return Response(resultado, status=status.HTTP_200_OK)
+        
+    except Exception as e:
+        logger.error(f"Error calculando aprovechamiento: {e}")
+        return Response({
+            'error': 'Error interno del servidor'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+@api_view(['POST'])
+@permission_classes([AllowAny])  # Agregar permisos para todos
+def obtener_tipologias_viables(request):
+    """Obtiene las tipologías viables para un lote"""
+    try:
+        data = request.data
+        tratamiento = data.get('tratamiento')
+        area_lote = data.get('area_lote')
+        frente_lote = data.get('frente_lote')
+        
+        if not tratamiento or not area_lote:
+            return Response({
+                'error': 'Tratamiento y área del lote son requeridos'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        resultado = tratamientos_service.obtener_tipologias_viables(
+            tratamiento, float(area_lote), 
+            float(frente_lote) if frente_lote else None
+        )
+        
+        return Response(resultado, status=status.HTTP_200_OK)
+        
+    except Exception as e:
+        logger.error(f"Error obteniendo tipologías viables: {e}")
+        return Response({
+            'error': 'Error interno del servidor'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 # Alias para compatibilidad con las URLs
 scrap_mapgis_cbml = scrap_cbml

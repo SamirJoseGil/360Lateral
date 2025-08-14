@@ -53,6 +53,8 @@ cp .env.example .env
 # Editar .env con tus configuraciones
 
 # 6. Ejecutar migraciones
+python manage.py makemigrations
+
 python manage.py migrate
 
 # 7. Crear superusuario

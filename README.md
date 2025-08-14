@@ -65,6 +65,13 @@ npm run dev
 - **Versionado de documentos** con historial
 - **Vista previa** de documentos directamente en la plataforma
 
+### 🏗️ Análisis Urbanístico
+- **Integración con MapGIS Medellín** para consulta automática de predios
+- **Cálculos de aprovechamiento** según POT de Medellín
+- **Determinación de tipologías viables** por lote
+- **Parámetros normativos** en tiempo real
+- **Estimación de unidades** y área construible
+
 ### 📊 Dashboard y Estadísticas
 - **Métricas en tiempo real** de ventas y disponibilidad
 - **Gráficos interactivos** con filtros avanzados
@@ -392,6 +399,74 @@ npm run dev
 npm run build
 ```
 
+### Desarrollo Local
+
+#### Configuración PostgreSQL Local
+```bash
+# 1. Instalar PostgreSQL (si no está instalado)
+# Windows: Descargar desde https://www.postgresql.org/download/windows/
+# macOS: brew install postgresql
+# Ubuntu: sudo apt install postgresql postgresql-contrib
+
+# 2. Clonar el repositorio
+git clone https://github.com/tu-usuario/360Lateral.git
+cd 360Lateral
+
+# 3. Configurar Backend
+cd Backend
+
+# 4. Crear entorno virtual
+python -m venv venv
+venv\Scripts\activate  # Windows
+# source venv/bin/activate  # Linux/macOS
+
+# 5. Instalar dependencias
+pip install -r requirements.txt
+
+# 6. Configurar variables de entorno
+cp .env.example .env
+# Editar .env con tus credenciales de PostgreSQL
+
+# 7. Configurar PostgreSQL automáticamente
+python scripts/setup_postgres.py
+
+# 8. Ejecutar servidor
+python manage.py runserver
+```
+
+#### Configuración Manual de PostgreSQL
+```bash
+# Si prefieres configurar manualmente:
+
+# 1. Conectar a PostgreSQL
+psql -U postgres
+
+# 2. Crear base de datos
+DROP DATABASE IF EXISTS lateral360;
+CREATE DATABASE lateral360
+WITH OWNER postgres
+ENCODING 'UTF8'
+LC_COLLATE = 'C'
+LC_CTYPE = 'C'
+TEMPLATE template0;
+
+# 3. Salir de PostgreSQL
+\q
+
+# 4. Ejecutar migraciones
+python manage.py makemigrations
+python manage.py migrate
+
+# 5. Crear superusuario
+python manage.py createsuperuser
+
+# 6. Crear usuarios demo
+python manage.py create_demo_users
+
+# 7. Ejecutar servidor
+python manage.py runserver
+```
+
 ## 📁 Estructura del Proyecto
 
 ```
@@ -431,6 +506,14 @@ npm run build
 
 ### Principales Endpoints
 
+#### MapGIS y Análisis Urbanístico
+- `POST /api/lotes/scrap/cbml/` - Consultar lote por CBML
+- `POST /api/lotes/scrap/matricula/` - Consultar lote por matrícula
+- `POST /api/lotes/scrap/direccion/` - Consultar lote por dirección
+- `GET /api/lotes/tratamientos/` - Listar tratamientos POT disponibles
+- `POST /api/lotes/calcular-aprovechamiento/` - Calcular aprovechamiento urbanístico
+- `POST /api/lotes/tipologias-viables/` - Obtener tipologías viables para un lote
+
 #### Autenticación
 - `POST /api/auth/login/` - Iniciar sesión
 - `POST /api/auth/logout/` - Cerrar sesión
@@ -449,6 +532,8 @@ npm run build
 
 **Desarrollo Local:**
 - Frontend: http://localhost:3000
+- Análisis Urbanístico: http://localhost:3000/analisis-lote
+- MapGIS Debug: http://localhost:3000/scrapinfo
 - Backend API: http://localhost:8000
 - Admin Panel: http://localhost:8000/admin
 - API Docs: http://localhost:8000/swagger

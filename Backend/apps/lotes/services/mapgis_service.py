@@ -10,6 +10,7 @@ from django.core.cache import cache
 import logging
 
 from .base_service import BaseService
+from .tratamientos_service import tratamientos_service
 
 logger = logging.getLogger(__name__)
 

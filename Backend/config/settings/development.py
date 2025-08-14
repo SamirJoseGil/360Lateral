@@ -2,110 +2,123 @@
 Configuración de desarrollo para Lateral 360°
 """
 from .base import *
-from decouple import config
+import os
+from datetime import timedelta
 
 # Development specific settings
 DEBUG = True
+ALLOWED_HOSTS = ['*']
 
-# Email backend for development
-EMAIL_BACKEND = config(
-    'EMAIL_BACKEND',
-    default='django.core.mail.backends.console.EmailBackend'
-)
+# ✅ SOLO PostgreSQL - Eliminar opción SQLite
+DATABASES = {
+    'default': {
+        'ENGINE': 'django.db.backends.postgresql',
+        'NAME': os.environ.get('DB_NAME', 'lateral360'),
+        'USER': os.environ.get('DB_USER', 'postgres'),
+        'PASSWORD': os.environ.get('DB_PASSWORD', '1234'),
+        'HOST': os.environ.get('DB_HOST', 'localhost'),
+        'PORT': os.environ.get('DB_PORT', '5432'),
+        'OPTIONS': {
+            'options': '-c client_encoding=UTF8',  # ✅ Forzar codificación UTF-8
+        },
+    }
+}
+print(f"📊 Database: PostgreSQL - {DATABASES['default']['HOST']}:{DATABASES['default']['PORT']}")
 
-# Development specific apps
-INSTALLED_APPS += [
-    # 'django_extensions',  # Si lo instalamos más adelante
+# CORS settings para desarrollo
+CORS_ALLOWED_ORIGINS = [
+    "http://localhost:3000",
+    "http://localhost:5173",
+    "http://127.0.0.1:3000",
+    "http://127.0.0.1:5173",
+    "http://localhost:8002",  # Puerto del frontend
 ]
 
-# Database for development (puede usar SQLite si lo prefieres)
-if config('USE_SQLITE', default=False, cast=bool):
-    DATABASES = {
-        'default': {
-            'ENGINE': 'django.db.backends.sqlite3',
-            'NAME': BASE_DIR / 'db.sqlite3',
-        }
+CORS_ALLOW_ALL_ORIGINS = True  # Solo para desarrollo
+CORS_ALLOW_CREDENTIALS = True
+
+# CSRF settings
+CSRF_TRUSTED_ORIGINS = [
+    "http://localhost:3000",
+    "http://localhost:5173",
+    "http://127.0.0.1:3000",
+    "http://127.0.0.1:5173",
+    "http://localhost:8002",  # Puerto del frontend
+]
+
+# ✅ Configuración adicional para desarrollo
+CSRF_COOKIE_SECURE = False  # Solo para desarrollo
+CSRF_COOKIE_HTTPONLY = False  # Permitir acceso desde JS en desarrollo
+CSRF_COOKIE_SAMESITE = 'Lax'  # Permitir requests cross-site en desarrollo
+SESSION_COOKIE_SECURE = False  # Solo para desarrollo
+SESSION_COOKIE_SAMESITE = 'Lax'
+
+# ✅ Configuración específica para CSRF en desarrollo
+CSRF_USE_SESSIONS = False  # Usar cookies en lugar de sesiones
+CSRF_COOKIE_NAME = 'csrftoken'
+CSRF_HEADER_NAME = 'HTTP_X_CSRFTOKEN'
+
+# JWT Settings
+SIMPLE_JWT = {
+    'ACCESS_TOKEN_LIFETIME': timedelta(minutes=60),  # 1 hora para desarrollo
+    'REFRESH_TOKEN_LIFETIME': timedelta(days=7),
+    'ROTATE_REFRESH_TOKENS': True,
+    'BLACKLIST_AFTER_ROTATION': True,
+    'UPDATE_LAST_LOGIN': True,
+    
+    'ALGORITHM': 'HS256',
+    'SIGNING_KEY': SECRET_KEY,
+    'VERIFYING_KEY': None,
+    
+    'AUTH_HEADER_TYPES': ('Bearer',),
+    'AUTH_HEADER_NAME': 'HTTP_AUTHORIZATION',
+    'USER_ID_FIELD': 'id',
+    'USER_ID_CLAIM': 'user_id',
+    
+    'AUTH_TOKEN_CLASSES': ('rest_framework_simplejwt.tokens.AccessToken',),
+    'TOKEN_TYPE_CLAIM': 'token_type',
+}
+
+# Email backend para desarrollo (imprime en consola)
+EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'
+
+# Cache simple para desarrollo
+CACHES = {
+    'default': {
+        'BACKEND': 'django.core.cache.backends.locmem.LocMemCache',
     }
+}
 
-# Debug toolbar (si lo instalamos)
-if DEBUG and config('USE_DEBUG_TOOLBAR', default=False, cast=bool):
-    INSTALLED_APPS += ['debug_toolbar']
-    MIDDLEWARE += ['debug_toolbar.middleware.DebugToolbarMiddleware']
-    INTERNAL_IPS = ['127.0.0.1', 'localhost']
+# ✅ Redis URL para desarrollo (local)
+REDIS_URL = os.environ.get('REDIS_URL', 'redis://localhost:6379/0')
 
-# REDUCIR LOGGING EXCESIVO EN DESARROLLO
+# Logging para desarrollo
 LOGGING = {
     'version': 1,
     'disable_existing_loggers': False,
-    'formatters': {
-        'simple': {
-            'format': '{levelname} {asctime} {name} {message}',
-            'style': '{',
-        },
-    },
     'handlers': {
         'console': {
             'class': 'logging.StreamHandler',
-            'formatter': 'simple',
         },
     },
     'root': {
         'handlers': ['console'],
-        'level': 'WARNING',  # Solo mostrar warnings y errores
+        'level': 'DEBUG',  # Cambiar a DEBUG para más detalles
     },
     'loggers': {
-        'django': {
+        'django.db.backends': {  # Logs de la base de datos
             'handlers': ['console'],
-            'level': 'INFO',  # Solo INFO para Django
-            'propagate': False,
-        },
-        'django.server': {
-            'handlers': ['console'],
-            'level': 'INFO',
-            'propagate': False,
-        },
-        'django.utils.autoreload': {
-            'handlers': [],
-            'level': 'ERROR',  # Silenciar autoreload debug
-            'propagate': False,
-        },
-        'apps': {
-            'handlers': ['console'],
-            'level': 'INFO',  # Solo INFO para nuestras apps
+            'level': 'DEBUG',
             'propagate': False,
         },
     },
 }
 
-# CORS settings for development
-CORS_ALLOW_ALL_ORIGINS = config('CORS_ALLOW_ALL_ORIGINS', default=True, cast=bool)
-
-# Allowed hosts adicionales para desarrollo
-ALLOWED_HOSTS += ['127.0.0.1', '0.0.0.0', 'backend', 'localhost:8000', '127.0.0.1:8000']
-
-# Disable caching in development
-CACHES = {
-    'default': {
-        'BACKEND': 'django.core.cache.backends.dummy.DummyCache',
-    }
-} if config('DISABLE_CACHE', default=True, cast=bool) else CACHES
-
-# INFORMACIÓN DE DEBUG - MEJORADA PARA EVITAR DUPLICACIÓN
-import os
+# ✅ Configuración de impresión de debug (solo una vez, SIN EMOJIS)
 if not os.environ.get('DJANGO_SETTINGS_PRINTED'):
-    print(f"🚀 Django running in DEVELOPMENT mode")
-    
-    # Mostrar información de base de datos de forma segura
+    print("Django running in DEVELOPMENT mode")
     db_config = DATABASES['default']
-    if db_config['ENGINE'] == 'django.db.backends.sqlite3':
-        print(f"📊 Database: SQLite - {db_config['NAME']}")
-    else:
-        db_host = db_config.get('HOST', 'localhost')
-        db_port = db_config.get('PORT', '5432')
-        print(f"📊 Database: {db_host}:{db_port}")
-
-    print(f"🔗 Redis: {REDIS_URL}")
-    print(f"🌐 CORS Allow All: {CORS_ALLOW_ALL_ORIGINS}")
-    
-    # Marcar como impreso para evitar duplicación
+    print(f"Database: PostgreSQL - {db_config['HOST']}:{db_config['PORT']} - {db_config['NAME']}")
+    print(f"Redis: {REDIS_URL}")
+    print(f"CORS Allow All: {CORS_ALLOW_ALL_ORIGINS}")
     os.environ['DJANGO_SETTINGS_PRINTED'] = 'true'

@@ -6,9 +6,7 @@ from django.urls import path, include
 from django.conf import settings
 from django.conf.urls.static import static
 from django.http import JsonResponse
-from rest_framework import permissions
-from drf_yasg.views import get_schema_view
-from drf_yasg import openapi
+from drf_spectacular.views import SpectacularAPIView, SpectacularSwaggerView, SpectacularRedocView
 
 # Vista simple para la raíz de la API
 def api_root(request):
@@ -17,25 +15,20 @@ def api_root(request):
         'version': '1.0.0',
         'endpoints': {
             'auth': '/api/auth/',
+            'lotes': '/api/lotes/',
             'health': '/api/health/',
             'documentation': '/swagger/',
             'admin': '/admin/',
         }
     })
 
-# Configuración de Swagger
-schema_view = get_schema_view(
-   openapi.Info(
-      title="Lateral 360° API",
-      default_version='v1',
-      description="API REST para la plataforma de gestión de lotes inmobiliarios",
-      terms_of_service="https://www.google.com/policies/terms/",
-      contact=openapi.Contact(email="contact@lateral360.local"),
-      license=openapi.License(name="MIT License"),
-   ),
-   public=True,
-   permission_classes=(permissions.AllowAny,),
-)
+def health_check(request):
+    """Health check endpoint"""
+    return JsonResponse({
+        'status': 'ok',
+        'message': 'Backend Lateral 360° funcionando correctamente',
+        'version': '1.0.0'
+    })
 
 urlpatterns = [
     # Admin
@@ -46,17 +39,15 @@ urlpatterns = [
     path('api/', api_root, name='api_root_api'),
     
     # Health checks
-    path('api/health/', include('utils.urls')),
+    path('api/health/', health_check, name='api_health_check'),
     
-    # Autenticación y usuarios - Comentado temporalmente
-    # path('api/auth/', include('apps.users.urls')),
-    
-    # Documentación API
-    path('swagger<format>/', schema_view.without_ui(cache_timeout=0), name='schema-json'),
-    path('swagger/', schema_view.with_ui('swagger', cache_timeout=0), name='schema-swagger-ui'),
-    path('redoc/', schema_view.with_ui('redoc', cache_timeout=0), name='schema-redoc'),
+    # ✅ Documentación API con Spectacular
+    path('api/schema/', SpectacularAPIView.as_view(), name='schema'),
+    path('swagger/', SpectacularSwaggerView.as_view(url_name='schema'), name='swagger-ui'),
+    path('redoc/', SpectacularRedocView.as_view(url_name='schema'), name='redoc'),
 
-    # Rutas de lotes
+    # Apps URLs
+    path('api/auth/', include('apps.users.urls')),
     path('api/lotes/', include('apps.lotes.urls')),
 ]
 

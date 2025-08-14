@@ -25,4 +25,9 @@ urlpatterns = [
     
     # Health check
     path('health/mapgis/', views.health_mapgis, name='health_mapgis'),
+
+    # Endpoints de tratamientos
+    path('tratamientos/', views.listar_tratamientos, name='listar_tratamientos'),
+    path('calcular-aprovechamiento/', views.calcular_aprovechamiento, name='calcular_aprovechamiento'),
+    path('tipologias-viables/', views.obtener_tipologias_viables, name='tipologias_viables'),
 ]

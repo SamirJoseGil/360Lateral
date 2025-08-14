@@ -36,7 +36,7 @@ class UserManager(BaseUserManager):
         return self._create_user(email, password, **extra_fields)
 
 class User(AbstractUser):
-    """Custom User model."""
+    """Modelo de usuario extendido"""
     
     # Roles disponibles
     ADMIN = 'admin'
@@ -49,7 +49,6 @@ class User(AbstractUser):
         (DEVELOPER, _('Desarrollador')),
     ]
     
-    username = None
     email = models.EmailField(_('email address'), unique=True)
     first_name = models.CharField(_('first name'), max_length=150)
     last_name = models.CharField(_('last name'), max_length=150)
@@ -76,11 +75,11 @@ class User(AbstractUser):
         ordering = ['-created_at']
     
     def __str__(self):
-        return self.email
+        return f"{self.first_name} {self.last_name} ({self.email})"
     
     @property
     def full_name(self):
-        return f"{self.first_name} {self.last_name}"
+        return f"{self.first_name} {self.last_name}".strip()
     
     @property
     def is_admin(self):
@@ -137,4 +136,5 @@ class UserProfile(models.Model):
         verbose_name_plural = 'Perfiles de Usuario'
     
     def __str__(self):
+        return f"Perfil de {self.user.email}"
         return f"Perfil de {self.user.email}"

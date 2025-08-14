@@ -279,6 +279,7 @@ export function useAuth() {
   const [user, setUser] = useState<User | null>(null)
   const [loading, setLoading] = useState(true)
 
+  // Mock authentication for development
   const login = async (credentials: LoginCredentials) => {
     const response = await AuthService.login(credentials)
     setUser(response.user)
@@ -293,6 +294,39 @@ export function useAuth() {
   return { user, loading, login, logout }
 }
 ```
+
+### Mock Authentication
+
+Durante el desarrollo, el sistema utiliza autenticación mock:
+
+```typescript
+// Usuarios de prueba disponibles:
+// - admin@lateral360.com (Administrador)
+// - propietario@lateral360.com (Propietario)  
+// - desarrollador@lateral360.com (Desarrollador)
+// Cualquier contraseña funciona en modo mock
+```
+
+Para cambiar a autenticación real:
+1. Asegurar que el backend esté funcionando
+2. En `app/services/auth.ts` cambiar `useMockAuth = false`
+
+### Autenticación Real
+
+El sistema ahora utiliza autenticación real con el backend Django:
+
+```typescript
+// Usuarios de prueba disponibles:
+// - admin@lateral360.com / admin123 (Administrador)
+// - propietario@lateral360.com / propietario123 (Propietario)  
+// - desarrollador@lateral360.com / desarrollador123 (Desarrollador)
+```
+
+El sistema maneja automáticamente:
+- Tokens JWT con refresh automático
+- Cookies httpOnly para mayor seguridad
+- Protección CSRF
+- Redirección automática por roles
 
 ## 🎯 Rutas
 
