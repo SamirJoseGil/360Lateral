@@ -1,17 +1,13 @@
-export type UserRole = 'admin' | 'propietario' | 'desarrollador';
+export type UserRole = "admin" | "propietario" | "desarrollador";
 
 export interface User {
   id: string;
-  email: string;
   firstName: string;
   lastName: string;
+  email: string;
   role: UserRole;
-  avatar?: string;
   phone?: string;
-  isActive: boolean;
-  createdAt: string;
-  updatedAt: string;
-  bio: string;
+  bio?: string;
 }
 
 export interface LoginCredentials {
@@ -25,7 +21,6 @@ export interface RegisterData {
   firstName: string;
   lastName: string;
   role: UserRole;
-  phone?: string;
 }
 
 export interface AuthResponse {

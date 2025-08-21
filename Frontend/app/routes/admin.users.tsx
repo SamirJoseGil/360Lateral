@@ -1,24 +1,16 @@
 import { useState, useEffect } from "react";
 import { Navigate, Link } from "@remix-run/react";
 import { useAuth } from "~/hooks/useAuth";
-
-interface User {
-  id: string;
-  email: string;
-  firstName: string;
-  lastName: string;
-  role: "admin" | "propietario" | "desarrollador";
-  isActive: boolean;
-  createdAt: string;
-  lastLogin?: string;
-}
+import { UsersService } from "~/services/users";
+import type { User, UserUpdate, UserRole } from "~/types/users";
 
 export default function AdminUsers() {
-  const { user, loading, hasRole, token } = useAuth(); // ✅ Añadido token para autenticación
+  const { user, loading, hasRole, token } = useAuth();
   const [users, setUsers] = useState<User[]>([]);
   const [loadingUsers, setLoadingUsers] = useState(true);
-  const [selectedRole, setSelectedRole] = useState<string>("all");
+  const [selectedRole, setSelectedRole] = useState<UserRole | "all">("all");
   const [searchTerm, setSearchTerm] = useState("");
+  const [error, setError] = useState<string>("");
 
   // ✅ Verificar permisos de admin
   if (!loading && (!user || !hasRole("admin"))) {
@@ -26,46 +18,46 @@ export default function AdminUsers() {
   }
 
   useEffect(() => {
-    loadUsers();
-  }, []);
+    if (token) loadUsers();
+    // eslint-disable-next-line
+  }, [token]);
 
   const loadUsers = async () => {
     try {
       setLoadingUsers(true);
-      const response = await fetch("/api/users/", {
-        method: "GET",
-        headers: {
-          Authorization: `Bearer ${token}`, // ✅ Autenticación con token
-        },
-      });
-      if (!response.ok) {
-        throw new Error("Error al cargar usuarios");
-      }
-      const data = await response.json();
+      setError("");
+      const data = await UsersService.list(token!);
       setUsers(data);
     } catch (error) {
-      console.error("Error cargando usuarios:", error);
+      setError(error instanceof Error ? error.message : "Error al cargar usuarios");
+      setLoadingUsers(false); // Asegura que loading se detenga en error
     } finally {
       setLoadingUsers(false);
     }
   };
 
-  const updateUser = async (id: string, updates: Partial<User>) => {
+  const updateUser = async (id: string, updates: UserUpdate) => {
     try {
-      const response = await fetch(`/api/users/${id}/`, {
-        method: "PUT",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`, // ✅ Autenticación con token
-        },
-        body: JSON.stringify(updates),
-      });
-      if (!response.ok) {
-        throw new Error("Error al actualizar usuario");
-      }
-      loadUsers(); // Recargar usuarios después de actualizar
+      setError("");
+      await UsersService.update(id, updates, token!);
+      await loadUsers();
     } catch (error) {
-      console.error("Error actualizando usuario:", error);
+      setError(
+        error instanceof Error ? error.message : "Error al actualizar usuario"
+      );
+    }
+  };
+
+  const deleteUser = async (id: string) => {
+    if (!window.confirm("¿Seguro que deseas eliminar este usuario?")) return;
+    try {
+      setError("");
+      await UsersService.delete(id, token!);
+      await loadUsers();
+    } catch (error) {
+      setError(
+        error instanceof Error ? error.message : "Error al eliminar usuario"
+      );
     }
   };
 
@@ -76,7 +68,6 @@ export default function AdminUsers() {
       u.firstName.toLowerCase().includes(searchTerm.toLowerCase()) ||
       u.lastName.toLowerCase().includes(searchTerm.toLowerCase()) ||
       u.email.toLowerCase().includes(searchTerm.toLowerCase());
-
     return matchesRole && matchesSearch;
   });
 
@@ -96,13 +87,13 @@ export default function AdminUsers() {
   const getRoleBadgeColor = (role: string) => {
     switch (role) {
       case "admin":
-        return "bg-purple-100 text-purple-800";
+        return "bg-purple-700 text-white";
       case "propietario":
-        return "bg-green-100 text-green-800";
+        return "bg-green-700 text-white";
       case "desarrollador":
-        return "bg-blue-100 text-blue-800";
+        return "bg-blue-700 text-white";
       default:
-        return "bg-gray-100 text-gray-800";
+        return "bg-gray-600 text-white";
     }
   };
 
@@ -118,22 +109,26 @@ export default function AdminUsers() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="max-w-6xl mx-auto py-8 px-4 space-y-6">
       {/* Header */}
-      <div className="sm:flex sm:items-center sm:justify-between">
+      <div className="flex flex-col md:flex-row md:items-center md:justify-between mb-4">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">
-            Gestión de Usuarios
-          </h1>
+          <h1 className="text-3xl font-bold text-gray-900">Gestión de Usuarios</h1>
           <p className="mt-2 text-sm text-gray-700">
             Administra todos los usuarios de la plataforma
           </p>
         </div>
+        <Link
+          to="/admin"
+          className="mt-4 md:mt-0 px-4 py-2 bg-blue-700 text-white rounded-md hover:bg-blue-800 transition-colors"
+        >
+          ← Volver al Panel Admin
+        </Link>
       </div>
 
       {/* Filters */}
-      <div className="bg-white shadow rounded-lg p-6">
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+      <div className="bg-white rounded-lg shadow p-6 mb-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
             <label
               htmlFor="search"
@@ -146,11 +141,10 @@ export default function AdminUsers() {
               id="search"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+              className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-700 focus:border-blue-700 sm:text-sm"
               placeholder="Buscar por nombre o email..."
             />
           </div>
-
           <div>
             <label
               htmlFor="role"
@@ -161,8 +155,8 @@ export default function AdminUsers() {
             <select
               id="role"
               value={selectedRole}
-              onChange={(e) => setSelectedRole(e.target.value)}
-              className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+              onChange={(e) => setSelectedRole(e.target.value as UserRole)}
+              className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-700 focus:border-blue-700 sm:text-sm"
             >
               <option value="all">Todos los roles</option>
               <option value="admin">Administradores</option>
@@ -173,59 +167,120 @@ export default function AdminUsers() {
         </div>
       </div>
 
+      {/* Error Message */}
+      {error && (
+        <div className="bg-red-50 border border-red-200 rounded-md p-4 mb-4">
+          <div className="flex">
+            <div className="text-red-400 mr-2">❌</div>
+            <div className="text-sm text-red-700">{error}</div>
+          </div>
+        </div>
+      )}
+
       {/* Users Table */}
-      <div className="bg-white shadow overflow-hidden sm:rounded-md">
-        <ul className="divide-y divide-gray-200">
-          {loadingUsers ? (
-            <li className="px-4 py-4 text-center">
-              <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600 mx-auto"></div>
-              <p className="mt-2 text-sm text-gray-500">Cargando usuarios...</p>
-            </li>
-          ) : filteredUsers.length === 0 ? (
-            <li className="px-4 py-4 text-center">
-              <p className="text-sm text-gray-500">
-                No se encontraron usuarios
-              </p>
-            </li>
-          ) : (
-            filteredUsers.map((userItem) => (
-              <li key={userItem.id}>
-                <div className="px-4 py-4 flex items-center justify-between">
-                  <div className="flex items-center">
-                    <div className="ml-4">
-                      <div className="flex items-center">
-                        <div className="text-sm font-medium text-gray-900">
-                          {userItem.firstName} {userItem.lastName}
-                        </div>
-                        <span
-                          className={`ml-2 inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getRoleBadgeColor(
-                            userItem.role
-                          )}`}
-                        >
-                          {getRoleDisplay(userItem.role)}
-                        </span>
-                      </div>
-                      <div className="text-sm text-gray-500">
-                        {userItem.email}
-                      </div>
-                    </div>
-                  </div>
-                  <div className="flex items-center space-x-2">
-                    <button
-                      type="button"
-                      className="text-blue-600 hover:text-blue-900 text-sm font-medium"
-                      onClick={
-                        () => updateUser(userItem.id, { role: "admin" }) // Ejemplo: Cambiar rol
-                      }
-                    >
-                      Cambiar a Admin
-                    </button>
-                  </div>
-                </div>
-              </li>
-            ))
-          )}
-        </ul>
+      <div className="bg-white rounded-lg shadow overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="min-w-full divide-y divide-gray-200">
+            <thead className="bg-gray-50">
+              <tr>
+                <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
+                  Nombre
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
+                  Email
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
+                  Rol
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
+                  Estado
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
+                  Último acceso
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
+                  Acciones
+                </th>
+              </tr>
+            </thead>
+            <tbody className="bg-white divide-y divide-gray-200">
+              {loadingUsers ? (
+                <tr>
+                  <td colSpan={6} className="px-6 py-8 text-center text-gray-500">
+                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-700 mx-auto mb-4"></div>
+                    Cargando usuarios...
+                  </td>
+                </tr>
+              ) : filteredUsers.length === 0 ? (
+                <tr>
+                  <td colSpan={6} className="px-6 py-8 text-center text-gray-500">
+                    No se encontraron usuarios
+                  </td>
+                </tr>
+              ) : (
+                filteredUsers.map((userItem) => (
+                  <tr key={userItem.id} className="hover:bg-blue-50 transition-colors">
+                    <td className="px-6 py-4 whitespace-nowrap font-medium text-gray-900">
+                      {userItem.firstName} {userItem.lastName}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-gray-700">
+                      {userItem.email}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <span
+                        className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getRoleBadgeColor(
+                          userItem.role
+                        )}`}
+                      >
+                        {getRoleDisplay(userItem.role)}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <span
+                        className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${userItem.isActive
+                          ? "bg-green-600 text-white"
+                          : "bg-gray-400 text-white"
+                          }`}
+                      >
+                        {userItem.isActive ? "Activo" : "Inactivo"}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-gray-700">
+                      {userItem.lastLogin
+                        ? new Date(userItem.lastLogin).toLocaleString()
+                        : "Nunca"}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap flex gap-2">
+                      <button
+                        type="button"
+                        className="px-3 py-1 rounded bg-yellow-600 text-white text-xs font-semibold hover:bg-yellow-700 transition"
+                        onClick={() =>
+                          updateUser(userItem.id, {
+                            role:
+                              userItem.role === "admin"
+                                ? "propietario"
+                                : "admin",
+                          })
+                        }
+                        title="Cambiar rol"
+                      >
+                        Cambiar Rol
+                      </button>
+                      <button
+                        type="button"
+                        className="px-3 py-1 rounded bg-red-600 text-white text-xs font-semibold hover:bg-red-700 transition"
+                        onClick={() => deleteUser(userItem.id)}
+                        title="Eliminar usuario"
+                      >
+                        Eliminar
+                      </button>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
   );

@@ -9,9 +9,8 @@ import {
   Scripts,
   ScrollRestoration,
 } from "@remix-run/react";
-
-import { MainLayout } from "./components/layout/MainLayout";
-import { AuthProvider } from "./hooks/useAuth";
+import Footer from "./components/organisms/Footer";
+import { Navbar } from "./components/organisms/Navbar";
 export const links: LinksFunction = () => [
   { rel: "preconnect", href: "https://fonts.googleapis.com" },
   {
@@ -26,7 +25,9 @@ export const links: LinksFunction = () => [
   ...(cssBundleHref ? [{ rel: "stylesheet", href: cssBundleHref }] : []),
 ];
 
+
 export default function App() {
+
   return (
     <html lang="es">
       <head>
@@ -36,11 +37,9 @@ export default function App() {
         <Links />
       </head>
       <body>
-        <AuthProvider>
-          <MainLayout>
-            <Outlet />
-          </MainLayout>
-        </AuthProvider>
+        <Navbar />
+        <Outlet />
+        <Footer />
         <ScrollRestoration />
         <Scripts />
         <LiveReload />

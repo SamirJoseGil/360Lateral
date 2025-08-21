@@ -1,126 +1,28 @@
 import { Link, useLocation } from "@remix-run/react";
 import { useAuth } from "~/hooks/useAuth";
 import type { UserRole } from "~/types/auth";
+import { getNavItemsByRole } from "~/utils/navPermissions";
 
-interface NavItem {
-  href: string;
-  label: string;
-  roles: UserRole[];
-}
-
-const getNavItemsByRole = (role: UserRole): NavItem[] => {
-  switch (role) {
-    case "admin":
-      return [
-        {
-          href: "/dashboard/admin",
-          label: "Panel de Control",
-          roles: ["admin"],
-        },
-        {
-          href: "/admin/users",
-          label: "Usuarios",
-          roles: ["admin"],
-        },
-        {
-          href: "/admin/stats",
-          label: "Estadísticas",
-          roles: ["admin"],
-        },
-        {
-          href: "/admin/validation",
-          label: "Validaciones",
-          roles: ["admin"],
-        },
-        {
-          href: "/analisis-lote",
-          label: "Análisis Urbanístico",
-          roles: ["admin"],
-        },
-        {
-          href: "/scrapinfo",
-          label: "MapGIS Debug",
-          roles: ["admin"],
-        },
-      ];
-    case "propietario":
-      return [
-        {
-          href: "/dashboard/owner",
-          label: "Mi Dashboard",
-          roles: ["propietario"],
-        },
-        {
-          href: "/lot/new",
-          label: "Registrar Lote",
-          roles: ["propietario"],
-        },
-        {
-          href: "/lots/my",
-          label: "Mis Lotes",
-          roles: ["propietario"],
-        },
-        {
-          href: "/documents",
-          label: "Documentos",
-          roles: ["propietario"],
-        },
-      ];
-    case "desarrollador":
-      return [
-        {
-          href: "/dashboard/developer",
-          label: "Dashboard",
-          roles: ["desarrollador"],
-        },
-        {
-          href: "/lots/search",
-          label: "Buscar Lotes",
-          roles: ["desarrollador"],
-        },
-        {
-          href: "/favorites",
-          label: "Favoritos",
-          roles: ["desarrollador"],
-        },
-        {
-          href: "/search-criteria",
-          label: "Criterios de Búsqueda",
-          roles: ["desarrollador"],
-        },
-        {
-          href: "/analisis-lote",
-          label: "Análisis Urbanístico",
-          roles: ["desarrollador"],
-        },
-      ];
-    default:
-      return [];
-  }
-};
-
-function normalizeRole(role?: string | null): UserRole | null {
-  const r = (role || "").toLowerCase();
-  if (["admin", "administrator", "administrador"].includes(r)) return "admin";
-  if (["owner", "propietario", "dueno", "dueño"].includes(r))
-    return "propietario";
-  if (["developer", "desarrollador"].includes(r)) return "desarrollador";
-  return null;
-}
-
-function getRoleFromCookie(): UserRole | null {
-  if (typeof document === "undefined") return null;
-  const m = document.cookie.split("; ").find((c) => c.startsWith("l360_role="));
-  return normalizeRole(m ? decodeURIComponent(m.split("=")[1]) : null);
-}
-
-export function Navigation() {
-  const { user, logout } = useAuth();
+export function Navbar() {
   const location = useLocation();
-  const roleFromCookie = getRoleFromCookie();
-  const effectiveRole = normalizeRole(user?.role) ?? roleFromCookie ?? null;
+  const { user, logout, loading } = useAuth();
+  const effectiveRole = user?.role ?? null;
+  const navItems = effectiveRole ? getNavItemsByRole(effectiveRole) : [];
 
   // Navbar pública si no hay rol
+  if (loading) {
+    return (
+      <nav className="bg-white shadow-lg border-b">
+        <div className="max-w-7xl mx-auto px-4">
+          <div className="flex justify-between items-center h-16">
+            <span className="text-xl font-bold text-gray-900">Lateral 360°</span>
+            <div className="text-gray-500">Cargando...</div>
+          </div>
+        </div>
+      </nav>
+    );
+  }
+
   if (!effectiveRole) {
     return (
       <nav className="bg-white shadow-lg border-b">
@@ -130,11 +32,11 @@ export function Navigation() {
               Lateral 360°
             </Link>
             <div className="hidden md:flex space-x-6">
-              <Link to="/login" className="text-gray-600 hover:text-gray-900">
+              <Link to="auth/login" className="text-gray-600 hover:text-gray-900">
                 Iniciar Sesión
               </Link>
               <Link
-                to="/register"
+                to="auth/register"
                 className="text-white bg-blue-600 hover:bg-blue-700 px-3 py-1.5 rounded-md"
               >
                 Registrarse
@@ -146,14 +48,17 @@ export function Navigation() {
     );
   }
 
-  const navItems = getNavItemsByRole(effectiveRole);
-
   return (
     <nav className="bg-white shadow-lg border-b">
       <div className="max-w-7xl mx-auto px-4">
         <div className="flex justify-between items-center h-16">
           <Link
-            to={`/dashboard/${getRolePath(effectiveRole)}`}
+            to={`/dashboard/${effectiveRole === "admin"
+              ? "admin"
+              : effectiveRole === "propietario"
+                ? "owner"
+                : "developer"
+              }`}
             className="text-xl font-bold text-gray-900"
           >
             Lateral 360°
@@ -164,11 +69,10 @@ export function Navigation() {
               <Link
                 key={item.href}
                 to={item.href}
-                className={`inline-flex items-center px-3 py-2 text-sm font-medium rounded-md transition-colors ${
-                  location.pathname === item.href
-                    ? "bg-blue-100 text-blue-700"
-                    : "text-gray-500 hover:text-gray-700 hover:bg-gray-100"
-                }`}
+                className={`inline-flex items-center px-3 py-2 text-sm font-medium rounded-md transition-colors ${location.pathname === item.href
+                  ? "bg-blue-100 text-blue-700"
+                  : "text-gray-500 hover:text-gray-700 hover:bg-gray-100"
+                  }`}
               >
                 {item.label}
               </Link>
@@ -176,7 +80,10 @@ export function Navigation() {
           </div>
 
           {user ? (
-            <UserMenu user={user} logout={logout} />
+            <UserMenu
+              user={user}
+              logout={logout}
+            />
           ) : (
             <div className="flex space-x-4">
               <Link
@@ -202,11 +109,10 @@ export function Navigation() {
             <Link
               key={item.href}
               to={item.href}
-              className={`block px-3 py-2 text-sm font-medium rounded-md ${
-                location.pathname === item.href
-                  ? "bg-blue-100 text-blue-700"
-                  : "text-gray-500 hover:text-gray-700 hover:bg-gray-100"
-              }`}
+              className={`block px-3 py-2 text-sm font-medium rounded-md ${location.pathname === item.href
+                ? "bg-blue-100 text-blue-700"
+                : "text-gray-500 hover:text-gray-700 hover:bg-gray-100"
+                }`}
             >
               {item.label}
             </Link>
@@ -215,19 +121,6 @@ export function Navigation() {
       </div>
     </nav>
   );
-}
-
-function getRolePath(role: UserRole): string {
-  switch (role) {
-    case "admin":
-      return "admin";
-    case "propietario":
-      return "owner";
-    case "desarrollador":
-      return "developer";
-    default:
-      return "owner";
-  }
 }
 
 function UserMenu({

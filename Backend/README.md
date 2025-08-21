@@ -2,6 +2,53 @@
 
 API REST desarrollada con Django para la gestión de lotes inmobiliarios, usuarios y documentos.
 
+---
+
+## 🌐 Endpoints Principales
+
+**Autenticación**
+- `POST /api/auth/register/` — Registro de usuario
+- `POST /api/auth/login/` — Inicio de sesión
+- `POST /api/auth/logout/` — Cierre de sesión
+- `GET /api/auth/users/me/` — Perfil de usuario autenticado
+
+**Usuarios**
+- `GET /api/users/` — Listar usuarios
+- `GET /api/users/{id}/` — Detalles de usuario
+- `PUT /api/users/{id}/` — Actualizar usuario
+- `DELETE /api/users/{id}/` — Eliminar usuario
+
+**Lotes**
+- `GET /api/lotes/` — Listar lotes
+- `GET /api/lotes/{id}/` — Detalles de lote
+- `POST /api/lotes/` — Crear lote
+- `PUT /api/lotes/{id}/` — Actualizar lote
+- `DELETE /api/lotes/{id}/` — Eliminar lote
+
+**Scraping MapGIS**
+- `POST /api/lotes/scrap/cbml/` — Consultar por CBML
+- `POST /api/lotes/scrap/matricula/` — Consultar por matrícula
+- `POST /api/lotes/scrap/direccion/` — Consultar por dirección
+- `GET /api/lotes/health/mapgis/` — Health check MapGIS
+- `POST /api/lotes/test/mapgis/session/` — Test sesión MapGIS
+- `POST /api/lotes/test/mapgis/real/` — Test conexión real MapGIS
+- `GET /api/lotes/investigate/mapgis/` — Investigar endpoints MapGIS
+- `POST /api/lotes/test/mapgis/complete/` — Test extracción completa MapGIS
+- `POST /api/lotes/restricciones/completas/` — Consulta restricciones ambientales
+
+**Tratamientos POT**
+- `GET /api/lotes/tratamientos/` — Listar tratamientos POT
+- `POST /api/lotes/aprovechamiento/` — Calcular aprovechamiento urbanístico
+- `POST /api/lotes/tipologias/` — Obtener tipologías viables
+
+**Documentos**
+- `GET /api/documentos/` — Listar documentos
+- `GET /api/documentos/{id}/` — Detalles de documento
+- `POST /api/documentos/` — Subir documento
+- `DELETE /api/documentos/{id}/` — Eliminar documento
+
+---
+
 ## 📋 Tabla de Contenidos
 
 - [🚀 Inicio Rápido](#-inicio-rápido)

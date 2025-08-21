@@ -254,4 +254,6 @@ export class AuthService {
       this.clearRoleCookie(); // ✅ limpiar cookie rol
     }
   }
+
+  // Toda la lógica de login, logout, registro, refresh y getCurrentUser ya está aquí.
 }
