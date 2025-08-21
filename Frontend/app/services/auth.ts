@@ -1,259 +1,301 @@
-import type { User, LoginCredentials, RegisterData, AuthResponse } from '~/types/auth';
+import type {
+  LoginData,
+  RegisterData,
+  LoginResponse,
+  RegisterResponse,
+  LogoutResponse,
+  ChangePasswordData,
+  ChangePasswordResponse,
+  User,
+  RateLimitError,
+} from '../types';
+import { apiClient } from './api';
+import { TokenStorage, RateLimit, ValidationUtils } from '../utils';
 
+/**
+ * Servicio de autenticación basado en la documentación de la API
+ */
 export class AuthService {
-  private static apiUrl = typeof window !== 'undefined' 
-    ? window.location.origin.replace(':3000', ':8000').replace(':8002', ':8000')
-    : 'http://localhost:8000';
-  private static useMockAuth = false; // ✅ Cambiar a autenticación real
+  private static readonly RATE_LIMITS = {
+    LOGIN: { maxAttempts: 5, windowMs: 5 * 60 * 1000 }, // 5 intentos en 5 minutos
+    REGISTER: { maxAttempts: 3, windowMs: 60 * 60 * 1000 }, // 3 intentos en 1 hora
+  };
 
-  // ✅ Método para obtener el token CSRF
-  private static async getCSRFToken(): Promise<string> {
+  /**
+   * Registro de nuevo usuario
+   * POST /api/auth/register/
+   */
+  static async register(data: RegisterData): Promise<RegisterResponse> {
+    // Verificar rate limiting del cliente
+    const rateLimitKey = `register_${window.location.hostname}`;
+    const { maxAttempts, windowMs } = this.RATE_LIMITS.REGISTER;
+    
+    if (RateLimit.isBlocked(rateLimitKey, maxAttempts, windowMs)) {
+      const remainingTime = RateLimit.getRemainingTime(rateLimitKey);
+      throw {
+        error: 'Rate limit exceeded',
+        message: `Demasiados intentos de registro. Intente en ${Math.ceil(remainingTime / 1000 / 60)} minutos.`,
+        status_code: 429,
+      } as RateLimitError;
+    }
+
+    // Validaciones del lado del cliente
+    this.validateRegistrationData(data);
+
     try {
-      const response = await fetch(`${this.apiUrl}/api/auth/csrf/`, {
-        method: 'GET',
-        credentials: 'include',
+      RateLimit.recordAttempt(rateLimitKey, windowMs);
+      
+      const response = await apiClient.post<RegisterResponse>('/api/auth/register/', data, {
+        skipAuth: true
       });
-      
-      if (response.ok) {
-        const data = await response.json();
-        return data.csrfToken || '';
+
+      // Guardar tokens automáticamente
+      if (response.tokens) {
+        TokenStorage.setTokens(response.tokens);
       }
-      
-      // Fallback: intentar obtener del cookie
-      const csrfCookie = document.cookie
-        .split('; ')
-        .find(row => row.startsWith('csrftoken='));
-      return csrfCookie ? csrfCookie.split('=')[1] : '';
+
+      return response;
     } catch (error) {
-      console.warn('Error obteniendo CSRF token:', error);
-      return '';
+      console.error('Registration error:', error);
+      throw error;
     }
   }
 
-  // Normalizar el rol a los valores usados en el front
-  private static normalizeRole(role?: string | null): string {
-    const r = (role || '').toLowerCase();
-    if (['admin', 'administrator', 'administrador'].includes(r)) return 'admin';
-    if (['owner', 'propietario', 'dueno', 'dueño'].includes(r)) return 'propietario';
-    if (['developer', 'desarrollador'].includes(r)) return 'desarrollador';
-    return r || '';
-  }
+  /**
+   * Inicio de sesión
+   * POST /api/auth/login/
+   */
+  static async login(data: LoginData): Promise<LoginResponse> {
+    // Verificar rate limiting por IP
+    const ipRateLimitKey = `login_ip_${window.location.hostname}`;
+    const emailRateLimitKey = `login_email_${data.email}`;
+    
+    const { maxAttempts, windowMs } = this.RATE_LIMITS.LOGIN;
+    
+    if (RateLimit.isBlocked(ipRateLimitKey, maxAttempts, windowMs)) {
+      const remainingTime = RateLimit.getRemainingTime(ipRateLimitKey);
+      throw {
+        error: 'Rate limit exceeded',
+        message: `Demasiados intentos desde esta conexión. Intente en ${Math.ceil(remainingTime / 1000 / 60)} minutos.`,
+        status_code: 429,
+      } as RateLimitError;
+    }
 
-  // helper cookies rol
-  private static setRoleCookie(role: string) {
-    if (typeof document === 'undefined') return;
-    const normalized = this.normalizeRole(role);
-    document.cookie = `l360_role=${encodeURIComponent(normalized)}; Path=/; Max-Age=${7 * 24 * 60 * 60}; SameSite=Lax`;
-  }
-  private static clearRoleCookie() {
-    if (typeof document === 'undefined') return;
-    document.cookie = `l360_role=; Path=/; Max-Age=0; SameSite=Lax`;
-  }
+    if (RateLimit.isBlocked(emailRateLimitKey, maxAttempts, 15 * 60 * 1000)) { // 15 minutos para email
+      const remainingTime = RateLimit.getRemainingTime(emailRateLimitKey);
+      throw {
+        error: 'Account temporarily locked',
+        message: `Cuenta temporalmente bloqueada. Intente en ${Math.ceil(remainingTime / 1000 / 60)} minutos.`,
+        status_code: 429,
+      } as RateLimitError;
+    }
 
-  static async login(credentials: LoginCredentials): Promise<AuthResponse> {
+    // Validaciones del lado del cliente
+    this.validateLoginData(data);
+
     try {
-      // ✅ Obtener token CSRF primero
-      const csrfToken = await this.getCSRFToken();
+      RateLimit.recordAttempt(ipRateLimitKey, windowMs);
+      RateLimit.recordAttempt(emailRateLimitKey, 15 * 60 * 1000);
       
-      const response = await fetch(`${this.apiUrl}/api/auth/login/`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(csrfToken ? { 'X-CSRFToken': csrfToken } : {}),
-        },
-        credentials: 'include', // ✅ Incluir cookies httpOnly
-        body: JSON.stringify(credentials),
+      const response = await apiClient.post<LoginResponse>('/api/auth/login/', data, {
+        skipAuth: true
       });
 
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.detail || errorData.message || 'Credenciales inválidas');
+      // Guardar tokens automáticamente
+      if (response.tokens) {
+        TokenStorage.setTokens(response.tokens);
       }
 
-      const data = await response.json();
-      
-      // ✅ Guardar token en localStorage como backup
-      if (data.access && typeof window !== 'undefined') {
-        localStorage.setItem('auth_token', data.access);
-        if (data.refresh) {
-          localStorage.setItem('refresh_token', data.refresh);
-        }
-      }
-      // ✅ normalizar y persistir rol
-      if (data.user) {
-        data.user.role = this.normalizeRole(data.user.role);
-        this.setRoleCookie(data.user.role);
-      }
-
-      return {
-        user: data.user,
-        token: data.access,
-        refreshToken: data.refresh
-      };
+      return response;
     } catch (error) {
-      console.error('Error en login:', error);
-      throw error instanceof Error ? error : new Error('Error al iniciar sesión');
+      console.error('Login error:', error);
+      throw error;
     }
   }
 
-  static async register(data: RegisterData): Promise<AuthResponse> {
+  /**
+   * Cierre de sesión
+   * POST /api/auth/logout/
+   */
+  static async logout(): Promise<LogoutResponse> {
     try {
-      // ✅ Obtener token CSRF primero
-      const csrfToken = await this.getCSRFToken();
+      const response = await apiClient.post<LogoutResponse>('/api/auth/logout/');
       
-      const response = await fetch(`${this.apiUrl}/api/auth/register/`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(csrfToken ? { 'X-CSRFToken': csrfToken } : {}),
-        },
-        credentials: 'include',
-        body: JSON.stringify({
-          email: data.email,
-          password: data.password,
-          password2: data.password, // Confirmación de contraseña
-          first_name: data.firstName,
-          last_name: data.lastName,
-          role: data.role
-        }),
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.detail || errorData.message || 'Error en el registro');
-      }
-
-      const responseData = await response.json();
+      // Limpiar tokens locales siempre, incluso si la API falla
+      TokenStorage.clearTokens();
       
-      // ✅ Guardar tokens
-      if (responseData.access && typeof window !== 'undefined') {
-        localStorage.setItem('auth_token', responseData.access);
-        if (responseData.refresh) {
-          localStorage.setItem('refresh_token', responseData.refresh);
-        }
-      }
-      // ✅ normalizar y persistir rol
-      if (responseData.user) {
-        responseData.user.role = this.normalizeRole(responseData.user.role);
-        this.setRoleCookie(responseData.user.role);
-      }
-
-      return {
-        user: responseData.user,
-        token: responseData.access,
-        refreshToken: responseData.refresh
-      };
+      return response;
     } catch (error) {
-      console.error('Error en registro:', error);
-      throw error instanceof Error ? error : new Error('Error al registrarse');
+      // Limpiar tokens locales incluso si la API falla
+      TokenStorage.clearTokens();
+      console.error('Logout error:', error);
+      throw error;
     }
   }
 
+  /**
+   * Obtener perfil del usuario actual
+   * GET /api/auth/users/me/
+   */
   static async getCurrentUser(): Promise<User> {
     try {
-      const token = typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null;
-      
-      const response = await fetch(`${this.apiUrl}/api/auth/users/me/`, {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
-        },
-        credentials: 'include',
-      });
-
-      if (!response.ok) {
-        if (response.status === 401 && typeof window !== 'undefined') {
-          // ✅ Token inválido, intentar refresh
-          const refreshed = await this.refreshToken();
-          if (refreshed) {
-            // Reintentar con nuevo token
-            return await this.getCurrentUser();
-          }
-          // Si refresh falla, limpiar storage
-          localStorage.removeItem('auth_token');
-          localStorage.removeItem('refresh_token');
-        }
-        throw new Error('Token inválido o expirado');
-      }
-
-      const user = await response.json();
-      // ✅ normalizar y refrescar cookie de rol
-      user.role = this.normalizeRole(user.role);
-      this.setRoleCookie(user.role);
-      return user;
+      const response = await apiClient.get<User>('/api/auth/users/me/');
+      return response;
     } catch (error) {
-      console.error('Error obteniendo usuario:', error);
-      throw error instanceof Error ? error : new Error('Error al obtener usuario actual');
+      console.error('Get current user error:', error);
+      throw error;
     }
   }
 
-  static async refreshToken(): Promise<string | null> {
+  /**
+   * Cambiar contraseña del usuario actual
+   * POST /api/auth/change-password/
+   */
+  static async changePassword(data: ChangePasswordData): Promise<ChangePasswordResponse> {
+    // Validaciones del lado del cliente
+    this.validatePasswordChange(data);
+
     try {
-      const refreshToken = typeof window !== 'undefined' 
-        ? localStorage.getItem('refresh_token') 
-        : null;
-
-      if (!refreshToken) {
-        throw new Error('No refresh token available');
-      }
-
-      const response = await fetch(`${this.apiUrl}/api/auth/token/refresh/`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        credentials: 'include',
-        body: JSON.stringify({ refresh: refreshToken }),
-      });
-
-      if (!response.ok) {
-        throw new Error('Refresh token inválido');
-      }
-
-      const data = await response.json();
-      
-      if (data.access && typeof window !== 'undefined') {
-        localStorage.setItem('auth_token', data.access);
-        return data.access;
-      }
-
-      return null;
+      const response = await apiClient.post<ChangePasswordResponse>('/api/auth/change-password/', data);
+      return response;
     } catch (error) {
-      console.error('Error refreshing token:', error);
-      // ✅ Limpiar tokens si el refresh falla
-      if (typeof window !== 'undefined') {
-        localStorage.removeItem('auth_token');
-        localStorage.removeItem('refresh_token');
-      }
-      return null;
+      console.error('Change password error:', error);
+      throw error;
     }
   }
 
-  static async logout(): Promise<void> {
-    try {
-      const token = typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null;
-      
-      // ✅ Llamar endpoint de logout del backend
-      await fetch(`${this.apiUrl}/api/auth/logout/`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
-        },
-        credentials: 'include',
-      });
-    } catch (error) {
-      console.error('Error en logout:', error);
-    } finally {
-      // ✅ Siempre limpiar storage local
-      if (typeof window !== 'undefined') {
-        localStorage.removeItem('auth_token');
-        localStorage.removeItem('refresh_token');
-      }
-      this.clearRoleCookie(); // ✅ limpiar cookie rol
+  /**
+   * Verificar si el usuario está autenticado
+   */
+  static isAuthenticated(): boolean {
+    const token = TokenStorage.getAccessToken();
+    if (!token) return false;
+    
+    return !TokenStorage.isTokenExpired(token);
+  }
+
+  /**
+   * Obtener token de acceso actual
+   */
+  static getAccessToken(): string | null {
+    return TokenStorage.getAccessToken();
+  }
+
+  /**
+   * Validaciones para registro
+   */
+  private static validateRegistrationData(data: RegisterData): void {
+    const errors: Record<string, string[]> = {};
+
+    // Validar email
+    if (!data.email) {
+      errors.email = ['Email es requerido'];
+    } else if (!ValidationUtils.isValidEmail(data.email)) {
+      errors.email = ['Formato de email inválido'];
+    }
+
+    // Validar username
+    if (!data.username) {
+      errors.username = ['Username es requerido'];
+    } else if (data.username.length < 3) {
+      errors.username = ['Username debe tener al menos 3 caracteres'];
+    } else if (!/^[a-zA-Z0-9_-]+$/.test(data.username)) {
+      errors.username = ['Username solo puede contener letras, números, guiones y guiones bajos'];
+    }
+
+    // Validar contraseña
+    if (!data.password) {
+      errors.password = ['Contraseña es requerida'];
+    } else if (!ValidationUtils.isStrongPassword(data.password)) {
+      errors.password = ['La contraseña debe tener al menos 8 caracteres, incluir mayúsculas, minúsculas, números y caracteres especiales'];
+    }
+
+    // Validar confirmación de contraseña
+    if (data.password !== data.password_confirm) {
+      errors.password_confirm = ['Las contraseñas no coinciden'];
+    }
+
+    // Validar nombres
+    if (!data.first_name?.trim()) {
+      errors.first_name = ['Nombre es requerido'];
+    }
+
+    if (!data.last_name?.trim()) {
+      errors.last_name = ['Apellido es requerido'];
+    }
+
+    // Validar teléfono si se proporciona
+    if (data.phone && !ValidationUtils.isValidPhone(data.phone)) {
+      errors.phone = ['Formato de teléfono inválido'];
+    }
+
+    if (Object.keys(errors).length > 0) {
+      throw {
+        error: 'Validation failed',
+        message: 'Datos de registro inválidos',
+        status_code: 400,
+        field_errors: errors,
+      };
     }
   }
 
-  // Toda la lógica de login, logout, registro, refresh y getCurrentUser ya está aquí.
+  /**
+   * Validaciones para login
+   */
+  private static validateLoginData(data: LoginData): void {
+    const errors: Record<string, string[]> = {};
+
+    if (!data.email) {
+      errors.email = ['Email es requerido'];
+    } else if (!ValidationUtils.isValidEmail(data.email)) {
+      errors.email = ['Formato de email inválido'];
+    }
+
+    if (!data.password) {
+      errors.password = ['Contraseña es requerida'];
+    }
+
+    if (Object.keys(errors).length > 0) {
+      throw {
+        error: 'Validation failed',
+        message: 'Credenciales inválidas',
+        status_code: 400,
+        field_errors: errors,
+      };
+    }
+  }
+
+  /**
+   * Validaciones para cambio de contraseña
+   */
+  private static validatePasswordChange(data: ChangePasswordData): void {
+    const errors: Record<string, string[]> = {};
+
+    if (!data.current_password) {
+      errors.current_password = ['Contraseña actual es requerida'];
+    }
+
+    if (!data.new_password) {
+      errors.new_password = ['Nueva contraseña es requerida'];
+    } else if (!ValidationUtils.isStrongPassword(data.new_password)) {
+      errors.new_password = ['La nueva contraseña debe tener al menos 8 caracteres, incluir mayúsculas, minúsculas, números y caracteres especiales'];
+    }
+
+    if (data.new_password !== data.new_password_confirm) {
+      errors.new_password_confirm = ['Las contraseñas no coinciden'];
+    }
+
+    if (data.current_password === data.new_password) {
+      errors.new_password = ['La nueva contraseña debe ser diferente a la actual'];
+    }
+
+    if (Object.keys(errors).length > 0) {
+      throw {
+        error: 'Validation failed',
+        message: 'Datos de cambio de contraseña inválidos',
+        status_code: 400,
+        field_errors: errors,
+      };
+    }
+  }
 }

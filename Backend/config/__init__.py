@@ -1,3 +1,1 @@
-"""
-Configuration package for Lateral 360°
-"""
+# Django project configuration
