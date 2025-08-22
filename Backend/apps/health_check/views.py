@@ -2,7 +2,6 @@
 Health check views
 """
 import time
-import psutil
 from django.http import JsonResponse
 from django.db import connection
 from django.core.cache import cache
@@ -13,6 +12,19 @@ from rest_framework.response import Response
 from rest_framework import status
 from datetime import datetime
 import logging
+
+# Importaciones opcionales
+try:
+    import psutil
+    PSUTIL_AVAILABLE = True
+except ImportError:
+    PSUTIL_AVAILABLE = False
+
+try:
+    import redis
+    REDIS_AVAILABLE = True
+except ImportError:
+    REDIS_AVAILABLE = False
 
 logger = logging.getLogger(__name__)
 
@@ -66,38 +78,27 @@ def health_check(request):
         }
         # Redis no es crítico para la aplicación
     
-    # Verificar memoria del sistema
-    try:
-        memory = psutil.virtual_memory()
+    # Verificar memoria del sistema (solo si psutil está disponible)
+    if PSUTIL_AVAILABLE:
+        try:
+            memory = psutil.virtual_memory()
+            health_status["system"]["memory"] = {
+                "total": memory.total,
+                "available": memory.available,
+                "percent": memory.percent,
+                "status": "healthy" if memory.percent < 90 else "warning"
+            }
+            if memory.percent >= 95:
+                overall_status = False
+        except Exception as e:
+            health_status["system"]["memory"] = {
+                "status": "unhealthy",
+                "message": f"Memory check failed: {str(e)}"
+            }
+    else:
         health_status["system"]["memory"] = {
-            "total": memory.total,
-            "available": memory.available,
-            "percent": memory.percent,
-            "status": "healthy" if memory.percent < 90 else "warning"
-        }
-        if memory.percent >= 95:
-            overall_status = False
-    except Exception as e:
-        health_status["system"]["memory"] = {
-            "status": "unhealthy",
-            "message": f"Memory check failed: {str(e)}"
-        }
-    
-    # Verificar espacio en disco
-    try:
-        disk = psutil.disk_usage('/')
-        health_status["system"]["disk"] = {
-            "total": disk.total,
-            "free": disk.free,
-            "percent": (disk.used / disk.total) * 100,
-            "status": "healthy" if (disk.used / disk.total) * 100 < 90 else "warning"
-        }
-        if (disk.used / disk.total) * 100 >= 95:
-            overall_status = False
-    except Exception as e:
-        health_status["system"]["disk"] = {
-            "status": "unhealthy",
-            "message": f"Disk check failed: {str(e)}"
+            "status": "unavailable",
+            "message": "psutil not installed"
         }
     
     # Estado general y tiempo de respuesta

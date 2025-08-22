@@ -53,13 +53,17 @@ API REST desarrollada con Django para la gestión de lotes inmobiliarios, usuari
 
 - [🚀 Inicio Rápido](#-inicio-rápido)
 - [⚙️ Configuración](#️-configuración)
-- [🏗️ Arquitectura](#️-arquitectura)
 - [📁 Estructura del Proyecto](#-estructura-del-proyecto)
 - [🔐 Autenticación](#-autenticación)
 - [🌐 API Endpoints](#-api-endpoints)
 - [🗄️ Base de Datos](#️-base-de-datos)
 - [🧪 Testing](#-testing)
 - [🔧 Utilidades](#-utilidades)
+- [📚 Documentación Detallada](#-documentación-detallada)
+  - [👥 API de Usuarios](info/users.md)
+  - [🏗️ API de Lotes](info/lotes.md)
+  - [📄 API de Documentos](info/documentos.md)
+  - [🗺️ Integración MapGIS](info/mapgis.md)
 
 ## 🚀 Inicio Rápido
 
@@ -96,18 +100,23 @@ source venv/bin/activate
 pip install -r requirements.txt
 
 # 5. Configurar variables de entorno
-cp .env.example .env
+copy .env.example .env
 # Editar .env con tus configuraciones
 
-# 6. Ejecutar migraciones
+# 6. Verificar configuración
+python -c "import os; os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'config.settings.development'); from django.conf import settings; print('DEBUG:', settings.DEBUG)"
+
+# 7. Crear migraciones
+python manage.py makemigrations users
 python manage.py makemigrations
 
+# 8. Aplicar migraciones
 python manage.py migrate
 
-# 7. Crear superusuario
+# 9. Crear superusuario
 python manage.py createsuperuser
 
-# 8. Ejecutar servidor de desarrollo
+# 10. Ejecutar servidor de desarrollo
 python manage.py runserver
 ```
 

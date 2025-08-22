@@ -2,50 +2,71 @@
 Configuración del admin para usuarios
 """
 from django.contrib import admin
-from django.contrib.auth.admin import UserAdmin
+from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
+from django.utils.translation import gettext_lazy as _
 from .models import User, UserProfile
 
+
 @admin.register(User)
-class CustomUserAdmin(UserAdmin):
-    """
-    Admin personalizado para el modelo User
-    """
-    list_display = ('email', 'full_name', 'role', 'is_verified', 'is_active', 'created_at')
-    list_filter = ('role', 'is_verified', 'is_active', 'created_at')
-    search_fields = ('email', 'first_name', 'last_name', 'company')
+class CustomUserAdmin(BaseUserAdmin):
+    """Admin personalizado para usuarios"""
+    
+    # Campos mostrados en la lista
+    list_display = ('email', 'get_full_name', 'role', 'is_active', 'created_at')
+    list_filter = ('role', 'is_active', 'is_staff', 'created_at')
+    search_fields = ('email', 'first_name', 'last_name', 'username')
     ordering = ('-created_at',)
     
+    # Campos en el formulario de edición
     fieldsets = (
         (None, {'fields': ('email', 'password')}),
-        ('Información Personal', {
-            'fields': ('first_name', 'last_name', 'phone', 'company'),
+        (_('Información Personal'), {
+            'fields': ('first_name', 'last_name', 'username', 'phone', 'company')
         }),
-        ('Permisos', {
-            'fields': ('role', 'is_active', 'is_staff', 'is_superuser', 'is_verified'),
+        (_('Permisos'), {
+            'fields': ('role', 'is_active', 'is_staff', 'is_superuser', 'is_verified')
         }),
-        ('Fechas Importantes', {
-            'fields': ('last_login', 'created_at', 'updated_at'),
+        (_('Fechas importantes'), {
+            'fields': ('last_login', 'created_at'),
+            'classes': ('collapse',)
         }),
     )
     
+    # Campos al crear un nuevo usuario
     add_fieldsets = (
         (None, {
             'classes': ('wide',),
-            'fields': ('email', 'first_name', 'last_name', 'role', 'password1', 'password2'),
+            'fields': ('email', 'username', 'first_name', 'last_name', 'role', 'password1', 'password2'),
         }),
     )
     
     readonly_fields = ('created_at', 'updated_at', 'last_login')
+    filter_horizontal = ()
     
     def get_queryset(self, request):
-        return super().get_queryset(request).select_related('profile')
+        return super().get_queryset(request).select_related()
+
 
 @admin.register(UserProfile)
 class UserProfileAdmin(admin.ModelAdmin):
-    """
-    Admin para el perfil de usuario
-    """
-    list_display = ('user', 'location', 'website', 'created_at')
-    search_fields = ('user__email', 'location')
+    """Admin para el perfil de usuario"""
+    
+    list_display = ('user', 'location', 'language', 'created_at')
+    list_filter = ('language', 'email_notifications', 'created_at')
+    search_fields = ('user__email', 'user__first_name', 'user__last_name', 'location')
     raw_id_fields = ('user',)
     readonly_fields = ('created_at', 'updated_at')
+    
+    fieldsets = (
+        ('Usuario', {'fields': ('user',)}),
+        ('Información Personal', {
+            'fields': ('bio', 'location', 'website', 'linkedin')
+        }),
+        ('Configuración', {
+            'fields': ('language', 'timezone', 'email_notifications', 'sms_notifications')
+        }),
+        ('Fechas', {
+            'fields': ('created_at', 'updated_at'),
+            'classes': ('collapse',)
+        }),
+    )

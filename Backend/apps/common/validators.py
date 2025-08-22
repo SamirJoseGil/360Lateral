@@ -84,7 +84,7 @@ class SecureFileValidator:
             
             # Verificar tipo MIME usando python-magic si está disponible
             try:
-                import magic
+                import magic # type: ignore
                 mime_type = magic.from_buffer(sample, mime=True)
                 ext = Path(file.name).suffix.lower()
                 

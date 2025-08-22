@@ -8,6 +8,7 @@ from rest_framework import status
 from django.conf import settings
 import logging
 
+# Corregir importaciones según la estructura real
 from .services import lotes_service
 from .services.tratamientos_service import tratamientos_service
 
