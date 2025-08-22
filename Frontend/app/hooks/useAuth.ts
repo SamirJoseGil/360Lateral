@@ -1,186 +1,116 @@
 import { useState, useEffect, useCallback } from 'react';
-import type { User, LoginData, RegisterData } from '../types';
-import type { AuthState } from '../types/authFixed';
-import { AuthService } from '../services';
-import { normalizeUser } from '../types/users';
+import { authService } from '~/services/authNew';
+import type { ApiUser } from '~/services/authNew';
+
+interface UseAuthReturn {
+  user: ApiUser | null;
+  loading: boolean;
+  isAuthenticated: boolean;
+  login: (email: string, password: string) => Promise<void>;
+  logout: () => Promise<void>;
+  refreshUser: () => Promise<void>;
+}
 
 /**
- * Hook para manejar la autenticación del usuario
+ * Hook personalizado para manejo de autenticación
+ * Compatible con los nuevos servicios configurados
  */
-export function useAuth() {
-  const [authState, setAuthState] = useState<AuthState>({
-    user: null,
-    tokens: null,
-    isAuthenticated: false,
-    isLoading: true,
-    error: null,
-  });
+export function useAuth(): UseAuthReturn {
+  const [user, setUser] = useState<ApiUser | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
 
-  // Verificar autenticación al cargar
-  useEffect(() => {
-    checkAuthStatus();
-  }, []);
-
-  const checkAuthStatus = useCallback(async () => {
-    setAuthState(prev => ({ ...prev, isLoading: true }));
-
+  // Verificar autenticación y cargar usuario al iniciar
+  const checkAuth = useCallback(async () => {
+    setLoading(true);
     try {
-      if (AuthService.isAuthenticated()) {
-        const apiUser = await AuthService.getCurrentUser();
-        const user = normalizeUser(apiUser);
-        
-        // Guardar usuario en localStorage
-        localStorage.setItem('lateral360_user_data', JSON.stringify(user));
-        
-        setAuthState(prev => ({
-          ...prev,
-          user,
-          isAuthenticated: true,
-          isLoading: false,
-          error: null,
-        }));
+      if (authService.isAuthenticated()) {
+        const userData = await authService.getProfile();
+        setUser(userData);
+        setIsAuthenticated(true);
       } else {
-        setAuthState(prev => ({
-          ...prev,
-          user: null,
-          isAuthenticated: false,
-          isLoading: false,
-          error: null,
-        }));
+        setUser(null);
+        setIsAuthenticated(false);
       }
-    } catch (error: any) {
-      console.error('Auth check failed:', error);
-      setAuthState(prev => ({
-        ...prev,
-        user: null,
-        isAuthenticated: false,
-        isLoading: false,
-        error: error.message || 'Error de autenticación',
-      }));
-    }
-  }, []);
-
-  const login = useCallback(async (credentials: LoginData) => {
-    setAuthState(prev => ({ ...prev, isLoading: true, error: null }));
-
-    try {
-      const response = await AuthService.login(credentials);
-      const user = normalizeUser(response.user);
-      
-      // Guardar usuario en localStorage
-      localStorage.setItem('lateral360_user_data', JSON.stringify(user));
-      
-      setAuthState(prev => ({
-        ...prev,
-        user,
-        tokens: response.tokens,
-        isAuthenticated: true,
-        isLoading: false,
-        error: null,
-      }));
-
-      return { success: true, user };
-    } catch (error: any) {
-      console.error('Login failed:', error);
-      const errorMessage = error.status_code === 429 
-        ? error.message
-        : error.field_errors 
-        ? Object.values(error.field_errors).flat().join(', ')
-        : error.message || 'Error de inicio de sesión';
-
-      setAuthState(prev => ({
-        ...prev,
-        isLoading: false,
-        error: errorMessage,
-      }));
-
-      return { success: false, error: errorMessage };
-    }
-  }, []);
-
-  const register = useCallback(async (userData: RegisterData) => {
-    setAuthState(prev => ({ ...prev, isLoading: true, error: null }));
-
-    try {
-      const response = await AuthService.register(userData);
-      const user = normalizeUser(response.user);
-      
-      // Guardar usuario en localStorage
-      localStorage.setItem('lateral360_user_data', JSON.stringify(user));
-      
-      setAuthState(prev => ({
-        ...prev,
-        user,
-        tokens: response.tokens,
-        isAuthenticated: true,
-        isLoading: false,
-        error: null,
-      }));
-
-      return { success: true, user };
-    } catch (error: any) {
-      console.error('Registration failed:', error);
-      const errorMessage = error.status_code === 429 
-        ? error.message
-        : error.field_errors 
-        ? Object.values(error.field_errors).flat().join(', ')
-        : error.message || 'Error de registro';
-
-      setAuthState(prev => ({
-        ...prev,
-        isLoading: false,
-        error: errorMessage,
-      }));
-
-      return { success: false, error: errorMessage };
-    }
-  }, []);
-
-  const logout = useCallback(async () => {
-    setAuthState(prev => ({ ...prev, isLoading: true }));
-
-    try {
-      await AuthService.logout();
     } catch (error) {
-      console.error('Logout API call failed:', error);
+      console.error('Error checking auth:', error);
+      // Si hay error, limpiar el estado
+      setUser(null);
+      setIsAuthenticated(false);
+      // Intentar limpiar tokens inválidos
+      await authService.logout();
     } finally {
-      // Limpiar estado local siempre
-      localStorage.removeItem('lateral360_user_data');
-      setAuthState({
-        user: null,
-        tokens: null,
-        isAuthenticated: false,
-        isLoading: false,
-        error: null,
-      });
+      setLoading(false);
     }
   }, []);
 
-  const clearError = useCallback(() => {
-    setAuthState(prev => ({ ...prev, error: null }));
-  }, []);
-
-  const refreshUser = useCallback(async () => {
-    if (authState.isAuthenticated) {
+  // Función de login
+  const login = useCallback(
+    async (email: string, password: string) => {
       try {
-        const apiUser = await AuthService.getCurrentUser();
-        const user = normalizeUser(apiUser);
-        
-        localStorage.setItem('lateral360_user_data', JSON.stringify(user));
-        setAuthState(prev => ({ ...prev, user }));
+        const response = await authService.login({ email, password });
+        setUser(response.user);
+        setIsAuthenticated(true);
       } catch (error) {
-        console.error('Failed to refresh user:', error);
+        setUser(null);
+        setIsAuthenticated(false);
+        throw error;
       }
+    },
+    []
+  );
+
+  // Función de logout
+  const logout = useCallback(async () => {
+    try {
+      await authService.logout();
+    } catch (error) {
+      console.error('Error during logout:', error);
+    } finally {
+      setUser(null);
+      setIsAuthenticated(false);
     }
-  }, [authState.isAuthenticated]);
+  }, []);
+
+  // Función para refrescar datos del usuario
+  const refreshUser = useCallback(async () => {
+    if (!isAuthenticated) return;
+
+    try {
+      const userData = await authService.getProfile();
+      setUser(userData);
+    } catch (error) {
+      console.error('Error refreshing user:', error);
+      // Si falla, posiblemente el token expiró
+      await logout();
+    }
+  }, [isAuthenticated, logout]);
+
+  // Verificar autenticación al montar el componente
+  useEffect(() => {
+    checkAuth();
+  }, [checkAuth]);
+
+  // Configurar un intervalo para verificar tokens (opcional)
+  useEffect(() => {
+    if (!isAuthenticated) return;
+
+    // Verificar token cada 5 minutos
+    const interval = setInterval(() => {
+      if (!authService.isAuthenticated()) {
+        logout();
+      }
+    }, 5 * 60 * 1000);
+
+    return () => clearInterval(interval);
+  }, [isAuthenticated, logout]);
 
   return {
-    ...authState,
+    user,
+    loading,
+    isAuthenticated,
     login,
-    register,
     logout,
-    clearError,
     refreshUser,
-    checkAuthStatus,
   };
 }

@@ -1,558 +1,370 @@
-import { useState } from "react";
-import { Navigate, useNavigate } from "@remix-run/react";
-import { useAuth } from "~/hooks/useAuth";
+import { json, type ActionFunctionArgs } from "@remix-run/node";
+import { Form, useActionData, useNavigation } from "@remix-run/react";
+import { useEffect } from "react";
+import { ProtectedRoute, useAuthContext } from "~/components/auth/AuthProvider";
+import AppLayout from "~/components/layout/AppLayout";
+import { useForm, commonValidations } from "~/hooks/useForm";
+import { authService } from "~/services/authNew";
+import type { ApiUser } from "~/services/authNew";
 
-interface ProfileFormData {
-  firstName: string;
-  lastName: string;
-  email: string;
-  phone?: string;
-  bio?: string;
+interface ActionData {
+  error?: string;
+  success?: boolean;
+  message?: string;
 }
 
-interface PasswordFormData {
-  currentPassword: string;
-  newPassword: string;
-  confirmPassword: string;
-}
+export const action = async ({ request }: ActionFunctionArgs) => {
+  try {
+    const formData = await request.formData();
+    const first_name = formData.get("first_name") as string;
+    const last_name = formData.get("last_name") as string;
+    const phone = formData.get("phone") as string;
+    const company = formData.get("company") as string;
 
-export default function Profile() {
-  const { user, loading } = useAuth();
-  const navigate = useNavigate();
+    if (!first_name || !last_name) {
+      return json<ActionData>(
+        { error: "Nombre y apellido son requeridos" },
+        { status: 400 }
+      );
+    }
 
-  // ✅ Todos los hooks antes de cualquier return
-  const [isEditing, setIsEditing] = useState(false);
-  const [isSaving, setIsSaving] = useState(false);
-  const [isChangingPassword, setIsChangingPassword] = useState(false);
-  const [activeTab, setActiveTab] = useState<
-    "profile" | "password" | "preferences"
-  >("profile");
-  const [message, setMessage] = useState<{
-    type: "success" | "error";
-    text: string;
-  } | null>(null);
+    // Get current user to get the ID
+    const currentUser = await authService.getProfile();
 
-  const [profileData, setProfileData] = useState<ProfileFormData>({
-    firstName: user?.firstName || "",
-    lastName: user?.lastName || "",
-    email: user?.email || "",
-    phone: user?.phone || "",
-    bio: "",
-  });
+    const updateData = {
+      first_name,
+      last_name,
+      ...(phone && { phone }),
+      ...(company && { company }),
+    };
 
-  const [passwordData, setPasswordData] = useState<PasswordFormData>({
-    currentPassword: "",
-    newPassword: "",
-    confirmPassword: "",
-  });
+    await authService.updateProfile(currentUser.id, updateData);
 
-  // Loading state
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
-          <p className="text-gray-600">Cargando perfil...</p>
-        </div>
-      </div>
+    return json<ActionData>({
+      success: true,
+      message: "Perfil actualizado exitosamente",
+    });
+  } catch (error) {
+    console.error("Profile update error:", error);
+    return json<ActionData>(
+      {
+        error:
+          error instanceof Error ? error.message : "Error al actualizar el perfil",
+      },
+      { status: 400 }
     );
   }
+};
 
-  // Redirect if not authenticated
-  if (!user) {
-    return <Navigate to="/login" replace />;
-  }
+export default function Profile() {
+  const { user, refreshUser } = useAuthContext();
+  const actionData = useActionData<typeof action>();
+  const navigation = useNavigation();
 
-  const handleProfileSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setIsSaving(true);
-    setMessage(null);
-
-    try {
-      // TODO: Implementar actualización de perfil con API
-      // await UserService.updateProfile(profileData);
-
-      // Mock success for now
-      await new Promise((resolve) => setTimeout(resolve, 1000));
-
-      setMessage({ type: "success", text: "Perfil actualizado correctamente" });
-      setIsEditing(false);
-    } catch (error) {
-      setMessage({
-        type: "error",
-        text:
-          error instanceof Error ? error.message : "Error al actualizar perfil",
-      });
-    } finally {
-      setIsSaving(false);
+  const {
+    data,
+    errors,
+    setValue,
+    validateField,
+    validateAll,
+    isValid,
+  } = useForm<{
+    first_name: string;
+    last_name: string;
+    phone: string;
+    company: string;
+  }>(
+    {
+      first_name: "",
+      last_name: "",
+      phone: "",
+      company: "",
+    },
+    {
+      first_name: {
+        required: true,
+        rules: [commonValidations.minLength(2)],
+      },
+      last_name: {
+        required: true,
+        rules: [commonValidations.minLength(2)],
+      },
+      phone: {
+        rules: [commonValidations.phone],
+      },
     }
-  };
+  );
 
-  const handlePasswordSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const isSubmitting = navigation.state === "submitting";
 
-    if (passwordData.newPassword !== passwordData.confirmPassword) {
-      setMessage({ type: "error", text: "Las contraseñas no coinciden" });
-      return;
+  // Initialize form with user data
+  useEffect(() => {
+    if (user) {
+      setValue("first_name", user.first_name || "");
+      setValue("last_name", user.last_name || "");
+      setValue("phone", user.phone || "");
+      setValue("company", user.company || "");
     }
+  }, [user, setValue]);
 
-    if (passwordData.newPassword.length < 8) {
-      setMessage({
-        type: "error",
-        text: "La contraseña debe tener al menos 8 caracteres",
-      });
-      return;
+  // Refresh user data after successful update
+  useEffect(() => {
+    if (actionData?.success) {
+      refreshUser();
     }
+  }, [actionData?.success, refreshUser]);
 
-    setIsChangingPassword(true);
-    setMessage(null);
-
-    try {
-      // TODO: Implementar cambio de contraseña con API
-      // await AuthService.changePassword(passwordData);
-
-      // Mock success for now
-      await new Promise((resolve) => setTimeout(resolve, 1000));
-
-      setMessage({
-        type: "success",
-        text: "Contraseña actualizada correctamente",
-      });
-      setPasswordData({
-        currentPassword: "",
-        newPassword: "",
-        confirmPassword: "",
-      });
-    } catch (error) {
-      setMessage({
-        type: "error",
-        text:
-          error instanceof Error
-            ? error.message
-            : "Error al cambiar contraseña",
-      });
-    } finally {
-      setIsChangingPassword(false);
-    }
-  };
-
-  const getRoleDisplay = (role: string) => {
-    switch (role) {
-      case "admin":
-        return "Administrador";
-      case "propietario":
-        return "Dueño de Lote";
-      case "desarrollador":
-        return "Desarrollador";
-      default:
-        return role;
-    }
-  };
-
-  const getRoleBadgeColor = (role: string) => {
-    switch (role) {
-      case "admin":
-        return "bg-red-100 text-red-800";
-      case "propietario":
-        return "bg-green-100 text-green-800";
-      case "desarrollador":
-        return "bg-blue-100 text-blue-800";
-      default:
-        return "bg-gray-100 text-gray-800";
+  const handleSubmit = (e: React.FormEvent) => {
+    if (!validateAll()) {
+      e.preventDefault();
+      return false;
     }
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 py-8">
-      <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
-        {/* Header */}
-        <div className="mb-8">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-4">
-              <button
-                onClick={() => navigate(-1)}
-                className="inline-flex items-center px-3 py-2 border border-gray-300 shadow-sm text-sm leading-4 font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
-              >
-                ← Volver
-              </button>
-              <div>
-                <h1 className="text-3xl font-bold text-gray-900">Mi Perfil</h1>
-                <p className="text-gray-600">
-                  Gestiona tu información personal y configuración
-                </p>
-              </div>
-            </div>
-            <div className="flex items-center space-x-3">
-              <div className="w-12 h-12 bg-blue-500 rounded-full flex items-center justify-center text-white text-lg font-semibold">
-                {user.firstName?.charAt(0) || "U"}
-              </div>
-              <div>
-                <p className="text-sm font-medium text-gray-900">
-                  {user.firstName} {user.lastName}
-                </p>
-                <span
-                  className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getRoleBadgeColor(
-                    user.role
-                  )}`}
-                >
-                  {getRoleDisplay(user.role)}
-                </span>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Messages */}
-        {message && (
-          <div
-            className={`mb-6 p-4 rounded-md ${
-              message.type === "success"
-                ? "bg-green-50 border border-green-200 text-green-700"
-                : "bg-red-50 border border-red-200 text-red-700"
-            }`}
-          >
-            <div className="flex">
-              <div className="flex-shrink-0">
-                {message.type === "success" ? "✅" : "❌"}
-              </div>
-              <div className="ml-3">
-                <p className="text-sm font-medium">{message.text}</p>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Tabs */}
-        <div className="bg-white shadow rounded-lg">
-          <div className="border-b border-gray-200">
-            <nav className="-mb-px flex space-x-8 px-6">
-              {[
-                { key: "profile", label: "Información Personal", icon: "👤" },
-                { key: "password", label: "Cambiar Contraseña", icon: "🔒" },
-                { key: "preferences", label: "Preferencias", icon: "⚙️" },
-              ].map((tab) => (
-                <button
-                  key={tab.key}
-                  onClick={() => setActiveTab(tab.key as any)}
-                  className={`py-4 px-1 border-b-2 font-medium text-sm ${
-                    activeTab === tab.key
-                      ? "border-blue-500 text-blue-600"
-                      : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
-                  }`}
-                >
-                  <span className="mr-2">{tab.icon}</span>
-                  {tab.label}
-                </button>
-              ))}
-            </nav>
-          </div>
-
-          <div className="p-6">
-            {/* Profile Tab */}
-            {activeTab === "profile" && (
-              <div className="space-y-6">
-                <div className="flex justify-between items-center">
-                  <h3 className="text-lg font-medium text-gray-900">
+    <ProtectedRoute>
+      <AppLayout>
+        <div className="py-6">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div className="md:grid md:grid-cols-3 md:gap-6">
+              <div className="md:col-span-1">
+                <div className="px-4 sm:px-0">
+                  <h3 className="text-lg font-medium leading-6 text-gray-900">
                     Información Personal
                   </h3>
-                  {!isEditing && (
-                    <button
-                      onClick={() => setIsEditing(true)}
-                      className="inline-flex items-center px-3 py-2 border border-gray-300 shadow-sm text-sm leading-4 font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50"
-                    >
-                      ✏️ Editar
-                    </button>
-                  )}
+                  <p className="mt-1 text-sm text-gray-600">
+                    Actualiza tu información de perfil y datos de contacto.
+                  </p>
                 </div>
+              </div>
 
-                <form onSubmit={handleProfileSubmit}>
-                  <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700">
-                        Nombre
-                      </label>
-                      <input
-                        type="text"
-                        value={profileData.firstName}
-                        onChange={(e) =>
-                          setProfileData({
-                            ...profileData,
-                            firstName: e.target.value,
-                          })
-                        }
-                        disabled={!isEditing}
-                        className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-50 disabled:text-gray-500"
-                      />
+              <div className="mt-5 md:mt-0 md:col-span-2">
+                <Form method="post" onSubmit={handleSubmit}>
+                  <div className="shadow sm:rounded-md sm:overflow-hidden">
+                    <div className="px-4 py-5 bg-white space-y-6 sm:p-6">
+                      {/* Success Message */}
+                      {actionData?.success && (
+                        <div className="rounded-md bg-green-50 p-4">
+                          <div className="flex">
+                            <div className="flex-shrink-0">
+                              <svg
+                                className="h-5 w-5 text-green-400"
+                                fill="none"
+                                stroke="currentColor"
+                                viewBox="0 0 24 24"
+                              >
+                                <path
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                  strokeWidth={2}
+                                  d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
+                                />
+                              </svg>
+                            </div>
+                            <div className="ml-3">
+                              <p className="text-sm font-medium text-green-800">
+                                {actionData.message}
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Error Message */}
+                      {actionData?.error && (
+                        <div className="rounded-md bg-red-50 p-4">
+                          <div className="flex">
+                            <div className="flex-shrink-0">
+                              <svg
+                                className="h-5 w-5 text-red-400"
+                                fill="none"
+                                stroke="currentColor"
+                                viewBox="0 0 24 24"
+                              >
+                                <path
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                  strokeWidth={2}
+                                  d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+                                />
+                              </svg>
+                            </div>
+                            <div className="ml-3">
+                              <p className="text-sm font-medium text-red-800">
+                                {actionData.error}
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* User Info Card */}
+                      <div className="bg-gray-50 px-4 py-5 sm:p-6 rounded-md">
+                        <dl className="grid grid-cols-1 gap-x-4 gap-y-6 sm:grid-cols-2">
+                          <div>
+                            <dt className="text-sm font-medium text-gray-500">
+                              Email
+                            </dt>
+                            <dd className="mt-1 text-sm text-gray-900">
+                              {user?.email}
+                            </dd>
+                          </div>
+                          <div>
+                            <dt className="text-sm font-medium text-gray-500">
+                              Username
+                            </dt>
+                            <dd className="mt-1 text-sm text-gray-900">
+                              {user?.username}
+                            </dd>
+                          </div>
+                          <div>
+                            <dt className="text-sm font-medium text-gray-500">
+                              Rol
+                            </dt>
+                            <dd className="mt-1">
+                              <span
+                                className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${user?.role === "admin"
+                                    ? "bg-red-100 text-red-800"
+                                    : user?.role === "owner"
+                                      ? "bg-blue-100 text-blue-800"
+                                      : "bg-green-100 text-green-800"
+                                  }`}
+                              >
+                                {user?.role === "admin"
+                                  ? "Administrador"
+                                  : user?.role === "owner"
+                                    ? "Propietario"
+                                    : "Desarrollador"}
+                              </span>
+                            </dd>
+                          </div>
+                          <div>
+                            <dt className="text-sm font-medium text-gray-500">
+                              Fecha de registro
+                            </dt>
+                            <dd className="mt-1 text-sm text-gray-900">
+                              {user?.date_joined
+                                ? new Date(user.date_joined).toLocaleDateString(
+                                  "es-ES"
+                                )
+                                : "N/A"}
+                            </dd>
+                          </div>
+                        </dl>
+                      </div>
+
+                      {/* Editable Fields */}
+                      <div className="grid grid-cols-6 gap-6">
+                        <div className="col-span-6 sm:col-span-3">
+                          <label
+                            htmlFor="first_name"
+                            className="block text-sm font-medium text-gray-700"
+                          >
+                            Nombre
+                          </label>
+                          <input
+                            type="text"
+                            name="first_name"
+                            id="first_name"
+                            value={data.first_name}
+                            onChange={(e) => setValue("first_name", e.target.value)}
+                            onBlur={() => validateField("first_name")}
+                            className="mt-1 focus:ring-blue-500 focus:border-blue-500 block w-full shadow-sm sm:text-sm border-gray-300 rounded-md"
+                            disabled={isSubmitting}
+                          />
+                          {errors.first_name && (
+                            <p className="mt-2 text-sm text-red-600">
+                              {errors.first_name[0]}
+                            </p>
+                          )}
+                        </div>
+
+                        <div className="col-span-6 sm:col-span-3">
+                          <label
+                            htmlFor="last_name"
+                            className="block text-sm font-medium text-gray-700"
+                          >
+                            Apellido
+                          </label>
+                          <input
+                            type="text"
+                            name="last_name"
+                            id="last_name"
+                            value={data.last_name}
+                            onChange={(e) => setValue("last_name", e.target.value)}
+                            onBlur={() => validateField("last_name")}
+                            className="mt-1 focus:ring-blue-500 focus:border-blue-500 block w-full shadow-sm sm:text-sm border-gray-300 rounded-md"
+                            disabled={isSubmitting}
+                          />
+                          {errors.last_name && (
+                            <p className="mt-2 text-sm text-red-600">
+                              {errors.last_name[0]}
+                            </p>
+                          )}
+                        </div>
+
+                        <div className="col-span-6 sm:col-span-4">
+                          <label
+                            htmlFor="phone"
+                            className="block text-sm font-medium text-gray-700"
+                          >
+                            Teléfono
+                          </label>
+                          <input
+                            type="tel"
+                            name="phone"
+                            id="phone"
+                            value={data.phone}
+                            onChange={(e) => setValue("phone", e.target.value)}
+                            onBlur={() => validateField("phone")}
+                            className="mt-1 focus:ring-blue-500 focus:border-blue-500 block w-full shadow-sm sm:text-sm border-gray-300 rounded-md"
+                            placeholder="+57 300 123 4567"
+                            disabled={isSubmitting}
+                          />
+                          {errors.phone && (
+                            <p className="mt-2 text-sm text-red-600">
+                              {errors.phone[0]}
+                            </p>
+                          )}
+                        </div>
+
+                        <div className="col-span-6">
+                          <label
+                            htmlFor="company"
+                            className="block text-sm font-medium text-gray-700"
+                          >
+                            Empresa
+                          </label>
+                          <input
+                            type="text"
+                            name="company"
+                            id="company"
+                            value={data.company}
+                            onChange={(e) => setValue("company", e.target.value)}
+                            className="mt-1 focus:ring-blue-500 focus:border-blue-500 block w-full shadow-sm sm:text-sm border-gray-300 rounded-md"
+                            placeholder="Mi Empresa S.A.S"
+                            disabled={isSubmitting}
+                          />
+                        </div>
+                      </div>
                     </div>
 
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700">
-                        Apellido
-                      </label>
-                      <input
-                        type="text"
-                        value={profileData.lastName}
-                        onChange={(e) =>
-                          setProfileData({
-                            ...profileData,
-                            lastName: e.target.value,
-                          })
-                        }
-                        disabled={!isEditing}
-                        className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-50 disabled:text-gray-500"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700">
-                        Email
-                      </label>
-                      <input
-                        type="email"
-                        value={profileData.email}
-                        onChange={(e) =>
-                          setProfileData({
-                            ...profileData,
-                            email: e.target.value,
-                          })
-                        }
-                        disabled={!isEditing}
-                        className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-50 disabled:text-gray-500"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700">
-                        Teléfono
-                      </label>
-                      <input
-                        type="tel"
-                        value={profileData.phone}
-                        onChange={(e) =>
-                          setProfileData({
-                            ...profileData,
-                            phone: e.target.value,
-                          })
-                        }
-                        disabled={!isEditing}
-                        placeholder="Opcional"
-                        className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-50 disabled:text-gray-500"
-                      />
-                    </div>
-
-                    <div className="sm:col-span-2">
-                      <label className="block text-sm font-medium text-gray-700">
-                        Bio
-                      </label>
-                      <textarea
-                        rows={3}
-                        value={profileData.bio}
-                        onChange={(e) =>
-                          setProfileData({
-                            ...profileData,
-                            bio: e.target.value,
-                          })
-                        }
-                        disabled={!isEditing}
-                        placeholder="Cuéntanos sobre ti (opcional)"
-                        className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-50 disabled:text-gray-500"
-                      />
-                    </div>
-                  </div>
-
-                  {isEditing && (
-                    <div className="mt-6 flex justify-end space-x-3">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setIsEditing(false);
-                          // Reset form data
-                          setProfileData({
-                            firstName: user?.firstName || "",
-                            lastName: user?.lastName || "",
-                            email: user?.email || "",
-                            phone: user?.phone || "",
-                            bio: user?.bio || "",
-                          });
-                        }}
-                        className="px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50"
-                      >
-                        Cancelar
-                      </button>
+                    <div className="px-4 py-3 bg-gray-50 text-right sm:px-6">
                       <button
                         type="submit"
-                        disabled={isSaving}
-                        className="px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50"
+                        disabled={isSubmitting || !isValid}
+                        className="inline-flex justify-center py-2 px-4 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
                       >
-                        {isSaving ? (
-                          <div className="flex items-center">
-                            <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
-                            Guardando...
-                          </div>
-                        ) : (
-                          "Guardar Cambios"
-                        )}
+                        {isSubmitting ? "Guardando..." : "Guardar cambios"}
                       </button>
                     </div>
-                  )}
-                </form>
+                  </div>
+                </Form>
               </div>
-            )}
-
-            {/* Password Tab */}
-            {activeTab === "password" && (
-              <div className="space-y-6">
-                <h3 className="text-lg font-medium text-gray-900">
-                  Cambiar Contraseña
-                </h3>
-
-                <form onSubmit={handlePasswordSubmit}>
-                  <div className="space-y-4">
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700">
-                        Contraseña Actual
-                      </label>
-                      <input
-                        type="password"
-                        value={passwordData.currentPassword}
-                        onChange={(e) =>
-                          setPasswordData({
-                            ...passwordData,
-                            currentPassword: e.target.value,
-                          })
-                        }
-                        required
-                        className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700">
-                        Nueva Contraseña
-                      </label>
-                      <input
-                        type="password"
-                        value={passwordData.newPassword}
-                        onChange={(e) =>
-                          setPasswordData({
-                            ...passwordData,
-                            newPassword: e.target.value,
-                          })
-                        }
-                        required
-                        minLength={8}
-                        className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
-                      />
-                      <p className="mt-1 text-sm text-gray-500">
-                        La contraseña debe tener al menos 8 caracteres
-                      </p>
-                    </div>
-
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700">
-                        Confirmar Nueva Contraseña
-                      </label>
-                      <input
-                        type="password"
-                        value={passwordData.confirmPassword}
-                        onChange={(e) =>
-                          setPasswordData({
-                            ...passwordData,
-                            confirmPassword: e.target.value,
-                          })
-                        }
-                        required
-                        className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
-                      />
-                    </div>
-                  </div>
-
-                  <div className="mt-6">
-                    <button
-                      type="submit"
-                      disabled={isChangingPassword}
-                      className="px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50"
-                    >
-                      {isChangingPassword ? (
-                        <div className="flex items-center">
-                          <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
-                          Cambiando...
-                        </div>
-                      ) : (
-                        "Cambiar Contraseña"
-                      )}
-                    </button>
-                  </div>
-                </form>
-              </div>
-            )}
-
-            {/* Preferences Tab */}
-            {activeTab === "preferences" && (
-              <div className="space-y-6">
-                <h3 className="text-lg font-medium text-gray-900">
-                  Preferencias
-                </h3>
-
-                <div className="space-y-4">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <h4 className="text-sm font-medium text-gray-900">
-                        Notificaciones por Email
-                      </h4>
-                      <p className="text-sm text-gray-500">
-                        Recibir actualizaciones importantes por correo
-                      </p>
-                    </div>
-                    <button
-                      type="button"
-                      className="relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent bg-blue-600 transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
-                    >
-                      <span className="translate-x-5 inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out"></span>
-                    </button>
-                  </div>
-
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <h4 className="text-sm font-medium text-gray-900">
-                        Modo Oscuro
-                      </h4>
-                      <p className="text-sm text-gray-500">
-                        Cambiar el tema de la interfaz
-                      </p>
-                    </div>
-                    <button
-                      type="button"
-                      className="relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent bg-gray-200 transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
-                    >
-                      <span className="translate-x-0 inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out"></span>
-                    </button>
-                  </div>
-
-                  <div className="border-t border-gray-200 pt-4">
-                    <h4 className="text-sm font-medium text-gray-900 mb-2">
-                      Información de la Cuenta
-                    </h4>
-                    <div className="text-sm text-gray-600 space-y-1">
-                      <p>
-                        <strong>Fecha de registro:</strong>{" "}
-                        {new Date().toLocaleDateString()}
-                      </p>
-                      <p>
-                        <strong>Último acceso:</strong>{" "}
-                        {new Date().toLocaleDateString()}
-                      </p>
-                      <p>
-                        <strong>Rol:</strong> {getRoleDisplay(user.role)}
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
+            </div>
           </div>
         </div>
-      </div>
-    </div>
+      </AppLayout>
+    </ProtectedRoute>
   );
 }
