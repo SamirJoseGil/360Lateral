@@ -1,5 +1,7 @@
 import { useState, useEffect } from "react";
 import { useAuth } from "~/hooks/useAuth";
+import { Navigate } from "@remix-run/react";
+import { logger } from "~/utils/logger";
 
 interface PendingValidation {
   id: string;
@@ -13,24 +15,43 @@ interface PendingValidation {
 }
 
 export default function AdminValidation() {
-  const { user, loading, hasRole } = useAuth();
+  const { user, isLoading, hasRole, initialCheckDone } = useAuth();
   const [validations, setValidations] = useState<PendingValidation[]>([]);
   const [loadingValidations, setLoadingValidations] = useState(true);
   const [selectedType, setSelectedType] = useState<string>("all");
 
-  // ✅ Gating unificado como admin
-  if (!loading && (!user || !hasRole("admin"))) {
-    console.log("🚫 Admin validation: usuario no autorizado");
-    window.location.href = "/login";
-    return null;
-  }
-
   useEffect(() => {
-    loadValidations();
+    logger.info('AdminValidation', '🔍 Componente AdminValidation montado');
+    return () => {
+      logger.debug('AdminValidation', '🔍 Componente AdminValidation desmontado');
+    };
   }, []);
+
+  // ✅ Corregido: No usar window.location.href en el renderizado
+  // En su lugar, usar useEffect para verificar permisos después del renderizado inicial
+  useEffect(() => {
+    if (!isLoading && initialCheckDone) {
+      logger.debug('AdminValidation', '🔒 Verificando permisos de administrador');
+      
+      if (!user || !hasRole("admin")) {
+        logger.warn('AdminValidation', '🚫 Usuario sin permisos de administrador');
+        // La redirección se maneja con el componente Navigate
+      } else {
+        logger.info('AdminValidation', '✅ Acceso de administrador verificado');
+        loadValidations();
+      }
+    }
+  }, [isLoading, initialCheckDone, user, hasRole]);
+
+  // Verificación de permisos durante el renderizado
+  if (!isLoading && initialCheckDone && (!user || !hasRole("admin"))) {
+    logger.warn('AdminValidation', '🚫 Redirigiendo: sin permisos de administrador');
+    return <Navigate to="/auth/login" replace />;
+  }
 
   const loadValidations = async () => {
     try {
+      logger.info('AdminValidation', '📋 Cargando lista de validaciones pendientes');
       setLoadingValidations(true);
       // ✅ Aquí llamarías a tu API real
       // const response = await ValidationService.getPending();
@@ -69,8 +90,12 @@ export default function AdminValidation() {
           status: "pending",
         },
       ]);
+      
+      logger.info('AdminValidation', '✅ Validaciones cargadas exitosamente', {
+        count: 3
+      });
     } catch (error) {
-      console.error("Error cargando validaciones:", error);
+      logger.error('AdminValidation', '❌ Error cargando validaciones', { error });
     } finally {
       setLoadingValidations(false);
     }
@@ -82,6 +107,7 @@ export default function AdminValidation() {
     comment?: string
   ) => {
     try {
+      logger.info('AdminValidation', `🔄 Procesando validación: ${action}`, { id, comment });
       // ✅ Aquí llamarías a tu API real
       // await ValidationService.process(id, action, comment);
 
@@ -94,14 +120,9 @@ export default function AdminValidation() {
         )
       );
 
-      alert(
-        `Solicitud ${
-          action === "approve" ? "aprobada" : "rechazada"
-        } exitosamente`
-      );
+      logger.info('AdminValidation', `✅ Validación ${action} exitosa`, { id });
     } catch (error) {
-      console.error("Error procesando validación:", error);
-      alert("Error procesando la solicitud");
+      logger.error('AdminValidation', `❌ Error procesando validación ${action}`, { id, error });
     }
   };
 
@@ -148,7 +169,7 @@ export default function AdminValidation() {
     }
   };
 
-  if (loading) {
+  if (isLoading || !initialCheckDone) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="text-center">
@@ -265,7 +286,10 @@ export default function AdminValidation() {
             <select
               id="type"
               value={selectedType}
-              onChange={(e) => setSelectedType(e.target.value)}
+              onChange={(e) => {
+                logger.debug('AdminValidation', '🔍 Filtro cambiado', { newType: e.target.value });
+                setSelectedType(e.target.value);
+              }}
               className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
             >
               <option value="all">Todos los tipos</option>

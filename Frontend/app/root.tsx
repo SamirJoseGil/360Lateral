@@ -3,7 +3,6 @@ import "./tailwind.css";
 import { cssBundleHref } from "@remix-run/css-bundle";
 import {
   Links,
-  LiveReload,
   Meta,
   Outlet,
   Scripts,
@@ -11,6 +10,14 @@ import {
 } from "@remix-run/react";
 import Footer from "./components/organisms/Footer";
 import { Navbar } from "./components/organisms/Navbar";
+import { AuthProvider } from "~/components/auth/AuthProvider";
+import AuditDebug from "~/components/auth/AuditDebug";
+
+// Estrategia de hidratación: Asegurar la consistencia cliente-servidor
+export const clientHints = {
+  mode: "media",
+};
+
 export const links: LinksFunction = () => [
   { rel: "preconnect", href: "https://fonts.googleapis.com" },
   {
@@ -25,24 +32,24 @@ export const links: LinksFunction = () => [
   ...(cssBundleHref ? [{ rel: "stylesheet", href: cssBundleHref }] : []),
 ];
 
-
 export default function App() {
-
   return (
     <html lang="es">
       <head>
-        <meta charSet="utf-8" />
-        <meta name="viewport" content="width=device-width, initial-scale=1" />
         <Meta />
+        <meta charSet="utf-8" />
+        <meta name="viewport" content="width=device-width,initial-scale=1" />
         <Links />
       </head>
       <body>
-        <Navbar />
-        <Outlet />
-        <Footer />
+        <AuthProvider>
+          <Navbar />
+          <Outlet />
+          <Footer />
+          {process.env.NODE_ENV !== "production" && <AuditDebug />}
+        </AuthProvider>
         <ScrollRestoration />
         <Scripts />
-        <LiveReload />
       </body>
     </html>
   );

@@ -1,3 +1,5 @@
+import { Link } from "@remix-run/react";
+import { useEffect } from "react";
 import type { MetaFunction } from "@remix-run/node";
 
 export const meta: MetaFunction = () => {
@@ -11,6 +13,11 @@ export const meta: MetaFunction = () => {
 };
 
 export default function Index() {
+  // Añadimos un efecto para registrar cuando se carga la página principal
+  useEffect(() => {
+    console.log("📄 Página principal cargada");
+  }, []);
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-blue-100 relative">
       {/* Fondo blur decorativo */}
@@ -34,6 +41,23 @@ export default function Index() {
                 administradores para optimizar la gestión y comercialización de
                 lotes urbanos.
               </p>
+
+              {/* Botones de acción */}
+              <div className="mt-8 flex flex-col sm:flex-row gap-4">
+                <Link
+                  to="/auth/login"
+                  className="bg-blue-600 text-white px-5 py-3 rounded-lg font-medium hover:bg-blue-700 transition-colors shadow-md"
+                >
+                  Iniciar sesión
+                </Link>
+                <Link
+                  to="/auth/register"
+                  className="bg-white text-blue-600 border border-blue-200 px-5 py-3 rounded-lg font-medium hover:bg-blue-50 transition-colors shadow-md"
+                >
+                  Registrarse
+                </Link>
+              </div>
+
               {/* Explicación de roles */}
               <div className="mt-10">
                 <h2 className="text-xl font-semibold text-gray-900 mb-6">

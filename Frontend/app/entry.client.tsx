@@ -7,12 +7,23 @@
 import { RemixBrowser } from "@remix-run/react";
 import { startTransition, StrictMode } from "react";
 import { hydrateRoot } from "react-dom/client";
+import { logger, traceNavigation } from "~/utils/logger";
+
+// Inicializar el sistema de logging
+logger.info('App', '🚀 Inicializando aplicación cliente');
+traceNavigation();
 
 startTransition(() => {
-  hydrateRoot(
-    document,
-    <StrictMode>
-      <RemixBrowser />
-    </StrictMode>
-  );
+  logger.debug('Hydration', 'Iniciando hydration');
+  try {
+    hydrateRoot(
+      document,
+      <StrictMode>
+        <RemixBrowser />
+      </StrictMode>
+    );
+    logger.info('Hydration', 'Hydration completada');
+  } catch (error) {
+    logger.error('Hydration', 'Error durante hydration', { error });
+  }
 });

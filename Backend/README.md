@@ -6,13 +6,16 @@ API REST desarrollada con Django para la gestión de lotes inmobiliarios, usuari
 
 ## 🌐 Endpoints Principales
 
-**Autenticación**
+**Autenticación** (app `authentication`)
 - `POST /api/auth/register/` — Registro de usuario
 - `POST /api/auth/login/` — Inicio de sesión
 - `POST /api/auth/logout/` — Cierre de sesión
-- `GET /api/auth/users/me/` — Perfil de usuario autenticado
+- `POST /api/auth/change-password/` — Cambiar contraseña
+- `POST /api/auth/password-reset/` — Solicitar reset de contraseña
+- `GET /api/auth/csrf/` — Obtener token CSRF
 
-**Usuarios**
+**Usuarios** (app `users`)
+- `GET /api/users/me/` — Perfil de usuario autenticado
 - `GET /api/users/` — Listar usuarios
 - `GET /api/users/{id}/` — Detalles de usuario
 - `PUT /api/users/{id}/` — Actualizar usuario
@@ -325,10 +328,13 @@ Backend/
 - `POST /api/auth/register/`: Registro de usuario
 - `POST /api/auth/login/`: Inicio de sesión
 - `POST /api/auth/logout/`: Cierre de sesión
-- `GET /api/auth/users/me/`: Obtener perfil de usuario
+- `POST /api/auth/change-password/`: Cambiar contraseña
+- `POST /api/auth/password-reset/`: Solicitar reset de contraseña
+- `GET /api/auth/csrf/`: Obtener token CSRF
 
 ### Usuarios
 
+- `GET /api/users/me/`: Obtener perfil de usuario
 - `GET /api/users/`: Listar usuarios
 - `GET /api/users/{id}/`: Obtener detalles de un usuario
 - `PUT /api/users/{id}/`: Actualizar usuario

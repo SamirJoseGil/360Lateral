@@ -1,21 +1,26 @@
 import { Link, useLocation } from "@remix-run/react";
 import { useAuth } from "~/hooks/useAuth";
-import type { UserRole } from "~/types/auth";
-import { getNavItemsByRole } from "~/utils/navPermissions";
+import type { UserRole } from "~/types/userRole";
+import { getNavItemsByRole, normalizeRole, getDashboardPath, getRoleDisplay } from "~/utils/navPermissions";
+import { lazy, Suspense } from "react";
 
 export function Navbar() {
   const location = useLocation();
-  const { user, logout, loading } = useAuth();
-  const effectiveRole = user?.role ?? null;
+  const { user, logout, isLoading, isAuthenticated } = useAuth();
+
+  // Solo procesamos el rol si el usuario está autenticado
+  const effectiveRole = isAuthenticated && user ? normalizeRole(user?.role) as UserRole : null;
+
+  // Solo obtenemos los items de navegación si tenemos un rol efectivo
   const navItems = effectiveRole ? getNavItemsByRole(effectiveRole) : [];
 
-  // Navbar pública si no hay rol
-  if (loading) {
+  // Navbar para estado de carga
+  if (isLoading) {
     return (
       <nav className="bg-white shadow-lg border-b">
         <div className="max-w-7xl mx-auto px-4">
           <div className="flex justify-between items-center h-16">
-            <span className="text-xl font-bold text-gray-900">Lateral 360°</span>
+            <span className="text-xl font-bold text-gray-900">Lateral 360</span>
             <div className="text-gray-500">Cargando...</div>
           </div>
         </div>
@@ -23,24 +28,33 @@ export function Navbar() {
     );
   }
 
-  if (!effectiveRole) {
+  // Navbar para usuarios no autenticados
+  // No incluye ninguna lógica que dependa del perfil del usuario
+  if (!isAuthenticated || !effectiveRole) {
+    // Determinar si estamos en una ruta de autenticación
+    const isAuthRoute = location.pathname.startsWith('/auth/');
+
     return (
       <nav className="bg-white shadow-lg border-b">
         <div className="max-w-7xl mx-auto px-4">
           <div className="flex justify-between items-center h-16">
-            <Link to="/" className="text-xl font-bold text-gray-900">
-              Lateral 360°
+            <Link to="/" className="text-blue-600 font-bold text-xl">
+              Lateral 360
             </Link>
             <div className="hidden md:flex space-x-6">
-              <Link to="auth/login" className="text-gray-600 hover:text-gray-900">
-                Iniciar Sesión
-              </Link>
-              <Link
-                to="auth/register"
-                className="text-white bg-blue-600 hover:bg-blue-700 px-3 py-1.5 rounded-md"
-              >
-                Registrarse
-              </Link>
+              {!isAuthRoute && (
+                <>
+                  <Link to="/auth/login" className="text-gray-600 hover:text-gray-900">
+                    Iniciar Sesión
+                  </Link>
+                  <Link
+                    to="/auth/register"
+                    className="text-white bg-blue-600 hover:bg-blue-700 px-3 py-1.5 rounded-md"
+                  >
+                    Registrarse
+                  </Link>
+                </>
+              )}
             </div>
           </div>
         </div>
@@ -48,20 +62,16 @@ export function Navbar() {
     );
   }
 
+  // Navbar para usuarios autenticados
   return (
     <nav className="bg-white shadow-lg border-b">
       <div className="max-w-7xl mx-auto px-4">
         <div className="flex justify-between items-center h-16">
           <Link
-            to={`/dashboard/${effectiveRole === "admin"
-              ? "admin"
-              : effectiveRole === "propietario"
-                ? "owner"
-                : "developer"
-              }`}
+            to={getDashboardPath(effectiveRole)}
             className="text-xl font-bold text-gray-900"
           >
-            Lateral 360°
+            Lateral 360
           </Link>
 
           <div className="hidden md:flex space-x-8">
@@ -84,22 +94,7 @@ export function Navbar() {
               user={user}
               logout={logout}
             />
-          ) : (
-            <div className="flex space-x-4">
-              <Link
-                to="/login"
-                className="text-gray-600 hover:text-gray-900 text-sm"
-              >
-                Iniciar Sesión
-              </Link>
-              <Link
-                to="/register"
-                className="text-white bg-blue-600 hover:bg-blue-700 text-sm px-3 py-1.5 rounded-md"
-              >
-                Registrarse
-              </Link>
-            </div>
-          )}
+          ) : null}
         </div>
       </div>
 
@@ -130,23 +125,10 @@ function UserMenu({
   user: any;
   logout: () => Promise<void>;
 }) {
-  const getRoleDisplay = (role: UserRole) => {
-    switch (role) {
-      case "admin":
-        return "Administrador";
-      case "propietario":
-        return "Dueño de Lote";
-      case "desarrollador":
-        return "Desarrollador";
-      default:
-        return role;
-    }
-  };
-
   const handleLogout = async () => {
     try {
       await logout();
-      // La redirección se manejará en useAuth
+      // La redirección se maneja en useAuth
     } catch (error) {
       console.error("Error en logout:", error);
     }
@@ -156,11 +138,11 @@ function UserMenu({
     <div className="relative group">
       <button className="flex items-center space-x-2 text-sm text-gray-700 hover:text-gray-900">
         <div className="w-8 h-8 bg-blue-500 rounded-full flex items-center justify-center text-white">
-          {user.firstName?.charAt(0) || "U"}
+          {user.firstName?.charAt(0) || user.first_name?.charAt(0) || "U"}
         </div>
         <div className="hidden md:block text-left">
           <div className="font-medium">
-            {user.firstName} {user.lastName}
+            {user.firstName || user.first_name} {user.lastName || user.last_name}
           </div>
           <div className="text-xs text-gray-500">
             {getRoleDisplay(user.role)}

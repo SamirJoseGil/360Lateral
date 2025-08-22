@@ -11,8 +11,8 @@ from .security import *
 
 # Security settings for development
 SECRET_KEY = os.environ.get('SECRET_KEY', 'django-insecure-lateral360-dev-key-2024-CHANGE-IN-PRODUCTION')
-DEBUG = True
-ALLOWED_HOSTS = ['*']  # Permisivo para desarrollo
+DEBUG = os.environ.get('DEBUG', 'True').lower() == 'true'
+ALLOWED_HOSTS = os.environ.get('ALLOWED_HOSTS', '*').split(',')
 
 # =============================================================================
 # DATABASE DEVELOPMENT
@@ -22,24 +22,27 @@ ALLOWED_HOSTS = ['*']  # Permisivo para desarrollo
 # DATABASES already configured in base.py with environment variables
 
 # =============================================================================
-# CORS CONFIGURATION FOR DEVELOPMENT
+# CORS CONFIGURATION FOR DEVELOPMENT - MUY IMPORTANTE
 # =============================================================================
 
-CORS_ALLOWED_ORIGINS = [
-    "http://localhost:3000",
-    "http://127.0.0.1:3000",
-    "http://localhost:8000",
-    "http://127.0.0.1:8000",
-    "http://localhost:8002",
-    "http://127.0.0.1:8002",
-    "http://localhost:5173",
-    "http://127.0.0.1:5173",
-    "http://localhost:4173",
-    "http://127.0.0.1:4173",
-]
+# Lista expandida de orígenes permitidos para desarrollo
+# Asegúrate de incluir TODOS los puertos y dominios que tu frontend usa
+CORS_ALLOWED_ORIGINS = os.environ.get('CORS_ALLOWED_ORIGINS', 
+    'http://localhost:3000,http://127.0.0.1:3000,' + 
+    'http://localhost:8002,http://127.0.0.1:8002,' +
+    'http://localhost:5173,http://127.0.0.1:5173,' +
+    'http://localhost:4173,http://127.0.0.1:4173'
+).split(',')
 
+# Orígenes confiables para CSRF
+CSRF_TRUSTED_ORIGINS = CORS_ALLOWED_ORIGINS
+
+# Configuración más permisiva para desarrollo
 CORS_ALLOW_CREDENTIALS = True
-CORS_ALLOW_ALL_ORIGINS = False  # Mantener False incluso en desarrollo
+CORS_ALLOW_ALL_ORIGINS = False  # Mantener False para mejor seguridad
+
+# Habilitar cabeceras de depuración para desarrollo
+CORS_EXPOSE_HEADERS = ['Content-Length', 'Content-Type', 'X-Frame-Options']
 
 # =============================================================================
 # CACHE CONFIGURATION FOR DEVELOPMENT
@@ -131,6 +134,11 @@ if 'REST_FRAMEWORK' not in locals():
 REST_FRAMEWORK.update({
     'DEFAULT_PERMISSION_CLASSES': [
         'rest_framework.permissions.IsAuthenticatedOrReadOnly',  # Más permisivo en desarrollo
+    ],
+    # Agregar BrowsableAPIRenderer para desarrollo
+    'DEFAULT_RENDERER_CLASSES': [
+        'rest_framework.renderers.JSONRenderer',
+        'rest_framework.renderers.BrowsableAPIRenderer',
     ],
 })
 

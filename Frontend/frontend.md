@@ -1,222 +1,173 @@
-# 360Lateral Frontend - Progreso y Reorganización
+# 👥 API de Usuarios - Lateral 360°
 
-## 📋 Estado Actual del Proyecto
-
-**Framework detectado:** Remix (con estructura híbrida de Vite legacy)
-**Problema principal:** Estructura mixta con archivos duplicados y configuraciones conflictivas
-
-## 🔍 Análisis de Estructura Actual
-
-### ✅ Archivos/Carpetas que MANTENER:
-
-#### Configuración Principal (Remix)
-- `remix.config.js` - Configuración principal de Remix
-- `app/` - Directorio principal de Remix
-- `app/entry.client.tsx` - Entry point del cliente
-- `app/entry.server.tsx` - Entry point del servidor
-- `app/root.tsx` - Root component de Remix
-- `app/tailwind.css` - Estilos principales
-
-#### Estructura de Componentes (Atomic Design)
-- `app/components/atoms/` - Componentes básicos
-- `app/components/molecules/` - Componentes medios
-- `app/components/organisms/` - Componentes complejos
-- `app/components/dashboards/` - Componentes específicos de dashboard
-
-#### Utilidades y Servicios
-- `app/hooks/` - Custom hooks
-- `app/routes/` - Rutas de Remix
-- `app/services/` - Lógica de API
-- `app/types/` - Definiciones TypeScript
-- `app/utils/` - Funciones utilitarias
-
-#### Configuración de Desarrollo
-- `package.json` - Dependencias del proyecto
-- `tsconfig.json` - Configuración TypeScript
-- `tailwind.config.ts` - Configuración de Tailwind
-- `postcss.config.js` - Configuración de PostCSS
-- `.eslintrc.cjs` - Configuración de ESLint
-
-#### Docker y Deployment
-- `Dockerfile` - Configuración de contenedor
-- `.dockerignore` - Archivos ignorados por Docker
-- `.env.example` - Variables de entorno de ejemplo
-- `.env.docker` - Variables para Docker
-
-#### Otros
-- `public/` - Archivos estáticos
-- `README.md` - Documentación principal
+Documentación de los endpoints de usuarios con implementación de seguridad.
 
 ---
 
-## ❌ Archivos/Carpetas que ELIMINAR:
+## 📋 Endpoints de Usuarios
 
-### 1. Estructura Legacy de Vite/React
-```
-src/
-├── components/
-│   ├── auth/
-│   │   ├── LoginForm.tsx
-│   │   └── RegisterForm.tsx
-│   ├── common/
-│   │   ├── Footer.tsx
-│   │   ├── Header.tsx
-│   │   ├── Navigation.tsx
-│   │   └── Sidebar.tsx
-│   └── ui/
-│       ├── Button.tsx
-│       ├── Card.tsx
-│       └── Input.tsx
-├── pages/
-│   ├── auth/
-│   │   ├── Login.tsx
-│   │   └── Register.tsx
-│   ├── Dashboard.tsx
-│   ├── Home.tsx
-│   └── Profile.tsx
-├── App.tsx
-├── index.css
-├── main.tsx
-└── vite-env.d.ts
+| Endpoint | Método | Autenticación | Descripción |
+|----------|--------|---------------|-------------|
+| `/api/auth/register/` | POST | ❌ Público | Registro de nuevo usuario |
+| `/api/auth/login/` | POST | ❌ Público | Inicio de sesión |
+| `/api/auth/logout/` | POST | ✅ Requerida | Cierre de sesión |
+| `/api/auth/change-password/` | POST | ✅ Requerida | Cambiar contraseña |
+| `/api/users/me/` | GET | ✅ Requerida | **Perfil del usuario actual** |
+| `/api/users/` | GET | ✅ Requerida | Listar usuarios (filtrado por rol) |
+| `/api/users/{id}/` | GET/PUT | ✅ Requerida | Ver/Actualizar usuario |
+| `/api/users/{id}/` | DELETE | ✅ Solo Admin | Eliminar usuario |
+
+---
+
+## 🔐 Sistema de Roles
+
+### **Admin**
+- Acceso completo a todos los usuarios y recursos
+- Puede crear, modificar y eliminar cualquier usuario
+
+### **Owner (Propietario)**
+- Solo puede gestionar su propio perfil
+- Acceso a sus propios lotes y documentos
+
+### **Developer**
+- Solo lectura de recursos
+- Acceso limitado para desarrollo
+
+---
+
+## 🚀 Ejemplos de Uso
+
+### **1. Registro de Usuario**
+```bash
+POST /api/auth/register/
+{
+  "email": "usuario@example.com",
+  "username": "usuario123",
+  "password": "SecurePass123!",
+  "first_name": "Juan",
+  "last_name": "Pérez"
+}
 ```
 
-### 2. Configuraciones Conflictivas
-- `vite.config.ts` (ya que usamos Remix, no Vite puro)
-- `index.html` (Remix maneja esto automáticamente)
-- `tsconfig.app.json` (redundante con tsconfig.json)
-- `tsconfig.node.json` (no necesario para Remix)
+### **2. Inicio de Sesión**
+```bash
+POST /api/auth/login/
+{
+  "email": "usuario@example.com",
+  "password": "SecurePass123!"
+}
+```
 
-### 3. Archivos Duplicados/Innecesarios
-- `app/filesinfo.md` (información redundante)
-- Cualquier archivo `.svg` en `public/` que no se use
-- Archivos de configuración legacy de ESLint si existen múltiples versiones
-
----
-
-## 🎯 Plan de Reorganización
-
-### Fase 1: Limpieza de Archivos Legacy
-1. ✅ Eliminar carpeta `src/` completa
-2. ✅ Eliminar `vite.config.ts`
-3. ✅ Eliminar `index.html`
-4. ✅ Eliminar `tsconfig.app.json` y `tsconfig.node.json`
-5. ✅ Eliminar `app/filesinfo.md`
-
-### Fase 2: Migración de Componentes Útiles
-1. Revisar componentes en `src/` antes de eliminar
-2. Migrar componentes útiles a estructura atomic design en `app/`
-3. Consolidar componentes duplicados
-
-### Fase 3: Actualización de Documentación
-1. Actualizar README.md con estructura final
-2. Corregir información de tecnologías (Remix en lugar de Vite)
-3. Actualizar scripts de package.json si es necesario
+### **3. Ver Perfil**
+```bash
+GET /api/auth/users/me/
+Authorization: Bearer <token>
+```
 
 ---
 
-## 📝 Notas Importantes
+## 🔒 Seguridad Implementada
 
-- **Conflicto detectado:** README.md menciona Vite pero la estructura es de Remix
-- **Duplicación:** Componentes existen tanto en `src/` como en `app/`
-- **Recomendación:** Migrar completamente a Remix eliminando vestigios de Vite
-
----
-
-## ✅ Checklist de Limpieza
-
-- [x] Eliminar carpeta `src/`
-- [x] Eliminar `vite.config.ts`
-- [x] Eliminar `index.html`
-- [x] Eliminar archivos `tsconfig` redundantes
-- [x] Eliminar `app/filesinfo.md`
-- [x] Revisar y migrar componentes útiles
-- [ ] Actualizar README.md
-- [ ] Verificar que todos los imports funcionen
-- [ ] Probar que la aplicación compile correctamente
+- **Rate Limiting**: Protección contra ataques de fuerza bruta
+- **JWT Tokens**: Autenticación segura con expiración
+- **Validaciones**: Contraseñas fuertes y datos sanitizados
+- **Permisos**: Sistema de roles granular
+- **Logging**: Registro de eventos de seguridad
 
 ---
 
-## 🚀 Fase 2: Implementación de Servicios de Usuario
+## 🛠️ Configuración
 
-### 📋 Plan de Implementación Basado en API Documentada:
+### Estructura de Configuración
 
-#### 1. Servicios de Autenticación (`app/services/auth.ts`)
-- ✅ Login con rate limiting
-- ✅ Registro con validaciones
-- ✅ Logout con token blacklist
-- ✅ Refresh token automático
-- ✅ Manejo de errores específicos (401, 403, 429)
+El proyecto usa una **estructura modular de configuración**:
 
-#### 2. Servicios de Usuario (`app/services/user.ts`) 
-- ✅ Perfil de usuario actual `/auth/users/me/`
-- ✅ Listar usuarios con filtrado por rol
-- ✅ Actualizar perfil con campos restringidos
-- ✅ Cambio de contraseña seguro
-- ✅ Gestión de permisos por rol (Admin/Owner/Developer)
+```
+config/
+├── settings/
+│   ├── __init__.py
+│   ├── base.py          # Configuraciones comunes
+│   ├── development.py   # Desarrollo
+│   ├── production.py    # Producción
+│   ├── security.py      # Seguridad centralizada
+│   └── testing.py       # Testing
+└── settings.py          # Selector automático
+```
 
-#### 3. Tipos TypeScript (`app/types/`)
-- ✅ `users.ts` - Interfaces principales con compatibilidad API
-- ✅ `auth.ts` - Tipos de autenticación y tokens
-- ✅ `api.ts` - Tipos de respuestas de API
-- ✅ `index.ts` - Exportación organizada
+### Variables de Entorno
 
-#### 4. Utils de Seguridad (`app/utils/auth.ts`)
-- ✅ Storage seguro de tokens
-- ✅ Validación de permisos
-- ✅ Rate limiting frontend
-- ✅ Sanitización de datos
+```env
+# Django Core
+SECRET_KEY=your-super-secret-key-here
+DEBUG=True
+ALLOWED_HOSTS=localhost,127.0.0.1,yourdomain.com
 
-#### 5. Hooks Personalizados (`app/hooks/`)
-- ✅ `useAuth.ts` - Estado de autenticación completo
-- ✅ `useUser.ts` - Gestión de usuario y operaciones CRUD
-- ✅ `index.ts` - Exportación de hooks
+# Database
+DB_NAME=lateral360
+DB_USER=postgres
+DB_PASSWORD=your-secure-password
+DB_HOST=localhost
+DB_PORT=5432
 
-#### 6. Componentes Actualizados
-- ✅ `NavbarUpdated.tsx` - Navegación con autenticación
-- ✅ `DashboardUpdated.tsx` - Dashboard con permisos por rol
-- ✅ `root-updated.tsx` - Root con configuración de entorno
+# JWT Security
+JWT_SECRET_KEY=your-jwt-secret-key
+JWT_ACCESS_TOKEN_LIFETIME=15
+JWT_REFRESH_TOKEN_LIFETIME=1440
 
----
+# Cache & Redis
+REDIS_URL=redis://localhost:6379/1
+REDIS_PASSWORD=your-redis-password
 
-## 🔧 Integración Completada
+# CORS & Security
+CORS_ALLOWED_ORIGINS=http://localhost:3000,https://yourdomain.com
+CSRF_TRUSTED_ORIGINS=http://localhost:3000,https://yourdomain.com
 
-### ✅ Sistema de Autenticación Completo:
-- **Login/Logout** con manejo de errores y rate limiting
-- **Registro** con validaciones robustas
-- **Refresh automático** de tokens JWT
-- **Storage seguro** en localStorage
-- **Redirección automática** en casos de error
+# Security Settings
+LOGIN_RATE_LIMIT_IP=5
+REGISTRATION_RATE_LIMIT=3
+ACCOUNT_LOCKOUT_ATTEMPTS=5
+ACCOUNT_LOCKOUT_TIME=1800
 
-### ✅ Gestión de Usuarios:
-- **CRUD completo** con validación de permisos
-- **Filtrado por rol** automático (Admin ve todos, User solo él mismo)
-- **Normalización de datos** para compatibilidad con componentes existentes
-- **Cache inteligente** con localStorage
+# File Upload
+MAX_UPLOAD_SIZE=10485760
+ALLOWED_DOCUMENT_TYPES=pdf,doc,docx,jpg,jpeg,png,xlsx,xls
 
-### ✅ Seguridad Implementada:
-- **Rate limiting** del lado cliente
-- **Validaciones** de entrada en todos los campos
-- **Manejo específico** de errores 401, 403, 429
-- **Permisos granulares** por rol de usuario
-- **Sanitización** de datos de entrada
+# Email
+EMAIL_HOST=smtp.gmail.com
+EMAIL_PORT=587
+EMAIL_HOST_USER=your-email@gmail.com
+EMAIL_HOST_PASSWORD=your-app-password
 
-### ✅ UI/UX Mejorado:
-- **Estados de carga** en todos los componentes
-- **Manejo de errores** con mensajes claros
-- **Badges de rol** y estado visual
-- **Navegación condicional** según permisos
-- **Responsive design** mantenido
+# Logging
+SECURITY_LOG_RETENTION_DAYS=90
+```
 
----
+### Middleware de Seguridad
 
-## 🎯 Próximos Pasos Recomendados:
+Los siguientes middleware están **activos** en el sistema:
 
-1. **Rutas de Remix** - Crear rutas que usen estos componentes
-2. **Formularios de Auth** - Componentes de login/register
-3. **Gestión de Estados** - Context API para estado global
-4. **Testing** - Pruebas unitarias de servicios y hooks
-5. **Deployment** - Configuración para producción
+- **SecurityHeadersMiddleware**: Headers de seguridad automáticos
+- **RateLimitMiddleware**: Limitación de requests por IP
+- **SecurityLoggingMiddleware**: Registro de eventos de seguridad
+- **RequestValidationMiddleware**: Validación de requests entrantes
 
----
+### Dependencias
 
-**Estado:** ✅ Implementación completada - Sistema listo para integración
+```bash
+pip install djangorestframework-simplejwt django-redis django-cors-headers
+```
+
+### Configuración por Entorno
+
+```bash
+# Desarrollo (por defecto)
+python manage.py runserver
+
+# Producción
+export DJANGO_SETTINGS_MODULE=config.settings.production
+python manage.py runserver
+
+# Testing
+export DJANGO_SETTINGS_MODULE=config.settings.testing
+python manage.py test
+```

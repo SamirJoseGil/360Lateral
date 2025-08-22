@@ -294,18 +294,29 @@ def audit_log(action, user, resource=None, details=None, ip_address=None):
     """
     import json
     from datetime import datetime
+    import uuid
     
+    # Función auxiliar para hacer JSONEncoder personalizado
+    def json_custom_encoder(obj):
+        if isinstance(obj, uuid.UUID):
+            return str(obj)  # Convertir UUID a string
+        if hasattr(obj, 'isoformat'):  # Para objetos datetime
+            return obj.isoformat()
+        raise TypeError(f"Object of type {type(obj).__name__} is not JSON serializable")
+    
+    # Crear entrada de log
     log_entry = {
         'timestamp': datetime.now().isoformat(),
         'action': action,
-        'user_id': user.id if user else None,
-        'user_email': mask_sensitive_data(user.email) if user else None,
+        'user_id': str(user.id) if user and hasattr(user, 'id') else None,  # Convertir UUID a string explícitamente
+        'user_email': mask_sensitive_data(user.email) if user and hasattr(user, 'email') else None,
         'resource': resource,
         'details': details,
         'ip_address': ip_address,
     }
     
-    logger.info(f"AUDIT: {json.dumps(log_entry)}")
+    # Usar el encoder personalizado
+    logger.info(f"AUDIT: {json.dumps(log_entry, default=json_custom_encoder)}")
     
     return log_entry
 

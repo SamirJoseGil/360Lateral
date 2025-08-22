@@ -1,13 +1,16 @@
-export type UserRole = "admin" | "propietario" | "desarrollador";
+import { UserRole } from "./userRole";
 
 export interface User {
-  id: string;
-  firstName: string;
-  lastName: string;
+  id: string;  // Cambiado a string para UUID
   email: string;
-  role: UserRole;
-  phone?: string;
-  bio?: string;
+  first_name: string; // Cambiado de first_name/last_name a name
+  last_name: string; // Cambiado de first_name/last_name a name
+  role: 'admin' | 'owner' | 'developer';
+}
+
+export interface AuthTokens {
+  access: string;
+  refresh: string;
 }
 
 export interface LoginCredentials {
@@ -17,72 +20,55 @@ export interface LoginCredentials {
 
 export interface RegisterData {
   email: string;
+  username: string;
   password: string;
-  firstName: string;
-  lastName: string;
-  role: UserRole;
+  password_confirm: string;
+  first_name: string;
+  last_name: string;
+  phone?: string;
+  company?: string;
 }
 
-export interface AuthResponse {
-  user: User;
-  token: string;
-  refreshToken: string;
+export interface ChangePasswordData {
+  current_password: string;
+  new_password: string;
+  new_password_confirm: string;
 }
 
-// Tokens JWT
-export interface TokenPair {
-  access: string;
-  refresh: string;
-}
-
-// Datos para login
-export interface LoginData {
-  email: string;
-  password: string;
-}
-
-// Respuesta exitosa de login
+// Adaptado para manejar el formato de respuesta del backend
 export interface LoginResponse {
   message: string;
   user: User;
-  tokens: TokenPair;
+  tokens: {
+    access: string;
+    refresh: string;
+  };
 }
 
-// Respuesta exitosa de registro
 export interface RegisterResponse {
   message: string;
   user: User;
-  tokens: TokenPair;
+  tokens: {
+    access: string;
+    refresh: string;
+  };
 }
 
-// Errores específicos de autenticación
-export interface AuthError {
-  error: string | boolean;
+export interface ApiError {
+  error: boolean | string;
   message: string;
   status_code?: number;
-  field_errors?: Record<string, string[]>;
 }
 
-// Estados de autenticación
-export interface AuthState {
-  user: User | null;
-  tokens: TokenPair | null;
-  isAuthenticated: boolean;
-  isLoading: boolean;
-  error: string | null;
-}
-
-// Respuesta de refresh token
-export interface RefreshTokenResponse {
-  access: string;
-}
-
-// Respuesta de logout
-export interface LogoutResponse {
-  message: string;
-}
-
-// Respuesta de cambio de contraseña
-export interface ChangePasswordResponse {
-  message: string;
+export interface AuthContextType {
+    isAuthenticated: boolean;
+    isLoading: boolean;
+    initialCheckDone: boolean;
+    user: User | null;
+    authError: string | null;
+    login: (email: string, password: string) => Promise<void>;
+    logout: () => void;
+    hasRole: (role: string | string[]) => boolean;
+    getDashboardPath: (role: string) => string;
+    normalizeRole: (role: string) => UserRole;
 }

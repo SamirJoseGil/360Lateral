@@ -11,8 +11,8 @@ Documentación de los endpoints de usuarios con implementación de seguridad.
 | `/api/auth/register/` | POST | ❌ Público | Registro de nuevo usuario |
 | `/api/auth/login/` | POST | ❌ Público | Inicio de sesión |
 | `/api/auth/logout/` | POST | ✅ Requerida | Cierre de sesión |
-| `/api/auth/users/me/` | GET | ✅ Requerida | Perfil del usuario actual |
 | `/api/auth/change-password/` | POST | ✅ Requerida | Cambiar contraseña |
+| `/api/users/me/` | GET | ✅ Requerida | **Perfil del usuario actual** |
 | `/api/users/` | GET | ✅ Requerida | Listar usuarios (filtrado por rol) |
 | `/api/users/{id}/` | GET/PUT | ✅ Requerida | Ver/Actualizar usuario |
 | `/api/users/{id}/` | DELETE | ✅ Solo Admin | Eliminar usuario |

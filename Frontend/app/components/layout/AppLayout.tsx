@@ -1,6 +1,8 @@
-import { Fragment, useState } from 'react';
-import { Link, useLocation } from '@remix-run/react';
+import React, { Fragment, ReactNode, useState } from 'react';
+import { Link, Navigate, useLocation } from '@remix-run/react';
 import { useAuthContext } from '~/components/auth/AuthProvider';
+import { Navbar } from '~/components/organisms/Navbar';
+import { useAuth } from '~/hooks';
 
 interface NavigationItem {
     name: string;
@@ -163,8 +165,8 @@ function SidebarContent({ navigation, currentPath }: { navigation: NavigationIte
                             key={item.name}
                             to={item.href}
                             className={`${isActive
-                                    ? 'bg-blue-100 text-blue-900'
-                                    : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
+                                ? 'bg-blue-100 text-blue-900'
+                                : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
                                 } group flex items-center px-2 py-2 text-sm font-medium rounded-md`}
                         >
                             {item.icon && (
@@ -183,35 +185,49 @@ function SidebarContent({ navigation, currentPath }: { navigation: NavigationIte
 }
 
 interface AppLayoutProps {
-    children: React.ReactNode;
+    children: ReactNode;
+    requireAuth?: boolean;
+    requiredRoles?: string | string[];
 }
 
-export default function AppLayout({ children }: AppLayoutProps) {
-    const [sidebarOpen, setSidebarOpen] = useState(false);
+export default function AppLayout({ children, requireAuth = false, requiredRoles }: AppLayoutProps) {
+    const { isAuthenticated, isLoading, initialCheckDone, hasRole, user } = useAuth();
+
+    // Esperar a que termine la verificación inicial de autenticación
+    if (isLoading || !initialCheckDone) {
+        return (
+            <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+                <div className="text-center">
+                    <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-blue-600"></div>
+                    <p className="mt-4 text-gray-600">Cargando...</p>
+                </div>
+            </div>
+        );
+    }
+
+    // Si requiere autenticación pero no está autenticado
+    if (requireAuth && !isAuthenticated) {
+        return <Navigate to="/auth/login" />;
+    }
+
+    // Si requiere roles específicos pero no los tiene
+    if (requiredRoles && isAuthenticated && !hasRole(requiredRoles)) {
+        return <Navigate to="/dashboard" />;
+    }
 
     return (
-        <div className="h-screen flex overflow-hidden bg-gray-100">
-            <Sidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
+        <div className="min-h-screen bg-gray-50 flex flex-col">
+            <Navbar />
 
-            <div className="flex flex-col w-0 flex-1 overflow-hidden">
-                {/* Top navigation */}
-                <div className="relative z-10 flex-shrink-0 flex h-16 bg-white shadow">
-                    <MobileMenuButton onClick={() => setSidebarOpen(true)} />
-                    <div className="flex-1 px-4 flex justify-between items-center">
-                        <div className="flex-1 flex">
-                            {/* Search bar could go here */}
-                        </div>
-                        <div className="ml-4 flex items-center md:ml-6">
-                            <UserDropdown />
-                        </div>
-                    </div>
+            <main className="flex-grow">
+                {children}
+            </main>
+
+            <footer className="py-4 bg-white border-t">
+                <div className="max-w-7xl mx-auto px-4 text-center text-sm text-gray-500">
+                    &copy; {new Date().getFullYear()} Lateral 360 - Todos los derechos reservados
                 </div>
-
-                {/* Main content */}
-                <main className="flex-1 relative overflow-y-auto focus:outline-none">
-                    {children}
-                </main>
-            </div>
+            </footer>
         </div>
     );
 }

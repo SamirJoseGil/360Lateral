@@ -111,3 +111,12 @@ export interface PermissionCheck {
   requiredRole?: UserRole;
   message?: string;
 }
+export interface AuditEvent {
+  timestamp: string;
+  action: string;
+  user_id: string;
+  user_email: string;
+  resource: string | null;
+  details?: Record<string, any>;
+  ip_address: string;
+}

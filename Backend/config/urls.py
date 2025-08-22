@@ -46,12 +46,12 @@ urlpatterns = [
     path('admin/', admin.site.urls),
     
     # API Documentation - Swagger/OpenAPI
-    path('api/docs/', schema_view.with_ui('swagger', cache_timeout=0), name='schema-swagger-ui'),
-    path('api/redoc/', schema_view.with_ui('redoc', cache_timeout=0), name='schema-redoc'),
-    path('api/schema/', schema_view.without_ui(cache_timeout=0), name='schema-json'),
+    path('api/docs/', schema_view.with_ui('swagger', cache_timeout=0), name='schema-swagger-ui'), # type: ignore
+    path('api/redoc/', schema_view.with_ui('redoc', cache_timeout=0), name='schema-redoc'), # type: ignore
+    path('api/schema/', schema_view.without_ui(cache_timeout=0), name='schema-json'), # type: ignore
     
-    # API routes
-    path('api/auth/', include('apps.users.urls')),
+    # API routes - Rutas corregidas
+    path('api/auth/', include('apps.authentication.urls')),  # Usar apps.authentication.urls para rutas de auth
     path('api/users/', include('apps.users.urls')),
     path('api/lotes/', include('apps.lotes.urls')),
     path('api/documentos/', include('apps.documents.urls')),

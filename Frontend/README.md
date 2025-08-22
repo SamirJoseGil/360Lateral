@@ -121,7 +121,7 @@ Aplicación web para la plataforma de contratación lateral 360Lateral, construi
 - **Dashboard**: Panel principal del usuario
 - **Profile**: Gestión del perfil de usuario
 
-## � Configuración de la API
+## 🔌 Configuración de la API
 
 ### Backend requerido
 El frontend está configurado para conectarse a la API Django que debe estar ejecutándose en `http://localhost:8000`.
@@ -133,6 +133,20 @@ El frontend está configurado para conectarse a la API Django que debe estar eje
 - **GET** `/api/auth/users/me/` - Perfil del usuario actual
 - **PUT** `/api/users/{id}/` - Actualizar perfil
 - **POST** `/api/auth/change-password/` - Cambiar contraseña
+
+### Formato de respuesta de autenticación
+```json
+{
+  "refresh": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "access": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "user": {
+    "id": "14dff5c1-0301-4b33-b5bf-c9adc7316fcd",
+    "email": "admin@lateral360.com",
+    "name": "Admin Sistema",
+    "role": "admin"
+  }
+}
+```
 
 ### Seguridad implementada
 - Autenticación JWT con tokens de 15 minutos
