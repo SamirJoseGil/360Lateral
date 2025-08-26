@@ -24,22 +24,19 @@ export default function handleRequest(
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   loadContext: AppLoadContext
 ) {
-  // Asegurar que las cabeceras incluyen la codificación UTF-8
-  responseHeaders.set("Content-Type", "text/html; charset=utf-8");
-
   return isbot(request.headers.get("user-agent") || "")
     ? handleBotRequest(
-      request,
-      responseStatusCode,
-      responseHeaders,
-      remixContext
-    )
+        request,
+        responseStatusCode,
+        responseHeaders,
+        remixContext
+      )
     : handleBrowserRequest(
-      request,
-      responseStatusCode,
-      responseHeaders,
-      remixContext
-    );
+        request,
+        responseStatusCode,
+        responseHeaders,
+        remixContext
+      );
 }
 
 function handleBotRequest(
@@ -62,8 +59,7 @@ function handleBotRequest(
           const body = new PassThrough();
           const stream = createReadableStreamFromReadable(body);
 
-          // Asegurar que se mantiene la codificación UTF-8
-          responseHeaders.set("Content-Type", "text/html; charset=utf-8");
+          responseHeaders.set("Content-Type", "text/html");
 
           resolve(
             new Response(stream, {
@@ -79,6 +75,9 @@ function handleBotRequest(
         },
         onError(error: unknown) {
           responseStatusCode = 500;
+          // Log streaming rendering errors from inside the shell.  Don't log
+          // errors encountered during initial shell rendering since they'll
+          // reject and get logged in handleDocumentRequest.
           if (shellRendered) {
             console.error(error);
           }
@@ -110,8 +109,7 @@ function handleBrowserRequest(
           const body = new PassThrough();
           const stream = createReadableStreamFromReadable(body);
 
-          // Asegurar que se mantiene la codificación UTF-8
-          responseHeaders.set("Content-Type", "text/html; charset=utf-8");
+          responseHeaders.set("Content-Type", "text/html");
 
           resolve(
             new Response(stream, {
@@ -127,6 +125,9 @@ function handleBrowserRequest(
         },
         onError(error: unknown) {
           responseStatusCode = 500;
+          // Log streaming rendering errors from inside the shell.  Don't log
+          // errors encountered during initial shell rendering since they'll
+          // reject and get logged in handleDocumentRequest.
           if (shellRendered) {
             console.error(error);
           }

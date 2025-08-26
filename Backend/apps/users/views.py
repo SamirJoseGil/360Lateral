@@ -1,9 +1,9 @@
 """
-Views para la gestión de usuarios
+Vistas para la API de usuarios
 """
-from rest_framework import generics, status, viewsets
+from rest_framework import generics, status, permissions, viewsets
 from rest_framework.decorators import api_view, permission_classes, action
-from rest_framework.permissions import AllowAny, IsAuthenticated
+from rest_framework.permissions import AllowAny, IsAuthenticated, IsAdminUser
 from rest_framework.response import Response
 from django.contrib.auth import get_user_model
 import logging
@@ -105,6 +105,63 @@ class UserViewSet(viewsets.ModelViewSet):
             'message': 'Perfil actualizado',
             'data': serializer.data
         })
+
+
+# Vista basada en clase para listar y crear usuarios
+class UserListCreateView(generics.ListCreateAPIView):
+    """
+    get: Listar todos los usuarios (solo para admin)
+    post: Crear un nuevo usuario (solo para admin)
+    """
+    serializer_class = UserSerializer
+    permission_classes = [IsAuthenticated, IsAdminUser]
+    
+    def get_queryset(self):
+        # Filtrar usuarios según rol - solo admin ve todos
+        user = self.request.user
+        if user.is_superuser or user.role == 'admin':
+            return User.objects.all()
+        # Desarrollador ve usuarios relacionados con sus proyectos
+        elif user.role == 'developer':
+            return User.objects.filter(proyectos__developers=user).distinct()
+        # Propietarios solo se ven a sí mismos
+        else:
+            return User.objects.filter(pk=user.pk)
+
+# Vista basada en clase para detalles de usuario
+class UserDetailView(generics.RetrieveUpdateDestroyAPIView):
+    """
+    get: Obtener detalles de un usuario
+    put: Actualizar usuario
+    delete: Eliminar usuario
+    """
+    queryset = User.objects.all()
+    serializer_class = UserSerializer
+    permission_classes = [IsAuthenticated]
+    
+    def get_permissions(self):
+        # Para eliminar usuario, solo admin
+        if self.request.method == 'DELETE':
+            return [IsAuthenticated(), IsAdminUser()]
+        return super().get_permissions()
+    
+    def check_object_permissions(self, request, obj):
+        # Solo admin o el propio usuario pueden ver/editar perfil
+        if not (request.user.is_superuser or request.user.role == 'admin' or obj.id == request.user.id):
+            self.permission_denied(request, message="No tienes permiso para ver este usuario")
+        return super().check_object_permissions(request, obj)
+
+# Vista para el usuario actual
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def me(request):
+    """Obtener datos del usuario actualmente autenticado"""
+    serializer = UserSerializer(request.user)
+    return Response(serializer.data)
+
+# Función utilitaria para que las URLs funcionen con las vistas basadas en funciones o clases
+user_list_create = UserListCreateView.as_view()
+user_detail = UserDetailView.as_view()
 
 
 # Health check específico para usuarios

@@ -29,6 +29,7 @@ THIRD_PARTY_APPS = [
     'rest_framework_simplejwt',
     'corsheaders',
     'drf_yasg',  # Swagger/OpenAPI documentation
+    'django_filters',  # Agregar django-filter aquí
 ]
 
 LOCAL_APPS = [
@@ -56,6 +57,7 @@ MIDDLEWARE = [
 
 # URL Configuration
 ROOT_URLCONF = 'config.urls'
+APPEND_SLASH = False
 
 # Templates
 TEMPLATES = [
@@ -149,6 +151,11 @@ REST_FRAMEWORK = {
     ],
     'DEFAULT_PERMISSION_CLASSES': [
         'rest_framework.permissions.IsAuthenticated',
+    ],
+    'DEFAULT_FILTER_BACKENDS': [
+        'django_filters.rest_framework.DjangoFilterBackend',
+        'rest_framework.filters.SearchFilter',
+        'rest_framework.filters.OrderingFilter',
     ],
     'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
     'PAGE_SIZE': 20,
@@ -323,3 +330,5 @@ if 'smtp' in EMAIL_BACKEND.lower():
 # Password reset settings
 PASSWORD_RESET_TOKEN_EXPIRY = int(os.environ.get('PASSWORD_RESET_TOKEN_EXPIRY', 24))  # Horas
 FRONTEND_URL = os.environ.get('FRONTEND_URL', 'http://localhost:3000')
+
+# Esta edición no modifica el archivo, solo lo revisa

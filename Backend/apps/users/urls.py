@@ -1,17 +1,16 @@
 """
 URLs para la gestión de usuarios
 """
-from django.urls import path, include
-from rest_framework.routers import DefaultRouter
+from django.urls import path
 from . import views
 
-router = DefaultRouter()
-router.register(r'', views.UserViewSet, basename='users')
-
 urlpatterns = [
-    # Perfil de usuario
-    path('me/', views.CurrentUserView.as_view(), name='current_user'),
+    # Vista para listar todos los usuarios o crear uno nuevo
+    path('', views.user_list_create, name='user-list-create'),
     
-    # CRUD de usuarios a través del router
-    path('', include(router.urls)),
+    # Vista para obtener detalles de un usuario específico
+    path('<int:pk>/', views.user_detail, name='user-detail'),
+    
+    # Vista para obtener el usuario actualmente autenticado
+    path('me/', views.me, name='user-me'),
 ]

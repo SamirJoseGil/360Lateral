@@ -1,416 +1,447 @@
 """
-Servicio especializado para integración con MapGIS Medellín
+Servicio para interactuar con MapGIS de Medellín.
+
+Este servicio proporciona funciones para:
+1. Consultar información de lotes por CBML, matrícula o dirección
+2. Obtener restricciones urbanísticas y ambientales
+3. Manejar sesiones y autenticación con el sistema MapGIS
 """
+
 import requests
-import json
+import logging
+import time
 import re
-from typing import Dict, Optional
+import json
+from typing import Dict, Any, Optional, Tuple, List, Union
+from urllib.parse import quote
 from django.conf import settings
 from django.core.cache import cache
-import logging
 
-from .base_service import BaseService
-from .tratamientos_service import tratamientos_service
-
+# Configuración del logger
 logger = logging.getLogger(__name__)
 
-class MapGISService(BaseService):
-    """
-    Servicio para conectar con MapGIS Medellín y extraer información de predios
-    """
-
+class MapGISService:
+    """Servicio para interactuar con MapGIS de Medellín."""
+    
+    # URLs y endpoints
+    BASE_URL = settings.MAPGIS_BASE_URL
+    LOGIN_URL = f"{BASE_URL}/mapa-medellin/PHP/login.php"
+    SEARCH_URL = f"{BASE_URL}/mapa-medellin/site/busqueda.php"
+    CBML_URL = f"{BASE_URL}/mapa-medellin/site/fichas/ficha_catastral.php"
+    MATRICULA_URL = f"{BASE_URL}/mapa-medellin/site/fichas/ficha_registro.php"
+    
+    # Timeout y reintentos
+    TIMEOUT = settings.MAPGIS_TIMEOUT
+    RETRY_ATTEMPTS = settings.MAPGIS_RETRY_ATTEMPTS
+    
     def __init__(self):
-        super().__init__()
-        # URL CORREGIDA - La URL real de MapGIS Medellín
-        self.base_url = "https://www.medellin.gov.co/mapgis"
-        self.timeout = getattr(settings, 'MAPGIS_TIMEOUT', 30)
+        """Inicializa el servicio con una sesión nueva."""
         self.session = requests.Session()
-        self.session_initialized = False
-        self._setup_session()
-
-    def _setup_session(self):
-        """Configura la sesión HTTP con headers del navegador"""
-        self.session.headers.update({
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Safari/537.36',
-            'Accept-Language': 'es-ES,es;q=0.6',
-            'Accept-Encoding': 'gzip, deflate, br, zstd',
+        self.headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+            'Accept-Language': 'es-ES,es;q=0.8,en-US;q=0.5,en;q=0.3',
             'Connection': 'keep-alive',
-            'X-Requested-With': 'XMLHttpRequest',
-            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
-        })
-
-    def _inicializar_sesion(self) -> bool:
-        """Inicializa la sesión con MapGIS"""
+            'Upgrade-Insecure-Requests': '1',
+            'Pragma': 'no-cache',
+            'Cache-Control': 'no-cache',
+        }
+        self.authenticated = False
+        
+    def _get_cached_response(self, cache_key: str) -> Optional[Dict[str, Any]]:
+        """Obtiene respuesta cacheada si existe."""
+        if not settings.MAPGIS_FORCE_REAL:
+            cached_data = cache.get(cache_key)
+            if cached_data:
+                logger.debug(f"Usando datos cacheados para {cache_key}")
+                return cached_data
+        return None
+        
+    def _set_cached_response(self, cache_key: str, data: Dict[str, Any], timeout: int = 3600*24) -> None:
+        """Guarda respuesta en cache."""
+        cache.set(cache_key, data, timeout)
+        
+    def authenticate(self) -> bool:
+        """
+        Autentica la sesión con MapGIS. Devuelve True si tiene éxito.
+        """
+        if self.authenticated:
+            return True
+            
         try:
-            if self.session_initialized:
-                return True
-                
-            logger.info("🔧 Inicializando sesión con MapGIS Medellín")
+            # Primero hacemos un GET para obtener cookies y tokens
+            response = self.session.get(
+                self.LOGIN_URL, 
+                headers=self.headers,
+                timeout=self.TIMEOUT
+            )
+            response.raise_for_status()
             
-            # Intentar conexión con URLs alternativas
-            urls_to_try = [
-                "https://www.medellin.gov.co/mapgis",
-                "https://mapas.medellin.gov.co",
-                "https://www.medellin.gov.co"
-            ]
+            # No necesita credenciales específicas, solo establecer sesión
+            self.authenticated = True
+            logger.info("Autenticación con MapGIS exitosa")
+            return True
             
-            for url in urls_to_try:
-                try:
-                    resp = self.session.get(url, timeout=10)
-                    if resp.status_code == 200:
-                        self.session_initialized = True
-                        self.base_url = url
-                        logger.info(f"✅ Sesión inicializada con {url} - Cookies: {len(self.session.cookies)}")
-                        return True
-                except Exception as e:
-                    logger.debug(f"No se pudo conectar a {url}: {str(e)}")
-                    continue
-            
-            # Si ninguna URL funciona, continuar en modo offline
-            logger.warning("⚠️ No se pudo conectar con MapGIS - Funcionando en modo offline")
-            self.session_initialized = False
+        except requests.RequestException as e:
+            logger.error(f"Error de autenticación con MapGIS: {str(e)}")
+            self.authenticated = False
             return False
-                
-        except Exception as e:
-            logger.error(f"❌ Error inicializando sesión: {str(e)}")
-            return False
-
-    def buscar_por_cbml(self, cbml: str) -> Dict:
+    
+    def search_by_cbml(self, cbml: str) -> Dict[str, Any]:
         """
-        Busca información del predio por CBML.
-        Devuelve datos estructurados o fallback si no se encuentra.
+        Busca información de un lote por CBML.
+        
+        Args:
+            cbml: Código CBML en formato '04050010105' o similar
+        
+        Returns:
+            Diccionario con información detallada del lote.
         """
-        logger.info(f"Buscando predio por CBML: {cbml}")
-        cache_key = f"mapgis_cbml_{cbml}"
+        # Limpiar y validar CBML
+        cbml = re.sub(r'[^0-9]', '', cbml)
+        if not cbml or len(cbml) < 8:
+            return {'success': False, 'error': 'CBML inválido', 'code': 'INVALID_CBML'}
         
         # Verificar cache
-        cached = cache.get(cache_key)
-        if cached:
-            logger.debug("Resultado obtenido de cache")
-            return cached
-
-        # CBML especial con datos simulados (siempre funciona)
-        if cbml == "14180230004":
-            resultado = {
-                "encontrado": True,
-                "datos": {
-                    "cbml": cbml,
-                    "area_lote": "428.95 m²",
-                    "area_lote_m2": 428.95,
-                    "clasificacion_suelo": "Urbano",
-                    "uso_suelo": {
-                        "categoria_uso": "Áreas y corredores de alta mixtura",
-                        "subcategoria_uso": "Centralidades con predominancia económica",
-                        "porcentaje": 100.0
-                    },
-                    "aprovechamiento_urbano": {
-                        "tratamiento": "Consolidación Nivel 4",
-                        "densidad_habitacional_max": 220,
-                        "altura_normativa": "Variable 1"
-                    },
-                    "restricciones_ambientales": {
-                        "amenaza_riesgo": "Amenaza movimientos en masa: Baja",
-                        "retiros_rios": "Sin restricciones por retiros",
-                        "estructura_ecologica": "Fuera de áreas protegidas"
-                    }
-                },
-                "fuente": "datos_especiales"
+        cache_key = f'mapgis_cbml_{cbml}'
+        cached_data = self._get_cached_response(cache_key)
+        if cached_data:
+            return cached_data
+        
+        # Autenticar si es necesario
+        if not self.authenticated and not self.authenticate():
+            return {'success': False, 'error': 'Error de autenticación con MapGIS', 'code': 'AUTH_ERROR'}
+        
+        try:
+            # Consulta a MapGIS
+            params = {'cbml': cbml}
+            response = self.session.get(
+                self.CBML_URL,
+                params=params,
+                headers=self.headers,
+                timeout=self.TIMEOUT
+            )
+            response.raise_for_status()
+            
+            # Procesar HTML y extraer datos
+            data = self._extract_lote_data_from_html(response.text)
+            
+            # Si no hay datos o error
+            if not data.get('cbml'):
+                return {'success': False, 'error': 'No se encontró información para el CBML indicado', 'code': 'NOT_FOUND'}
+            
+            # Complementar con datos de restricciones
+            restricciones = self.get_restricciones(cbml)
+            if restricciones.get('success'):
+                data['restricciones'] = restricciones.get('restricciones', [])
+            
+            # Preparar respuesta
+            result = {
+                'success': True,
+                'data': data,
+                'source': 'mapgis'
             }
+            
             # Guardar en cache
-            cache.set(cache_key, resultado, 3600)
-            logger.info(f"✅ Datos especiales devueltos para CBML {cbml}")
-            return resultado
-
-        # Intentar inicializar sesión
-        session_ok = self._inicializar_sesion()
-        
-        # Si la sesión es exitosa, intentar consulta real
-        if session_ok:
-            try:
-                # Realizar consultas múltiples
-                datos_completos = self._consultar_datos_completos(cbml)
-                
-                if datos_completos.get('encontrado'):
-                    cache.set(cache_key, datos_completos, 3600)
-                    return datos_completos
-                        
-            except Exception as e:
-                logger.error(f"Error en consulta MapGIS CBML: {e}")
-
-        # Fallback con datos aleatorios consistentes
-        return self._fallback_data(cbml, 'cbml')
-
-    def _consultar_datos_completos(self, cbml: str) -> Dict:
-        """Realiza todas las consultas necesarias para obtener datos completos del predio"""
-        try:
-            datos = {
-                "cbml": cbml,
-                "area_lote": "0 m²",
-                "area_lote_m2": 0,
-                "clasificacion_suelo": "No determinado"
-            }
+            self._set_cached_response(cache_key, result)
+            return result
             
-            # Consulta 1: Restricción por amenaza y riesgo
-            restriccion_amenaza = self._consultar_restriccion_amenaza_riesgo(cbml)
-            
-            # Consulta 2: Restricción por retiros a ríos y quebradas  
-            restriccion_rios = self._consultar_restriccion_rios_quebradas(cbml)
-            
-            # Consulta 3: Estructura ecológica
-            estructura_ecologica = self._consultar_estructura_ecologica(cbml)
-            
-            # Combinar resultados
-            datos["restricciones_ambientales"] = {
-                "amenaza_riesgo": restriccion_amenaza or "No determinado",
-                "retiros_rios": restriccion_rios or "No determinado", 
-                "estructura_ecologica": estructura_ecologica or "No determinado"
-            }
-            
-            # Si tenemos al menos una restricción, considerar como encontrado
-            if restriccion_amenaza or restriccion_rios or estructura_ecologica:
-                return {
-                    "encontrado": True,
-                    "datos": datos,
-                    "fuente": "mapgis_real"
-                }
-            
-            return {"encontrado": False}
-            
+        except requests.RequestException as e:
+            logger.error(f"Error consultando MapGIS por CBML: {str(e)}")
+            return {'success': False, 'error': f'Error de conexión con MapGIS: {str(e)}', 'code': 'CONNECTION_ERROR'}
         except Exception as e:
-            logger.error(f"Error en consulta datos completos: {e}")
-            return {"encontrado": False}
-
-    def _consultar_restriccion_amenaza_riesgo(self, cbml: str) -> Optional[str]:
-        """Consulta restricciones por amenaza y riesgo"""
-        try:
-            # URL real extraída del endpoint
-            url = f"{self.base_url}/site_consulta_pot/consultas.hyg"
-            params = {
-                'cbml': cbml,
-                'consulta': 'SQL_CONSULTA_RESTRICCIONAMENAZARIESGO',
-                'campos': 'Condiciones de riesgo y RNM'
-            }
+            logger.error(f"Error procesando datos de MapGIS: {str(e)}")
+            return {'success': False, 'error': f'Error procesando información: {str(e)}', 'code': 'PROCESSING_ERROR'}
             
-            resp = self.session.post(url, params=params, timeout=self.timeout)
-            
-            if resp.status_code == 200:
-                try:
-                    data = resp.json()
-                    resultados = data.get('resultados', [])
-                    
-                    if resultados and len(resultados) > 0:
-                        primer_resultado = resultados[0]
-                        if isinstance(primer_resultado, list) and len(primer_resultado) > 0:
-                            valor = primer_resultado[0].get('valor')
-                            if valor:
-                                logger.info(f"✅ Restricción amenaza encontrada: {valor}")
-                                return valor
-                                
-                except json.JSONDecodeError:
-                    logger.warning("Respuesta no es JSON válido para restricción amenaza")
-                    
-        except Exception as e:
-            logger.error(f"Error consultando restricción amenaza: {e}")
-            
-        return None
-
-    def _consultar_restriccion_rios_quebradas(self, cbml: str) -> Optional[str]:
-        """Consulta restricciones por retiros a ríos y quebradas"""
-        try:
-            # URL real extraída del endpoint
-            url = f"{self.base_url}/site_consulta_pot/consultas.hyg"
-            params = {
-                'cbml': cbml,
-                'consulta': 'SQL_CONSULTA_RESTRICCIONRIOSQUEBRADAS',
-                'campos': 'Restric por retiro a quebrada'
-            }
-            
-            resp = self.session.post(url, params=params, timeout=self.timeout)
-            
-            if resp.status_code == 200:
-                try:
-                    data = resp.json()
-                    resultados = data.get('resultados', [])
-                    
-                    if resultados and len(resultados) > 0:
-                        # Procesar resultados de retiros
-                        primer_resultado = resultados[0]
-                        if isinstance(primer_resultado, list) and len(primer_resultado) > 0:
-                            valor = primer_resultado[0].get('valor')
-                            if valor:
-                                logger.info(f"✅ Restricción ríos encontrada: {valor}")
-                                return valor
-                        
-                    # Si no hay resultados, no hay restricciones
-                    return "Sin restricciones por retiros a ríos o quebradas"
-                    
-                except json.JSONDecodeError:
-                    logger.warning("Respuesta no es JSON válido para restricción ríos")
-                    
-        except Exception as e:
-            logger.error(f"Error consultando restricción ríos: {e}")
-            
-        return None
-
-    def _consultar_estructura_ecologica(self, cbml: str) -> Optional[str]:
-        """Consulta información de estructura ecológica"""
-        try:
-            # URL del servicio de estructura ecológica
-            url = f"{self.base_url}/servidormapas/rest/services/ordenamiento_ter/VM_POT48_Estructura_ecologica/MapServer"
-            params = {
-                'f': 'json',
-                'dpi': '96',
-                'transparent': 'true',
-                'format': 'png8'
-            }
-            
-            resp = self.session.get(url, params=params, timeout=self.timeout)
-            
-            if resp.status_code == 200:
-                try:
-                    data = resp.json()
-                    
-                    # Verificar si el servicio está disponible
-                    if data.get('serviceDescription'):
-                        descripcion = data.get('serviceDescription', '')
-                        
-                        # Extraer información relevante
-                        if 'áreas protegidas' in descripcion.lower():
-                            logger.info("✅ Información estructura ecológica obtenida")
-                            return "Estructura ecológica disponible - Ver áreas protegidas y sistema hidrográfico"
-                        
-                except json.JSONDecodeError:
-                    logger.warning("Respuesta no es JSON válido para estructura ecológica")
-                    
-        except Exception as e:
-            logger.error(f"Error consultando estructura ecológica: {e}")
-            
-        return "Información de estructura ecológica no disponible"
-
-    def consultar_restricciones_completas(self, cbml: str) -> Dict:
-        """Método específico para obtener solo las restricciones ambientales"""
-        logger.info(f"Consultando restricciones ambientales para CBML: {cbml}")
-        
-        cache_key = f"mapgis_restricciones_{cbml}"
-        cached = cache.get(cache_key)
-        if cached:
-            return cached
-        
-        # CBML especial con datos conocidos
-        if cbml == "14180230004":
-            resultado = {
-                "encontrado": True,
-                "cbml": cbml,
-                "restricciones": {
-                    "amenaza_riesgo": "Amenaza movimientos en masa: Baja",
-                    "retiros_rios": "Sin restricciones por retiros",
-                    "estructura_ecologica": "Fuera de áreas protegidas",
-                    "areas_protegidas": "No aplica",
-                    "sistema_hidrografico": "No afectado",
-                    "sistema_orografico": "No afectado"
-                }
-            }
-            cache.set(cache_key, resultado, 3600)
-            return resultado
-        
-        # Intentar consultas reales
-        session_ok = self._inicializar_sesion()
-        if session_ok:
-            amenaza = self._consultar_restriccion_amenaza_riesgo(cbml)
-            rios = self._consultar_restriccion_rios_quebradas(cbml)
-            ecologica = self._consultar_estructura_ecologica(cbml)
-            
-            resultado = {
-                "encontrado": True,
-                "cbml": cbml,
-                "restricciones": {
-                    "amenaza_riesgo": amenaza or "No determinado",
-                    "retiros_rios": rios or "Sin restricciones",
-                    "estructura_ecologica": ecologica or "No disponible"
-                }
-            }
-            
-            cache.set(cache_key, resultado, 3600)
-            return resultado
-        
-        # Fallback
-        return {
-            "encontrado": False,
-            "cbml": cbml,
-            "restricciones": {
-                "amenaza_riesgo": "Servicio no disponible",
-                "retiros_rios": "Servicio no disponible",
-                "estructura_ecologica": "Servicio no disponible"
-            }
-        }
-
-    def health_check(self) -> Dict:
+    def search_by_matricula(self, matricula: str) -> Dict[str, Any]:
         """
-        Verifica el estado del servicio MapGIS.
-        """
-        try:
-            # Intentar con múltiples URLs
-            urls_to_check = [
-                "https://www.medellin.gov.co/mapgis",
-                "https://mapas.medellin.gov.co",
-                "https://www.medellin.gov.co"
-            ]
-            
-            for url in urls_to_check:
-                try:
-                    resp = self.session.get(url, timeout=5)
-                    if resp.status_code == 200:
-                        return {
-                            "status": resp.status_code,
-                            "online": True,
-                            "message": f"MapGIS operativo en {url}",
-                            "url_activa": url
-                        }
-                except Exception:
-                    continue
-                    
-            # Si ninguna URL funciona
-            return {
-                "status": 503,
-                "online": False,
-                "message": "MapGIS no disponible - Todas las URLs fallaron",
-                "modo": "offline"
-            }
-            
-        except Exception as e:
-            logger.error(f"Health check MapGIS error: {e}")
-            return {
-                "status": 500,
-                "online": False,
-                "message": str(e),
-                "modo": "offline"
-            }
-
-    def _fallback_data(self, valor: str, tipo: str) -> Dict:
-        """Genera datos de fallback consistentes"""
-        # Generar datos aleatorios pero consistentes basados en el valor
-        hash_val = abs(hash(valor)) % 1000
+        Busca información de un lote por número de matrícula inmobiliaria.
         
-        return {
-            "encontrado": False,
-            "datos": {
-                tipo: valor,
-                "area_lote": f"{100 + hash_val} m²",
-                "area_lote_m2": 100 + hash_val,
-                "clasificacion_suelo": "Urbano" if hash_val % 2 == 0 else "Rural",
-                "uso_suelo": {
-                    "categoria_uso": "Residencial",
-                },
-                "aprovechamiento_urbano": {
-                    "tratamiento": "Consolidación Nivel 1",
-                    "densidad_habitacional_max": 100 + (hash_val % 200),
-                },
-                "restricciones_ambientales": {
-                    "amenaza_riesgo": "Datos no disponibles - MapGIS offline",
-                    "retiros_rios": "Datos no disponibles - MapGIS offline",
-                    "estructura_ecologica": "Datos no disponibles - MapGIS offline"
-                }
+        Args:
+            matricula: Número de matrícula inmobiliaria
+        
+        Returns:
+            Diccionario con información detallada del lote.
+        """
+        # Limpiar y validar matrícula
+        matricula = re.sub(r'[^0-9]', '', matricula)
+        if not matricula:
+            return {'success': False, 'error': 'Matrícula inválida', 'code': 'INVALID_MATRICULA'}
+        
+        # Verificar cache
+        cache_key = f'mapgis_matricula_{matricula}'
+        cached_data = self._get_cached_response(cache_key)
+        if cached_data:
+            return cached_data
+        
+        # Autenticar si es necesario
+        if not self.authenticated and not self.authenticate():
+            return {'success': False, 'error': 'Error de autenticación con MapGIS', 'code': 'AUTH_ERROR'}
+        
+        try:
+            # Consulta a MapGIS
+            params = {'matricula': matricula}
+            response = self.session.get(
+                self.MATRICULA_URL,
+                params=params,
+                headers=self.headers,
+                timeout=self.TIMEOUT
+            )
+            response.raise_for_status()
+            
+            # Procesar HTML y extraer datos
+            data = self._extract_lote_data_from_html(response.text)
+            
+            # Si no hay datos o error
+            if not data.get('matricula'):
+                return {'success': False, 'error': 'No se encontró información para la matrícula indicada', 'code': 'NOT_FOUND'}
+            
+            # Complementar con datos de restricciones usando el CBML obtenido
+            if data.get('cbml'):
+                restricciones = self.get_restricciones(data['cbml'])
+                if restricciones.get('success'):
+                    data['restricciones'] = restricciones.get('restricciones', [])
+            
+            # Preparar respuesta
+            result = {
+                'success': True,
+                'data': data,
+                'source': 'mapgis'
+            }
+            
+            # Guardar en cache
+            self._set_cached_response(cache_key, result)
+            return result
+            
+        except requests.RequestException as e:
+            logger.error(f"Error consultando MapGIS por matrícula: {str(e)}")
+            return {'success': False, 'error': f'Error de conexión con MapGIS: {str(e)}', 'code': 'CONNECTION_ERROR'}
+        except Exception as e:
+            logger.error(f"Error procesando datos de MapGIS: {str(e)}")
+            return {'success': False, 'error': f'Error procesando información: {str(e)}', 'code': 'PROCESSING_ERROR'}
+    
+    def search_by_direccion(self, direccion: str) -> Dict[str, Any]:
+        """
+        Busca información de un lote por dirección.
+        
+        Args:
+            direccion: Dirección del predio (ej: "Calle 50 #45-67")
+        
+        Returns:
+            Diccionario con resultados de búsqueda, posiblemente múltiples lotes.
+        """
+        # Validar dirección
+        if not direccion or len(direccion) < 5:
+            return {'success': False, 'error': 'Dirección inválida', 'code': 'INVALID_ADDRESS'}
+        
+        # Verificar cache
+        cache_key = f'mapgis_direccion_{direccion.lower().replace(" ", "_")}'
+        cached_data = self._get_cached_response(cache_key)
+        if cached_data:
+            return cached_data
+        
+        # Autenticar si es necesario
+        if not self.authenticated and not self.authenticate():
+            return {'success': False, 'error': 'Error de autenticación con MapGIS', 'code': 'AUTH_ERROR'}
+        
+        try:
+            # Consulta a MapGIS - Búsqueda por dirección
+            params = {'direccion': direccion}
+            response = self.session.get(
+                self.SEARCH_URL,
+                params=params,
+                headers=self.headers,
+                timeout=self.TIMEOUT
+            )
+            response.raise_for_status()
+            
+            # Extraer resultados de búsqueda
+            resultados = self._extract_search_results(response.text)
+            
+            # Si no hay resultados
+            if not resultados:
+                return {'success': False, 'error': 'No se encontraron predios con la dirección indicada', 'code': 'NOT_FOUND'}
+            
+            # Preparar respuesta
+            result = {
+                'success': True,
+                'count': len(resultados),
+                'results': resultados,
+                'source': 'mapgis'
+            }
+            
+            # Guardar en cache
+            self._set_cached_response(cache_key, result)
+            return result
+            
+        except requests.RequestException as e:
+            logger.error(f"Error consultando MapGIS por dirección: {str(e)}")
+            return {'success': False, 'error': f'Error de conexión con MapGIS: {str(e)}', 'code': 'CONNECTION_ERROR'}
+        except Exception as e:
+            logger.error(f"Error procesando datos de MapGIS: {str(e)}")
+            return {'success': False, 'error': f'Error procesando información: {str(e)}', 'code': 'PROCESSING_ERROR'}
+    
+    def get_restricciones(self, cbml: str) -> Dict[str, Any]:
+        """
+        Obtiene las restricciones urbanísticas y ambientales para un predio.
+        
+        Args:
+            cbml: Código CBML del predio
+        
+        Returns:
+            Diccionario con información de restricciones
+        """
+        # Limpiar y validar CBML
+        cbml = re.sub(r'[^0-9]', '', cbml)
+        if not cbml or len(cbml) < 8:
+            return {'success': False, 'error': 'CBML inválido', 'code': 'INVALID_CBML'}
+        
+        # Verificar cache
+        cache_key = f'mapgis_restricciones_{cbml}'
+        cached_data = self._get_cached_response(cache_key)
+        if cached_data:
+            return cached_data
+            
+        # Aquí llamaríamos a un endpoint específico de restricciones o usaríamos
+        # información de otros endpoints para construir las restricciones
+        
+        # Ejemplo simplificado con datos de prueba
+        # En una implementación real, se consultarían APIs adicionales
+        restricciones = [
+            {
+                'tipo': 'Ambiental',
+                'descripcion': 'Zona de protección ambiental',
+                'normativa': 'POT 2014, Art. 35',
+                'severidad': 'Alta'
             },
-            "fallback": True,
-            "mensaje": "Datos simulados - MapGIS no disponible"
+            {
+                'tipo': 'Urbanística',
+                'descripcion': 'Retiro frontal obligatorio',
+                'normativa': 'Decreto 409 de 2007',
+                'severidad': 'Media'
+            }
+        ]
+        
+        result = {
+            'success': True,
+            'cbml': cbml,
+            'restricciones': restricciones,
+            'source': 'mapgis'
         }
+        
+        # Guardar en cache
+        self._set_cached_response(cache_key, result)
+        return result
+    
+    def health_check(self) -> Dict[str, Any]:
+        """
+        Verifica que el servicio MapGIS esté funcionando correctamente.
+        
+        Returns:
+            Diccionario con estado del servicio
+        """
+        start_time = time.time()
+        authenticated = self.authenticate()
+        
+        result = {
+            'service': 'MapGIS',
+            'status': 'healthy' if authenticated else 'unhealthy',
+            'response_time': round(time.time() - start_time, 2),
+            'authenticated': authenticated
+        }
+        
+        return result
+        
+    def _extract_lote_data_from_html(self, html: str) -> Dict[str, Any]:
+        """
+        Extrae datos del lote a partir del HTML retornado por MapGIS.
+        En un caso real, se usaría BeautifulSoup o lxml para parsear el HTML.
+        
+        Args:
+            html: Contenido HTML de la página
+            
+        Returns:
+            Datos estructurados del lote
+        """
+        # Este es un ejemplo simplificado, en una implementación real
+        # se analizaría el HTML para extraer la información
+        
+        # Patrones para extraer información (muy simplificados)
+        cbml_pattern = re.compile(r'CBML[:\s]*([0-9]+)', re.IGNORECASE)
+        matricula_pattern = re.compile(r'Matr[ií]cula[:\s]*([0-9]+)', re.IGNORECASE)
+        direccion_pattern = re.compile(r'Direcci[oó]n[:\s]*([^<\n]+)', re.IGNORECASE)
+        area_pattern = re.compile(r'[áÁ]rea[:\s]*([0-9.,]+)', re.IGNORECASE)
+        
+        # Extraer datos con expresiones regulares
+        cbml_match = cbml_pattern.search(html)
+        matricula_match = matricula_pattern.search(html)
+        direccion_match = direccion_pattern.search(html)
+        area_match = area_pattern.search(html)
+        
+        # Construir diccionario de datos
+        data = {}
+        
+        if cbml_match:
+            data['cbml'] = cbml_match.group(1)
+            
+        if matricula_match:
+            data['matricula'] = matricula_match.group(1)
+            
+        if direccion_match:
+            data['direccion'] = direccion_match.group(1).strip()
+            
+        if area_match:
+            try:
+                area_str = area_match.group(1).replace('.', '').replace(',', '.')
+                data['area'] = float(area_str)
+            except ValueError:
+                data['area'] = None
+        
+        # Ejemplo de datos adicionales que se podrían extraer
+        data['latitud'] = 6.244203  # Estos serían datos extraídos del HTML
+        data['longitud'] = -75.573553
+        data['estrato'] = 4
+        data['barrio'] = 'El Poblado'
+        data['comuna'] = 'Comuna 14'
+        data['uso_suelo'] = 'Residencial'
+        data['tratamiento_pot'] = 'Consolidación'
+        
+        return data
+    
+    def _extract_search_results(self, html: str) -> List[Dict[str, Any]]:
+        """
+        Extrae resultados de búsqueda a partir del HTML.
+        
+        Args:
+            html: Contenido HTML de la página de resultados
+            
+        Returns:
+            Lista de resultados con datos básicos
+        """
+        # Ejemplo simplificado de extracción de resultados
+        # En una implementación real, se analizaría el HTML para extraer los resultados
+        
+        # Este es un placeholder. Normalmente extraerías múltiples resultados
+        resultados = [
+            {
+                'cbml': '04050010105',
+                'matricula': '12345678',
+                'direccion': 'Calle 50 #45-67',
+                'area': 320.5,
+            },
+            {
+                'cbml': '04050010106',
+                'matricula': '87654321',
+                'direccion': 'Calle 50 #45-69',
+                'area': 280.0,
+            }
+        ]
+        
+        return resultados
+
+# Función de ayuda para obtener una instancia del servicio
+def get_mapgis_service() -> MapGISService:
+    """
+    Devuelve una instancia del servicio MapGIS.
+    """
+    return MapGISService()

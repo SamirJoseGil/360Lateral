@@ -2,32 +2,58 @@
 URLs para la aplicación de lotes
 """
 from django.urls import path
-from . import views
+
+# Importar todas las vistas desde el paquete de vistas
+from apps.lotes.views import (
+    # CRUD básico de lotes
+    lote_list, 
+    lote_detail,
+    
+    # Vistas de MapGIS
+    scrap_cbml,
+    scrap_matricula,
+    scrap_direccion,
+    consultar_restricciones_completas,
+    health_mapgis,
+    
+    # Vistas de testing MapGIS
+    test_mapgis_session,
+    test_mapgis_real_connection,
+    test_mapgis_complete_data,
+    investigate_mapgis_endpoints,
+    
+    # Vistas de tratamientos
+    listar_tratamientos,
+)
+
+# Importar vistas de lotes por usuario
+from apps.lotes.api.user_lotes import UserLotesView, my_lotes, user_lote_stats
 
 app_name = 'lotes'
 
 urlpatterns = [
-    # Scraping MapGIS endpoints
-    path('scrap/matricula/', views.scrap_matricula, name='scrap_matricula'),
-    path('scrap/direccion/', views.scrap_direccion, name='scrap_direccion'),
-    path('scrap/cbml/', views.scrap_cbml, name='scrap_cbml'),
+    # Rutas para lotes por usuario
+    path('mis-lotes/', my_lotes, name='my-lotes'),
+    path('usuario/<int:user_id>/', UserLotesView.as_view(), name='user-lotes'),
+    path('usuario/<int:user_id>/stats/', user_lote_stats, name='user-lote-stats'),
     
-    # Nuevo endpoint de restricciones
-    path('consultar/restricciones/', views.consultar_restricciones_completas, name='consultar_restricciones'),
+    # Rutas para CRUD básico de lotes
+    path('', lote_list, name='lote-list'),
+    path('<int:pk>/', lote_detail, name='lote-detail'),
     
-    # Testing endpoints
-    path('test/session/', views.test_mapgis_session, name='test_session'),
-    path('test/real-connection/', views.test_mapgis_real_connection, name='test_real_connection'),
-    path('test/complete-data/', views.test_mapgis_complete_data, name='test_complete_data'),
+    # Rutas para MapGIS
+    path('scrap/cbml/', scrap_cbml, name='scrap-cbml'),
+    path('scrap/matricula/', scrap_matricula, name='scrap-matricula'),
+    path('scrap/direccion/', scrap_direccion, name='scrap-direccion'),
+    path('consultar/restricciones/', consultar_restricciones_completas, name='consultar-restricciones'),
+    path('health/mapgis/', health_mapgis, name='health-mapgis'),
     
-    # Investigation endpoints
-    path('investigate/endpoints/', views.investigate_mapgis_endpoints, name='investigate_endpoints'),
+    # Rutas para pruebas de MapGIS
+    path('test/session/', test_mapgis_session, name='test-session'),
+    path('test/real-connection/', test_mapgis_real_connection, name='test-real-connection'),
+    path('test/complete-data/', test_mapgis_complete_data, name='test-complete-data'),
+    path('investigate/endpoints/', investigate_mapgis_endpoints, name='investigate-endpoints'),
     
-    # Health check
-    path('health/mapgis/', views.health_mapgis, name='health_mapgis'),
-
-    # Endpoints de tratamientos
-    path('tratamientos/', views.listar_tratamientos, name='listar_tratamientos'),
-    path('aprovechamiento/', views.calcular_aprovechamiento, name='calcular_aprovechamiento'),
-    path('tipologias/', views.obtener_tipologias_viables, name='tipologias_viables'),
+    # Rutas para tratamientos urbanísticos
+    path('tratamientos/', listar_tratamientos, name='listar-tratamientos'),
 ]
