@@ -2,39 +2,25 @@
 import { createCookieSessionStorage, redirect } from "@remix-run/node";
 import cookie from "cookie";
 
-// Definir el tipo de sesión
-interface SessionData {
-  user: string;
-}
-
-interface SessionFlashData {
-  error: string;
-}
-
 // Crear el almacenamiento de sesión con un secreto más seguro
-export const sessionStorage = createCookieSessionStorage<SessionData, SessionFlashData>({
+export const sessionStorage = createCookieSessionStorage({
   cookie: {
-    name: "l360_session",
-    httpOnly: true,
-    maxAge: 60 * 60 * 24 * 30, // 30 días
-    path: "/",
+    name: "__360lateral",
+    // Make sure this matches your backend requirements
+    secrets: [process.env.SESSION_SECRET || "s3cret1"],
     sameSite: "lax",
-    secrets: ["s3cr3t0_sup3r_s3gur0_l4t3r4l360"], // Debería estar en variables de entorno
+    path: "/",
+    maxAge: 60 * 60 * 24 * 30, // 30 days
+    httpOnly: true,
     secure: process.env.NODE_ENV === "production",
   },
 });
 
 // Función para obtener la sesión desde la solicitud
 export async function getSession(request: Request) {
-  const cookieHeader = request.headers.get("Cookie");
-  console.log("getSession - cookie header:", cookieHeader ? "present" : "missing");
-  
-  if (cookieHeader) {
-    console.log("Raw cookies:", cookieHeader);
-    const cookies = cookie.parse(cookieHeader);
-    console.log("Parsed cookies:", Object.keys(cookies));
-  }
-  
+  const cookieHeader = typeof request === "string" 
+    ? request 
+    : request.headers?.get("Cookie");
   return sessionStorage.getSession(cookieHeader);
 }
 

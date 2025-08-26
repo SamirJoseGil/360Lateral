@@ -77,30 +77,52 @@ export async function getMisLotes(request: Request, searchQuery?: string) {
   console.log(`Obteniendo lotes propios ${searchQuery ? `con búsqueda: ${searchQuery}` : ''}`);
   
   try {
-    // Construir URL con parámetros de búsqueda si existen
-    let url = `${BASE_URL}mis-lotes/`;
+    // Usar el endpoint dedicado para los lotes del usuario actual
+    let endpoint = "/api/lotes/mis-lotes/";
+    
+    // Agregar parámetro de búsqueda si se proporciona
     if (searchQuery) {
-      url += `?search=${encodeURIComponent(searchQuery)}`;
+      endpoint += `?search=${encodeURIComponent(searchQuery)}`;
     }
     
-    const { res, setCookieHeaders } = await fetchWithAuth(request, url);
+    console.log(`[Lotes] Fetching from endpoint: ${endpoint}`);
+    const response = await fetchWithAuth(request, endpoint);
     
-    if (!res.ok) {
-      console.error(`Error obteniendo lotes: ${res.status}`);
-      const errorText = await res.text();
-      throw new Error(`Error obteniendo lotes: ${errorText}`);
+    // Verificar si la respuesta existe y tiene la estructura esperada
+    if (!response || !response.res) {
+      console.error("[Lotes] Respuesta inválida de fetchWithAuth en getMisLotes");
+      return null;
+    }
+
+    if (!response.res.ok) {
+      console.error(`[Lotes] Error en la respuesta de la API: ${response.res.status} ${response.res.statusText}`);
+      
+      // Intentar leer el cuerpo del error
+      try {
+        const errorText = await response.res.text();
+        console.error(`[Lotes] Cuerpo de respuesta de error: ${errorText}`);
+      } catch (e) {
+        console.error("[Lotes] No se pudo leer el cuerpo de la respuesta de error");
+      }
+      
+      return null;
     }
     
-    const data = await res.json();
+    // Parsear la respuesta
+    const data = await response.res.json();
+    console.log("[Lotes] Datos recibidos:", { 
+      hasResults: !!data.results, 
+      count: data.count || 0
+    });
     
-    return {
-      lotes: data.results as Lote[],
-      total: data.count,
-      headers: setCookieHeaders
+    return { 
+      lotes: data.results || [], 
+      total: data.count || 0, 
+      headers: response.setCookieHeaders 
     };
   } catch (error) {
-    console.error("Error en getMisLotes:", error);
-    throw error;
+    console.error("[Lotes] Error en getMisLotes:", error);
+    return null;
   }
 }
 
@@ -141,30 +163,54 @@ export async function getUserLotesStats(request: Request, userId?: string) {
   console.log(`Obteniendo estadísticas de lotes ${userId ? `del usuario ${userId}` : 'propios'}`);
   
   try {
-    let url;
-    if (userId) {
-      url = `${BASE_URL}usuario/${userId}/stats/`;
-    } else {
-      url = `${BASE_URL}mis-lotes/stats/`;
+    // Usar el endpoint dedicado para las estadísticas, si se proporciona userId será para ese usuario
+    // de lo contrario será para el usuario autenticado actual
+    let endpoint = userId 
+      ? `/api/lotes/usuario/${userId}/stats/` 
+      : "/api/lotes/mis-lotes/stats/";
+      
+    console.log(`[Lotes] Fetching stats from endpoint: ${endpoint}`);
+    const response = await fetchWithAuth(request, endpoint);
+    
+    // Verificar si la respuesta existe y tiene la estructura esperada
+    if (!response || !response.res) {
+      console.error("[Lotes] Respuesta inválida de fetchWithAuth en getUserLotesStats");
+      return null;
+    }
+
+    if (!response.res.ok) {
+      console.error(`[Lotes] Error en la respuesta de la API: ${response.res.status} ${response.res.statusText}`);
+      
+      // Intentar leer el cuerpo del error
+      try {
+        const errorText = await response.res.text();
+        console.error(`[Lotes] Cuerpo de respuesta de error: ${errorText}`);
+      } catch (e) {
+        console.error("[Lotes] No se pudo leer el cuerpo de la respuesta de error");
+      }
+      
+      return null;
     }
     
-    const { res, setCookieHeaders } = await fetchWithAuth(request, url);
+    // Depurar la respuesta
+    const data = await response.res.json();
+    console.log("[Lotes] Datos de estadísticas recibidos:", data);
     
-    if (!res.ok) {
-      console.error(`Error obteniendo estadísticas: ${res.status}`);
-      const errorText = await res.text();
-      throw new Error(`Error obteniendo estadísticas: ${errorText}`);
-    }
+    // Asegurar una estructura consistente
+    const defaultStats = {
+      totalLotes: 0,
+      areaTotal: 0,
+      valor_total: 0,
+      documentosCompletos: 0
+    };
     
-    const data = await res.json();
-    
-    return {
-      stats: data as LoteStats,
-      headers: setCookieHeaders
+    return { 
+      stats: data || defaultStats, 
+      headers: response.setCookieHeaders 
     };
   } catch (error) {
-    console.error("Error en getUserLotesStats:", error);
-    throw error;
+    console.error("[Lotes] Error en getUserLotesStats:", error);
+    return null;
   }
 }
 

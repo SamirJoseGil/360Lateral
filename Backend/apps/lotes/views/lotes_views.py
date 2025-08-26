@@ -20,18 +20,36 @@ def lote_list(request):
     POST: Crear un nuevo lote
     """
     if request.method == 'GET':
-        # Filtrar lotes según permisos
-        user = request.user
-        if user.is_superuser or user.role == 'admin':
-            lotes = Lote.objects.all()
-        elif user.role == 'developer':
-            # Simplificado sin proyectos por ahora
-            lotes = Lote.objects.filter(owner=user)
-        else:
-            lotes = Lote.objects.filter(owner=user)
+        try:
+            # Filtrar lotes según permisos
+            user = request.user
+            if user.is_superuser or user.role == 'admin':
+                lotes = Lote.objects.all()
+            elif user.role == 'developer':
+                # Simplificado sin proyectos por ahora
+                lotes = Lote.objects.filter(owner=user)
+            else:
+                lotes = Lote.objects.filter(owner=user)
+                
+            serializer = LoteSerializer(lotes, many=True)
+            return Response(serializer.data)
+        except Exception as e:
+            # Capturar errores de base de datos y proporcionar mensaje útil
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"Error al acceder a lotes: {str(e)}")
             
-        serializer = LoteSerializer(lotes, many=True)
-        return Response(serializer.data)
+            if "no existe la relación" in str(e).lower():
+                return Response({
+                    "error": "La tabla de lotes no existe en la base de datos.",
+                    "detail": "Este error ocurre cuando las migraciones no se han aplicado. Ejecuta 'python manage.py migrate' para crear las tablas necesarias.",
+                    "code": "table_not_exists"
+                }, status=500)
+            
+            return Response({
+                "error": "Error al recuperar lotes",
+                "detail": str(e)
+            }, status=500)
     
     elif request.method == 'POST':
         serializer = LoteSerializer(data=request.data)
@@ -57,6 +75,22 @@ def lote_detail(request, pk):
         lote = Lote.objects.get(pk=pk)
     except Lote.DoesNotExist:
         return Response(status=status.HTTP_404_NOT_FOUND)
+    except Exception as e:
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error(f"Error al acceder a lote {pk}: {str(e)}")
+        
+        if "no existe la relación" in str(e).lower():
+            return Response({
+                "error": "La tabla de lotes no existe en la base de datos.",
+                "detail": "Este error ocurre cuando las migraciones no se han aplicado. Ejecuta 'python manage.py migrate' para crear las tablas necesarias.",
+                "code": "table_not_exists"
+            }, status=500)
+        
+        return Response({
+            "error": "Error al recuperar lote",
+            "detail": str(e)
+        }, status=500)
     
     # Verificar permisos
     user = request.user

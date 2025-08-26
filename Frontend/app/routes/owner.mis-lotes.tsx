@@ -5,6 +5,8 @@ import type { LoaderFunctionArgs } from "@remix-run/node";
 import { useState } from "react";
 import { getUser } from "~/utils/auth.server";
 import { getMisLotes, getUserLotesStats, type Lote } from "~/services/lotes.server";
+import { redirect } from "@remix-run/node";
+import { getSession } from "~/utils/session.server";
 
 // Formateador de moneda para COP
 const formatCurrency = (value: number): string => {
@@ -16,60 +18,73 @@ const formatCurrency = (value: number): string => {
 };
 
 export async function loader({ request }: LoaderFunctionArgs) {
-    // Verificar que el usuario esté autenticado
-    const user = await getUser(request);
-    if (!user) {
-        throw new Error("Usuario no autenticado");
-    }
-
     try {
-        // Obtener los datos desde el API
-        const [lotesResponse, statsResponse] = await Promise.all([
-            getMisLotes(request),
-            getUserLotesStats(request)
+        // Asegurarse de que el usuario esté autenticado
+        const user = await requireOwnerUser(request);
+        console.log("User authenticated:", user.id, user.email, user.role);
+
+        // Obtener sesión para verificar tokens
+        const session = await getSession(request);
+        const accessToken = session.get("accessToken");
+        console.log("Access token exists:", !!accessToken);
+
+        // Usar Promise.all para obtener datos en paralelo con el manejo de errores adecuado
+        const [lotes, stats] = await Promise.all([
+            getMisLotes(request).catch(error => {
+                console.error("Error en getMisLotes:", error);
+                return null;
+            }),
+            getUserLotesStats(request).catch(error => {
+                console.error("Error en getUserLotesStats:", error);
+                return null;
+            })
         ]);
 
-        // Procesar los datos recibidos
-        const lotes = lotesResponse.lotes.map(lote => ({
-            ...lote,
-            valorEstimado: lote.area * 1500000, // Estimación simple basada en área (COP/m²)
-            documentosCompletos: (lote.documentos || []).length >= 3 // Simplificación para el ejemplo
-        }));
+        // Garantizamos valores por defecto para stats si viene null o undefined
+        const defaultStats = {
+            stats: {
+                totalLotes: 0,
+                areaTotal: 0,
+                valor_total: 0,
+                documentosCompletos: 0
+            }
+        };
 
         return json({
             user,
             lotes,
-            stats: statsResponse.stats,
-            headers: { ...lotesResponse.headers, ...statsResponse.headers }
+            stats: stats || defaultStats
         });
     } catch (error) {
         console.error("Error cargando lotes:", error);
-
-        // En caso de error, devolver datos vacíos
-        return json({
-            user,
-            lotes: [],
-            stats: {
-                totalLotes: 0,
-                areaTotal: 0,
-                valorTotal: 0,
-                lotesActivos: 0,
-                lotesPendientes: 0,
-                documentosCompletos: 0,
-                documentosPendientes: 0
-            },
-            error: "Error al cargar los datos de lotes. Por favor, intente nuevamente."
-        });
+        throw new Response("Error cargando los lotes", { status: 500 });
     }
 }
 
 export default function MisLotes() {
-    const { user, lotes, stats } = useLoaderData<typeof loader>();
+    const { lotes, stats, user } = useLoaderData<typeof loader>();
     const [filtroEstado, setFiltroEstado] = useState("todos");
     const [filtroDocs, setFiltroDocs] = useState("todos");
 
+    console.log("Rendering MisLotes with data:", {
+        hasUser: !!user,
+        hasLotes: !!lotes,
+        hasStats: !!stats,
+        loteCount: lotes?.lotes?.length || 0
+    });
+
+    // Asegurarse de que cada lote tenga la propiedad 'documentosCompletos'
+    const lotesWithDocs = (lotes?.lotes ?? []).map((lote: any) => ({
+        ...lote,
+        documentosCompletos: typeof lote.documentosCompletos !== "undefined"
+            ? lote.documentosCompletos
+            : (lote.documentos && Array.isArray(lote.documentos)
+                ? lote.documentos.every((doc: any) => doc.completo)
+                : false)
+    }));
+
     // Filtrar lotes según los criterios seleccionados
-    const lotesFiltrados = lotes.filter(lote => {
+    const lotesFiltrados = lotesWithDocs.filter((lote: any) => {
         if (!lote) return false;
         // Filtro por estado
         if (filtroEstado === "activos" && lote.status !== "active") return false;
@@ -137,7 +152,7 @@ export default function MisLotes() {
                         </div>
                         <div className="ml-3">
                             <p className="text-xs font-medium text-gray-500">Total Lotes</p>
-                            <p className="text-lg font-semibold">{stats.totalLotes}</p>
+                            <p className="text-lg font-semibold">{stats?.stats.totalLotes ?? 0}</p>
                         </div>
                     </div>
                 </div>
@@ -162,7 +177,7 @@ export default function MisLotes() {
                         </div>
                         <div className="ml-3">
                             <p className="text-xs font-medium text-gray-500">Área Total</p>
-                            <p className="text-lg font-semibold">{stats.areaTotal.toLocaleString('es-CO')} m²</p>
+                            <p className="text-lg font-semibold">{stats?.stats.areaTotal?.toLocaleString('es-CO') ?? 0} m²</p>
                         </div>
                     </div>
                 </div>
@@ -187,7 +202,7 @@ export default function MisLotes() {
                         </div>
                         <div className="ml-3">
                             <p className="text-xs font-medium text-gray-500">Valor Estimado</p>
-                            <p className="text-lg font-semibold">{formatCurrency((stats as any).valorTotal ?? 0)}</p>
+                            <p className="text-lg font-semibold">{formatCurrency((stats?.stats as any)?.valor_total ?? 0)}</p>
                         </div>
                     </div>
                 </div>
@@ -212,7 +227,7 @@ export default function MisLotes() {
                         </div>
                         <div className="ml-3">
                             <p className="text-xs font-medium text-gray-500">Documentos Completos</p>
-                            <p className="text-lg font-semibold">{stats.documentosCompletos} de {stats.totalLotes}</p>
+                            <p className="text-lg font-semibold">{stats?.stats.documentosCompletos ?? 0} de {stats?.stats.totalLotes ?? 0}</p>
                         </div>
                     </div>
                 </div>
@@ -253,7 +268,7 @@ export default function MisLotes() {
                     </div>
                     <div className="flex-1 flex justify-end">
                         <span className="text-sm text-gray-500">
-                            Mostrando <span className="font-semibold">{lotesFiltrados.length}</span> de <span className="font-semibold">{lotes.length}</span> lotes
+                            Mostrando <span className="font-semibold">{lotesFiltrados.length}</span> de <span className="font-semibold">{(lotes?.lotes?.length ?? 0)}</span> lotes
                         </span>
                     </div>
                 </div>
@@ -310,7 +325,7 @@ export default function MisLotes() {
                             </tr>
                         </thead>
                         <tbody className="bg-white divide-y divide-gray-200">
-                            {lotesFiltrados.map((lote) => (
+                            {lotesFiltrados.map((lote: any) => (
                                 lote ? (
                                     <tr key={lote.id}>
                                         <td className="px-6 py-4 whitespace-nowrap">
@@ -418,4 +433,11 @@ export default function MisLotes() {
             </div>
         </div>
     );
+}
+async function requireOwnerUser(request: Request) {
+    const user = await getUser(request);
+    if (!user || user.role !== "owner") {
+        throw redirect("/login");
+    }
+    return user;
 }

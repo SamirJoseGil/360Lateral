@@ -1,23 +1,28 @@
-// app/utils/jwt.server.ts
 export type JwtPayload = { exp?: number; [k: string]: unknown };
 
-export function decodeJwtPayload(token: string | null): JwtPayload | null {
-  if (!token) return null;
-  const parts = token.split(".");
-  if (parts.length !== 3) return null;
+export function decodeJwtPayload(token: any) {
   try {
-    const json = Buffer.from(parts[1].replace(/-/g, "+").replace(/_/g, "/"), "base64").toString(
-      "utf8",
-    );
-    return JSON.parse(json);
-  } catch {
+    if (!token || typeof token !== "string") {
+      console.error("Invalid token type:", typeof token);
+      return null;
+    }
+    return JSON.parse(atob(token.split(".")[1]));
+  } catch (e) {
+    console.error("Error decoding JWT payload", e);
     return null;
   }
 }
 
-export function isExpired(token: string | null, skewSeconds = 10): boolean {
+export function isExpired(token: any) {
+  if (!token || typeof token !== "string") {
+    return true;
+  }
+
   const payload = decodeJwtPayload(token);
-  if (!payload?.exp) return true;
-  const now = Math.floor(Date.now() / 1000);
-  return payload.exp <= now + skewSeconds;
+  if (!payload) return true;
+
+  const expirationTime = payload.exp! * 1000;
+  const now = Date.now();
+
+  return now >= expirationTime;
 }

@@ -1,10 +1,13 @@
 // app/utils/auth.server.ts
 import { createCookie, json, redirect } from "@remix-run/node";
-import type { HeadersFunction } from "@remix-run/node";
+import type { HeadersFunction, Session, SessionData } from "@remix-run/node";
 import { ENV, isProd } from "~/env.server";
-import { isExpired } from "~/utils/jwt.server";
+import { isExpired } from "./jwt.server";
 
 export type Role = "admin" | "owner" | "developer";
+
+// Variable de entorno definida aca
+export const API_URL = 'http://localhost:8000';
 
 export type ApiUser = {
   id: string;
@@ -264,48 +267,135 @@ export async function logoutAction(request: Request) {
  * Si expiró, intenta refrescar con el refresh cookie.
  * Si no puede, limpia cookies y lanza 401.
  */
-export async function ensureAccessToken(request: Request): Promise<{
-  token: string;
-  headers?: Headers; // si refrescó, devolvemos nuevos Set-Cookie
-}> {
-  const cookieHeader = request.headers.get("Cookie");
-  const access = await accessTokenCookie.parse(cookieHeader);
-  const refresh = await refreshTokenCookie.parse(cookieHeader);
+export async function ensureAccessToken(request: Request) {
+  try {
+    // Get the session
+    const session = await getSession(request);
+    let accessToken = session.get("accessToken");
+    const refreshToken = session.get("refreshToken");
+    
+    // Log token status for debugging
+    console.log("[Auth] Token check:", {
+      hasAccessToken: !!accessToken,
+      hasRefreshToken: !!refreshToken
+    });
 
-  // Si no hay refresh, no hay sesión válida.
-  if (!refresh) {
-    throw new Response("No autenticado", { status: 401 });
+    // If we have a valid access token, return it
+    if (accessToken && !isExpired(accessToken)) {
+      console.log("[Auth] Valid access token found");
+      return { token: accessToken, headers: null };
+    }
+
+    console.log("[Auth] Access token missing or expired, trying to refresh");
+    
+    // If no refresh token, we can't refresh
+    if (!refreshToken) {
+      console.error("[Auth] No refresh token available");
+      throw new Response("Authentication failed - No refresh token", { status: 401 });
+    }
+
+    // Try to refresh the token
+    try {
+      console.log("[Auth] Refreshing token...");
+      const apiUrl = process.env.API_URL || "http://localhost:8000";
+      const refreshResponse = await fetch(`${apiUrl}/api/auth/refresh-token`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ refreshToken }),
+      });
+
+      if (!refreshResponse.ok) {
+        console.error("[Auth] Failed to refresh token:", refreshResponse.status, refreshResponse.statusText);
+        throw new Response("Authentication failed - Refresh failed", { status: 401 });
+      }
+
+      const data = await refreshResponse.json();
+      const newAccessToken = data.accessToken;
+      
+      console.log("[Auth] Refresh response:", {
+        hasNewToken: !!newAccessToken
+      });
+
+      if (!newAccessToken) {
+        console.error("[Auth] No new access token received");
+        throw new Response("Authentication failed - Invalid refresh response", { status: 401 });
+      }
+
+      // Update session with new token
+      session.set("accessToken", newAccessToken);
+      const headers = await commitSession(session);
+      
+      console.log("[Auth] Token refreshed successfully");
+      return { token: newAccessToken, headers };
+    } catch (error) {
+      console.error("[Auth] Token refresh error:", error);
+      throw new Response("Authentication failed", { status: 401 });
+    }
+  } catch (error) {
+    console.error("[Auth] ensureAccessToken error:", error);
+    throw error;
   }
-
-  // Si hay access y no está expirado, úsalo.
-  if (access && !isExpired(access)) {
-    return { token: access };
-  }
-
-  // Intentar refrescar
-  const data = await apiRefresh(refresh);
-  const newAccess = data.data!.token;
-  const headers = new Headers();
-  headers.append("Set-Cookie", await accessTokenCookie.serialize(newAccess));
-  return { token: newAccess, headers };
 }
 
-/** `fetch` autenticado desde loaders/actions (server) */
+// Enhanced fetchWithAuth function with better error handling
 export async function fetchWithAuth(
   request: Request,
-  input: string | URL | Request,
-  init: RequestInit = {},
+  endpoint: string,
+  options: Record<string, any> = {}
 ) {
-  const { token, headers: maybeSetCookie } = await ensureAccessToken(request);
-  const res = await fetch(input, {
-    ...init,
-    headers: {
-      ...(init.headers ?? {}),
-      Authorization: `Bearer ${token}`,
-    },
-  });
-  // Si hay nuevos cookies (por refresh), propáguelos al caller
-  return { res, setCookieHeaders: maybeSetCookie };
+  try {
+    // Get the access token (this will refresh if needed)
+    const { token, headers: setCookieHeaders } = await ensureAccessToken(request);
+    
+    if (!token || typeof token !== 'string') {
+      console.error("[Auth] Invalid or missing token in fetchWithAuth");
+      throw new Response("Authentication failed", { status: 401 });
+    }
+
+    // Create headers with authorization
+    const headers = new Headers(options.headers || {});
+    headers.append("Authorization", `Bearer ${token}`);
+    if (!headers.has("Content-Type")) {
+      headers.append("Content-Type", "application/json");
+    }
+
+    // Determine API URL
+    const apiUrl = process.env.API_URL || "http://localhost:8000";
+    const fullUrl = `${apiUrl}${endpoint}`;
+
+    console.log(`[Auth] Making authenticated request to: ${fullUrl}`);
+    
+    // Make the request
+    const response = await fetch(fullUrl, {
+      ...options,
+      headers,
+    });
+
+    // Handle 401 errors
+    if (response.status === 401) {
+      console.error(`[Auth] Authentication failed for endpoint ${endpoint}:`, {
+        status: response.status, 
+        statusText: response.statusText
+      });
+      
+      // Try to read the error body for more information
+      try {
+        const errorBody = await response.text();
+        console.error(`[Auth] Error response body: ${errorBody}`);
+      } catch (e) {
+        console.error("[Auth] Could not read error response body");
+      }
+      
+      throw new Response("Authentication failed", { status: 401 });
+    }
+
+    return { res: response, setCookieHeaders };
+  } catch (error) {
+    console.error(`[Auth] Error in fetchWithAuth for endpoint ${endpoint}:`, error);
+    throw error;
+  }
 }
 
 // Agregando debugging mejorado para cookies
@@ -324,7 +414,7 @@ export async function getUserId(request: Request): Promise<string | null> {
 // Implementamos un pequeño caché en memoria para reducir consultas repetidas
 const userRequestCache = new Map<string, { user: any | null, timestamp: number }>();
 
-import { getUserFromSession } from "./session.server";
+import { getSession, getUserFromSession } from "./session.server";
 
 // Versión mejorada de getUser que usa el nuevo sistema de sesiones
 export async function getUser(request: Request): Promise<any | null> {
