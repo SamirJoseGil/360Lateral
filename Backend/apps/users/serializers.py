@@ -8,6 +8,20 @@ from drf_yasg.utils import swagger_serializer_method
 from .models import User, UserProfile
 
 
+class UserBasicSerializer(serializers.ModelSerializer):
+    """
+    Serializer básico para mostrar información mínima de usuario
+    """
+    full_name = serializers.SerializerMethodField()
+    
+    class Meta:
+        model = User
+        fields = ['id', 'username', 'email', 'full_name']
+    
+    def get_full_name(self, obj):
+        return f"{obj.first_name} {obj.last_name}".strip() or obj.username
+
+
 class UserSimpleSerializer(serializers.ModelSerializer):
     """
     Serializer simplificado para incluir información básica de usuario

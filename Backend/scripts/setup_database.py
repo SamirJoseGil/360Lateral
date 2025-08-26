@@ -4,10 +4,45 @@ Script para configurar la base de datos en el orden correcto
 import os
 import sys
 from pathlib import Path
+import importlib.util
 
 # Configurar Django
 backend_dir = Path(__file__).resolve().parent.parent
 sys.path.append(str(backend_dir))
+
+# Verificar dependencias críticas antes de continuar
+def check_dependencies():
+    """Verificar que las dependencias críticas estén instaladas"""
+    dependencies = ["django", "django_filters"]
+    missing = []
+    
+    for dependency in dependencies:
+        if importlib.util.find_spec(dependency) is None:
+            missing.append(dependency)
+    
+    if missing:
+        print("⚠️ Faltan las siguientes dependencias críticas:")
+        for dep in missing:
+            print(f"   - {dep}")
+        print("\nInstalando dependencias faltantes...")
+        
+        for dep in missing:
+            print(f"\nInstalando {dep}...")
+            try:
+                import subprocess
+                subprocess.check_call([sys.executable, '-m', 'pip', 'install', dep.replace('_', '-')])
+                print(f"✅ {dep} instalado correctamente")
+            except subprocess.CalledProcessError as e:
+                print(f"❌ Error al instalar {dep}: {e}")
+                return False
+    
+    return True
+
+# Verificar dependencias antes de continuar
+if not check_dependencies():
+    print("❌ No se pudieron instalar todas las dependencias. Por favor, instálelas manualmente.")
+    sys.exit(1)
+
 os.environ.setdefault("DJANGO_SETTINGS_MODULE", "config.settings.development")
 
 import django

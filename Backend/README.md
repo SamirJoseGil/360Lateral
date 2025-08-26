@@ -101,6 +101,8 @@ source venv/bin/activate
 
 # 4. Instalar dependencias
 pip install -r requirements.txt
+# Asegurarse de que django-filter esté instalado
+pip install django-filter
 
 # 5. Configurar variables de entorno
 copy .env.example .env

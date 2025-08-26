@@ -54,6 +54,8 @@ urlpatterns = [
     path('api/auth/', include('apps.authentication.urls')),  # Usar apps.authentication.urls para rutas de auth
     path('api/users/', include('apps.users.urls')),
     path('api/lotes/', include('apps.lotes.urls')),
+    path('api/stats/', include('apps.stats.urls')),
+    path('api/documentos/', include('apps.documents.urls')),  # Agregamos ruta para documentos
     
     # Health check
     path('health/', include('apps.health_check.urls')),

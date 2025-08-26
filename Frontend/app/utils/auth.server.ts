@@ -1,8 +1,9 @@
 // app/utils/auth.server.ts
 import { createCookie, json, redirect } from "@remix-run/node";
-import type { HeadersFunction, Session, SessionData } from "@remix-run/node";
+import type { HeadersFunction } from "@remix-run/node";
 import { ENV, isProd } from "~/env.server";
 import { isExpired } from "./jwt.server";
+import { getSession, commitSession, getUserFromSession } from "./session.server";
 
 export type Role = "admin" | "owner" | "developer";
 
@@ -14,22 +15,6 @@ export type ApiUser = {
   email: string;
   role: Role;
   name: string;
-};
-
-type LoginResult = {
-  success: boolean;
-  data?: {
-    token: string;         // access
-    refreshToken: string;  // refresh
-    user: ApiUser;
-  };
-  message?: string;
-};
-
-type RefreshResult = {
-  success: boolean;
-  data?: { token: string };
-  message?: string;
 };
 
 // ────────────────────────────────────────────────────────────────────────────────
@@ -104,138 +89,13 @@ export async function clearAuthCookies() {
   return headers;
 }
 
-// ────────────────────────────────────────────────────────────────────────────────
-// Llamadas API crudas
-// ────────────────────────────────────────────────────────────────────────────────
-
-async function apiLogin(email: string, password: string): Promise<LoginResult> {
-  const res = await fetch(`http://localhost:8000/api/auth/login/`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ email, password }),
-  });
-  const data = (await res.json()) as LoginResult;
-  if (!res.ok || !data.success) {
-    throw new Response(data.message ?? "Credenciales inválidas", { status: 401 });
-  }
-  return data;
-}
-
-async function apiRefresh(refreshToken: string): Promise<RefreshResult> {
-  const res = await fetch(`http://localhost:8000/api/auth/refresh/`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ token: refreshToken }),
-  });
-  const data = (await res.json()) as RefreshResult;
-  if (!res.ok || !data.success) {
-    throw new Response(data.message ?? "No se pudo refrescar sesión", { status: 401 });
-  }
-  return data;
-}
-
-async function apiMe(accessToken: string): Promise<ApiUser> {
-  // URL corregida según la lista de URLs disponibles (api/users/ está disponible)
-  const url = `http://localhost:8000/api/users/me/`;
-  console.log('apiMe - calling URL:', url); // Debug
-  
-  const res = await fetch(url, {
-    headers: { Authorization: `Bearer ${accessToken}` },
-  });
-  
-  console.log('apiMe - response status:', res.status); // Debug
-  console.log('apiMe - response content-type:', res.headers.get('content-type')); // Debug
-  
-  if (!res.ok) {
-    const errorText = await res.text();
-    console.log('apiMe - error response:', errorText); // Debug
-    throw new Response(errorText ?? "No autorizado", { status: res.status });
-  }
-  
-  const json = await res.json();
-  console.log('apiMe - JSON response:', json); // Debug
-  
-  // tu backend devuelve normalmente { success, data: user } o el user directo
-  const user: ApiUser = json?.data ?? json;
-  return user;
-}
-
-// ────────────────────────────────────────────────────────────────────────────────
-// Sesión: login/logout/ensure/getUser
-// ────────────────────────────────────────────────────────────────────────────────
-
-export type LoginActionResult =
-  | { ok: true; user: ApiUser; headers: Headers }
-  | { ok: false; error: string };
-
-// export async function loginAction(request: Request): Promise<LoginActionResult> {
-//   try {
-//     const formData = await request.formData();
-//     const email = String(formData.get("email") ?? "");
-//     const password = String(formData.get("password") ?? "");
-
-//     if (!email || !password) {
-//       return { ok: false, error: "Email y contraseña son requeridos" };
-//     }
-
-//     const response = await fetch("http://localhost:8000/api/auth/login/", {
-//       method: "POST",
-//       headers: { "Content-Type": "application/json" },
-//       body: JSON.stringify({ email, password }),
-//     });
-
-//     const ctype = response.headers.get("content-type") || "";
-//     let data: any = null;
-//     try {
-//       data = ctype.includes("application/json") ? await response.json() : null;
-//     } catch (e) {
-//       console.error("❌ No se pudo parsear JSON del backend:", e);
-//     }
-
-//     console.info("🧪 loginAction -> status:", response.status, "ctype:", ctype);
-//     console.info("🧪 loginAction -> body:", data);
-
-//     if (!response.ok) {
-//       // Backend dijo que no (401/400/403/etc)
-//       const msg = data?.message || "Credenciales inválidas";
-//       return { ok: false, error: msg };
-//     }
-
-//     // Acepta varias formas: {access, refresh, user} o {data:{token, refreshToken, user}} etc.
-//     const user: ApiUser | undefined = data?.data?.user;
-//     const access: string | undefined = data?.data?.access;
-//     const refresh: string | undefined = data?.data?.refresh;
-
-
-//     if (!user || !access || !refresh) {
-//       console.error("❌ Faltan campos en la respuesta:", {
-//         hasUser: Boolean(user),
-//         hasAccess: Boolean(access),
-//         hasRefresh: Boolean(refresh),
-//         raw: data,
-//       });
-//       return { ok: false, error: "Respuesta inesperada del servidor" };
-//     }
-
-//     // Set-Cookie x2 (cada cookie en su propio header)
-//     const headers = new Headers();
-//     headers.append("Set-Cookie", await accessTokenCookie.serialize(access));
-//     headers.append("Set-Cookie", await refreshTokenCookie.serialize(refresh));
-
-//     return { ok: true, user, headers };
-//   } catch (err) {
-//     console.error("💥 Error en loginAction:", err);
-//     return { ok: false, error: "Error interno en loginAction" };
-//   }
-// }
-
 export async function logoutAction(request: Request) {
   // intenta cerrar en backend, pero igual limpia local
   try {
     const cookieHeader = request.headers.get("Cookie");
     const access = await accessTokenCookie.parse(cookieHeader);
     if (access) {
-      await fetch(`http://localhost:8000/api/auth/logout/`, {
+      await fetch(`${API_URL}/api/auth/logout/`, {
         method: "POST",
         headers: { Authorization: `Bearer ${access}` },
       }).catch((error) => {
@@ -297,8 +157,7 @@ export async function ensureAccessToken(request: Request) {
     // Try to refresh the token
     try {
       console.log("[Auth] Refreshing token...");
-      const apiUrl = process.env.API_URL || "http://localhost:8000";
-      const refreshResponse = await fetch(`${apiUrl}/api/auth/refresh-token`, {
+      const refreshResponse = await fetch(`${API_URL}/api/auth/refresh-token`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -346,54 +205,69 @@ export async function fetchWithAuth(
   options: Record<string, any> = {}
 ) {
   try {
-    // Get the access token (this will refresh if needed)
-    const { token, headers: setCookieHeaders } = await ensureAccessToken(request);
+    // Get access token from cookies
+    const accessToken = await getAccessTokenFromCookies(request);
     
-    if (!token || typeof token !== 'string') {
-      console.error("[Auth] Invalid or missing token in fetchWithAuth");
-      throw new Response("Authentication failed", { status: 401 });
+    // Check if we have a token
+    console.log('[Auth] Token check:', { hasAccessToken: !!accessToken });
+    
+    // If no token, try to refresh it
+    if (!accessToken) {
+      console.log('[Auth] Access token missing or expired, trying to refresh');
+      const newToken = await ensureAccessToken(request);
+      
+      // If still no token, we can't proceed
+      if (!newToken) {
+        console.log('[Auth] No refresh token available');
+        throw new Response("Authentication required", { status: 401 });
+      }
     }
-
-    // Create headers with authorization
+    
+    // Ensure endpoint has the correct base URL
+    const url = endpoint.startsWith('http') 
+      ? endpoint 
+      : `${API_URL}${endpoint.startsWith('/') ? '' : '/'}${endpoint}`;
+    
+    // Set default headers with auth token
     const headers = new Headers(options.headers || {});
-    headers.append("Authorization", `Bearer ${token}`);
-    if (!headers.has("Content-Type")) {
-      headers.append("Content-Type", "application/json");
-    }
-
-    // Determine API URL
-    const apiUrl = process.env.API_URL || "http://localhost:8000";
-    const fullUrl = `${apiUrl}${endpoint}`;
-
-    console.log(`[Auth] Making authenticated request to: ${fullUrl}`);
+    headers.set("Authorization", `Bearer ${accessToken}`);
     
-    // Make the request
-    const response = await fetch(fullUrl, {
+    // Make the request with auth header
+    const response = await fetch(url, {
       ...options,
       headers,
     });
-
-    // Handle 401 errors
+    
+    // Handle token expiration
     if (response.status === 401) {
-      console.error(`[Auth] Authentication failed for endpoint ${endpoint}:`, {
-        status: response.status, 
-        statusText: response.statusText
-      });
+      console.log('[Auth] Token expired, trying to refresh');
+      // Try to refresh the token
+      const newToken = await ensureAccessToken(request);
       
-      // Try to read the error body for more information
-      try {
-        const errorBody = await response.text();
-        console.error(`[Auth] Error response body: ${errorBody}`);
-      } catch (e) {
-        console.error("[Auth] Could not read error response body");
+      if (newToken) {
+        // Retry the request with the new token
+        headers.set("Authorization", `Bearer ${newToken}`);
+        const retryResponse = await fetch(url, {
+          ...options,
+          headers,
+        });
+        
+        return {
+          res: retryResponse,
+          setCookieHeaders: new Headers(),
+        };
+      } else {
+        // If we couldn't refresh, throw 401
+        throw new Response("Authentication required", { status: 401 });
       }
-      
-      throw new Response("Authentication failed", { status: 401 });
     }
-
-    return { res: response, setCookieHeaders };
+    
+    return {
+      res: response,
+      setCookieHeaders: new Headers(),
+    };
   } catch (error) {
-    console.error(`[Auth] Error in fetchWithAuth for endpoint ${endpoint}:`, error);
+    console.log(`[Auth] Error in fetchWithAuth for endpoint ${endpoint}:`, error);
     throw error;
   }
 }
@@ -408,13 +282,7 @@ export async function getUserId(request: Request): Promise<string | null> {
 }
 
 // Implementamos un pequeño caché en memoria para reducir consultas repetidas
-// Esto ayuda a prevenir bucles infinitos de redirección
-// Esta línea se eliminará
-
-// Implementamos un pequeño caché en memoria para reducir consultas repetidas
 const userRequestCache = new Map<string, { user: any | null, timestamp: number }>();
-
-import { getSession, getUserFromSession } from "./session.server";
 
 // Versión mejorada de getUser que usa el nuevo sistema de sesiones
 export async function getUser(request: Request): Promise<any | null> {
@@ -447,7 +315,7 @@ export async function getUser(request: Request): Promise<any | null> {
     if (token) {
       try {
         // Consulta al API para verificar el token y obtener el usuario
-        const response = await fetch("http://localhost:8000/api/users/me/", {
+        const response = await fetch(`${API_URL}/api/users/me/`, {
           headers: {
             Authorization: `Bearer ${token}`
           }
@@ -523,7 +391,7 @@ export async function loginAction(request: Request) {
   
   console.log('loginAction - attempting login for:', email); // Debug
 
-  const response = await fetch(`http://localhost:8000/api/auth/login/`, {
+  const response = await fetch(`${API_URL}/api/auth/login/`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ email, password }),
@@ -634,13 +502,14 @@ export function getTokenDirectlyFromCookies(request: Request): string | null {
   const cookieHeader = request.headers.get("Cookie") || "";
   console.log("Raw cookie header:", cookieHeader);
   
-  const cookies = cookieHeader.split(';').reduce((acc, cookie) => {
-    const [key, value] = cookie.trim().split('=');
+  const cookies: Record<string, string> = {};
+  cookieHeader.split(';').forEach(pair => {
+    const [key, value] = pair.trim().split('=');
     if (key && value) {
-      acc[key] = decodeURIComponent(value);
+      cookies[key] = decodeURIComponent(value);
     }
-    return acc;
-  }, {} as Record<string, string>);
+    return cookies;
+  });
   
   const accessToken = cookies["l360_access"];
   console.log("Access token found:", !!accessToken);

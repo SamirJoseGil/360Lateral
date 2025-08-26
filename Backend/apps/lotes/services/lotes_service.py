@@ -51,19 +51,19 @@ class LotesService(BaseService):
                 cached_result['from_cache'] = True
                 return cached_result
             
-            # Realizar consulta según el tipo
+            # Realizar consulta según el tipo - CORREGIDO: usar los nombres correctos de los métodos
             if tipo_busqueda == 'cbml':
-                result = self.mapgis_service.buscar_por_cbml(valor)
+                result = self.mapgis_service.search_by_cbml(valor)
             elif tipo_busqueda == 'matricula':
-                result = self.mapgis_service.buscar_por_matricula(valor)
+                result = self.mapgis_service.search_by_matricula(valor)
             else:  # direccion
-                result = self.mapgis_service.buscar_por_direccion(valor)
+                result = self.mapgis_service.search_by_direccion(valor)
             
-            # Enriquecer resultado
+            # Enriquecer resultado - Actualizado para usar success en lugar de encontrado
             result = self._enriquecer_resultado(result, valor, tipo_busqueda)
             
             # Guardar en cache si es exitoso
-            if result.get('encontrado'):
+            if result.get('success'):  # Cambiado de 'encontrado' a 'success' para coincidir con mapgis_service
                 cache.set(cache_key, result, self.cache_timeout)
                 logger.info(f"💾 Resultado guardado en cache: {cache_key}")
             
@@ -76,7 +76,8 @@ class LotesService(BaseService):
     def _enriquecer_resultado(self, result: Dict, valor: str, tipo_busqueda: str) -> Dict:
         """Enriquece el resultado con información adicional"""
         try:
-            if result.get('encontrado'):
+            # Actualizado para usar 'success' en lugar de 'encontrado'
+            if result.get('success'):
                 # Agregar metadatos de consulta
                 result['consulta'] = {
                     'valor_buscado': valor,
@@ -84,9 +85,9 @@ class LotesService(BaseService):
                     'timestamp': self._get_timestamp()
                 }
                 
-                # Validar y limpiar datos
-                if 'datos' in result:
-                    result['datos'] = self._validar_datos_predio(result['datos'])
+                # Validar y limpiar datos - Adaptado para usar 'data' en lugar de 'datos'
+                if 'data' in result:
+                    result['data'] = self._validar_datos_predio(result['data'])
                 
                 # Agregar información de confiabilidad
                 result['confiabilidad'] = self._calcular_confiabilidad(result)

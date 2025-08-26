@@ -24,22 +24,6 @@ export async function getSession(request: Request) {
   return sessionStorage.getSession(cookieHeader);
 }
 
-// Función para obtener el usuario de la sesión
-export async function getUserFromSession(request: Request) {
-  const session = await getSession(request);
-  const userJson = session.get("user");
-  console.log("getUserFromSession - user in session:", userJson ? "found" : "not found");
-  
-  if (!userJson) return null;
-  
-  try {
-    return JSON.parse(userJson);
-  } catch (error) {
-    console.error("Error parsing user from session:", error);
-    return null;
-  }
-}
-
 // Función para crear una sesión con el usuario
 export async function createUserSession(
   user: any,
@@ -118,4 +102,25 @@ export async function logout(request: Request) {
   );
   
   return redirect("/login", { headers });
+}
+
+// Add the missing commitSession function
+export async function commitSession(session: any) {
+  return sessionStorage.commitSession(session);
+}
+
+// Función para obtener el usuario de la sesión
+export async function getUserFromSession(request: Request) {
+  const session = await getSession(request);
+  const userJson = session.get("user");
+  console.log("getUserFromSession - user in session:", userJson ? "found" : "not found");
+  
+  if (!userJson) return null;
+  
+  try {
+    return JSON.parse(userJson);
+  } catch (error) {
+    console.error("Error parsing user from session:", error);
+    return null;
+  }
 }
