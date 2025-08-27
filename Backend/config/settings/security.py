@@ -156,3 +156,13 @@ MAPGIS_REQUEST_TIMEOUT = int(os.environ.get('MAPGIS_REQUEST_TIMEOUT', 30))
 MAPGIS_API_KEY = os.environ.get('MAPGIS_API_KEY')
 GEOMEDELLIN_API_KEY = os.environ.get('GEOMEDELLIN_API_KEY')
 POT_API_KEY = os.environ.get('POT_API_KEY')
+
+# =============================================================================
+# LANGUAGES BIDI SETTINGS
+# =============================================================================
+
+# Languages that require special handling for bidirectional text
+LANGUAGES_BIDI = os.environ.get(
+    'LANGUAGES_BIDI',
+    'ar,he,fa,ur'
+).split(',')

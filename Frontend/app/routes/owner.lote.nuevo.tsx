@@ -43,16 +43,18 @@ export async function loader({ request }: LoaderFunctionArgs) {
 
     // Si hay parámetros de búsqueda, realizar la consulta a MapGIS
     if (searchType && searchValue) {
+        console.log(`Loader: Buscando ${searchType}: ${searchValue}`);
         try {
             let result;
 
             switch (searchType) {
                 case 'cbml':
                     result = await consultarPorCBML(request, searchValue);
-                    if (result.resultado.success) {
+                    console.log('Resultado CBML:', result);
+                    if ((result.resultado as any).encontrado) {
                         return json({
                             user,
-                            searchResult: result.resultado.data,
+                            searchResult: result.resultado.datos,
                             searchType: 'cbml',
                             headers: result.headers
                         });
@@ -61,10 +63,11 @@ export async function loader({ request }: LoaderFunctionArgs) {
 
                 case 'matricula':
                     result = await consultarPorMatricula(request, searchValue);
-                    if (result.resultado.success) {
+                    console.log('Resultado matrícula:', result);
+                    if (result.resultado.encontrado) {
                         return json({
                             user,
-                            searchResult: result.resultado.data,
+                            searchResult: result.resultado.datos,
                             searchType: 'matricula',
                             headers: result.headers
                         });
@@ -73,10 +76,10 @@ export async function loader({ request }: LoaderFunctionArgs) {
 
                 case 'direccion':
                     result = await consultarPorDireccion(request, searchValue);
-                    if (result.resultado.success) {
+                    if (result.resultado.encontrado) {
                         return json({
                             user,
-                            searchResults: result.resultado.results,
+                            searchResults: result.resultado.resultados,
                             searchType: 'direccion',
                             headers: result.headers
                         });
@@ -159,7 +162,8 @@ export async function action({ request }: ActionFunctionArgs) {
         // Crear el lote
         const resultado = await createLote(request, {
             ...loteData,
-            status: "active" // Por defecto activo
+            status: "active", // Por defecto activo
+            owner: user.id // Agregar el owner requerido
         });
 
         // Redirigir a la página del lote creado
@@ -184,6 +188,10 @@ export default function NuevoLote() {
     const [isSearching, setIsSearching] = useState(false);
     const [searchError, setSearchError] = useState<string | null>(null);
     const [direccionResults, setDireccionResults] = useState<DireccionResult[]>([]);
+    const [showLoadingModal, setShowLoadingModal] = useState(false);
+    const [loadingProgress, setLoadingProgress] = useState(0);
+    const [searchStartTime, setSearchStartTime] = useState<number | null>(null);
+    const [searchTimeout, setSearchTimeout] = useState<NodeJS.Timeout | null>(null);
     const [formValues, setFormValues] = useState({
         nombre: '',
         direccion: '',
@@ -203,19 +211,94 @@ export default function NuevoLote() {
 
     // Función para manejar la búsqueda
     const handleSearch = async (searchType: 'cbml' | 'matricula' | 'direccion', value: string) => {
+        // Reset all state related to search
         setIsSearching(true);
         setSearchError(null);
         setDireccionResults([]);
+        setShowLoadingModal(true);
+        setLoadingProgress(0);
+        setSearchStartTime(Date.now());
+
+        console.log(`Iniciando búsqueda de ${searchType}: ${value}`);
+
+        // Limpiar timeout anterior si existe
+        if (searchTimeout) {
+            clearTimeout(searchTimeout);
+            setSearchTimeout(null);
+        }
+
+        // También reiniciar el fetcher para asegurar que estamos partiendo de cero
+        // Esto ayuda cuando se hace una nueva búsqueda después de una anterior
+        mapFetcher.state = 'idle' as any;
+        mapFetcher.data = undefined;
+
+        // Iniciar animación de progreso
+        const progressInterval = setInterval(() => {
+            setLoadingProgress(prev => {
+                // Incremento progresivo que se ralentiza cerca del final
+                const remaining = 100 - prev;
+                const increment = remaining * 0.03; // Incremento del 3% del restante
+                const newProgress = prev + increment;
+                return newProgress > 95 ? 95 : newProgress; // Mantenemos por debajo del 95% hasta tener respuesta
+            });
+        }, 300);
+
+        // Establecer timeout para la búsqueda (50 segundos)
+        const timeout = setTimeout(() => {
+            clearInterval(progressInterval);
+            setIsSearching(false);
+            setShowLoadingModal(false);
+            setSearchError('La consulta ha excedido el tiempo máximo de espera (50 segundos). Por favor intente nuevamente.');
+        }, 50000);
+
+        setSearchTimeout(timeout);
 
         try {
-            mapFetcher.load(`/owner/lote/nuevo?searchType=${searchType}&searchValue=${encodeURIComponent(value)}`);
+            // Usar submit en lugar de load para asegurar que se haga una nueva petición
+            // y no se use caché del navegador
+            mapFetcher.submit(
+                { searchType, searchValue: value },
+                {
+                    method: 'get',
+                    action: `/owner/lote/nuevo?searchType=${searchType}&searchValue=${encodeURIComponent(value)}`
+                }
+            );
+
+            // No cerramos el modal aquí, lo manejamos en el useEffect que observa mapFetcher.state
         } catch (error) {
+            clearInterval(progressInterval);
+            clearTimeout(timeout);
+            setIsSearching(false);
+            setShowLoadingModal(false);
             console.error('Error al realizar la búsqueda:', error);
             setSearchError('Error al realizar la búsqueda. Por favor intente nuevamente.');
-        } finally {
-            setIsSearching(false);
         }
     };
+
+    // Manejar el estado del fetcher
+    useEffect(() => {
+        // Cuando cambia el estado del fetcher a idle, significa que la búsqueda ha terminado
+        if (mapFetcher.state === 'idle' && isSearching) {
+            // Limpiar el timeout si existe
+            if (searchTimeout) {
+                clearTimeout(searchTimeout);
+                setSearchTimeout(null);
+            }
+
+            // Calcular tiempo transcurrido
+            const elapsedTime = searchStartTime ? Math.round((Date.now() - searchStartTime) / 1000) : 0;
+            console.log(`Búsqueda completada en ${elapsedTime} segundos`);
+
+            // Actualizar la barra de progreso a 100%
+            setLoadingProgress(100);
+
+            // Pequeño delay para mostrar el 100% antes de cerrar el modal
+            setTimeout(() => {
+                setShowLoadingModal(false);
+                setIsSearching(false);
+            }, 500);
+        }
+    }, [mapFetcher.state, isSearching, searchTimeout, searchStartTime]);
 
     // Manejar los resultados de la búsqueda
     useEffect(() => {
@@ -224,6 +307,8 @@ export default function NuevoLote() {
             typeof mapFetcher.data === "object" &&
             mapFetcher.data !== null
         ) {
+            console.log("MapFetcher data received:", mapFetcher.data);
+
             if ("searchError" in mapFetcher.data) {
                 setSearchError(mapFetcher.data.searchError as string);
             } else if (
@@ -234,24 +319,92 @@ export default function NuevoLote() {
                 setDireccionResults(mapFetcher.data.searchResults as DireccionResult[]);
             } else if ("searchResult" in mapFetcher.data) {
                 // Rellenar formulario con los datos encontrados
-                const result = mapFetcher.data.searchResult as Partial<NuevoLoteData>;
-                setFormValues({
-                    nombre: formValues.nombre, // Mantener el nombre que el usuario haya puesto
-                    direccion: result.direccion || formValues.direccion,
-                    area: result.area?.toString() || formValues.area,
-                    estrato: result.estrato?.toString() || formValues.estrato,
-                    descripcion: formValues.descripcion, // Mantener la descripción
-                    matricula: result.matricula || formValues.matricula,
-                    codigo_catastral: formValues.codigo_catastral, // Mantener el código catastral
-                    cbml: result.cbml || formValues.cbml,
-                    tratamiento_pot: result.tratamiento_pot || formValues.tratamiento_pot,
-                    uso_suelo: result.uso_suelo || formValues.uso_suelo,
-                    latitud: result.latitud?.toString() || formValues.latitud,
-                    longitud: result.longitud?.toString() || formValues.longitud
-                });
+                const mapGisData = mapFetcher.data.searchResult as any;
+                console.log("MapGIS search result data:", mapGisData);
+
+                // Extraer los datos requeridos de la estructura anidada del API
+                let areaValue = '';
+                let tratamiento = '';
+                let usoSuelo = '';
+                let densidad = '';
+                let cbmlValue = '';
+
+                // Extraer valores si existen en la respuesta
+                if (mapGisData) {
+                    // Extraer área
+                    if (mapGisData.area_lote_m2) {
+                        areaValue = mapGisData.area_lote_m2.toString();
+                    }
+
+                    // Extraer CBML
+                    cbmlValue = mapGisData.cbml || '';
+
+                    // Extraer tratamiento POT si existe
+                    if (mapGisData.aprovechamiento_urbano &&
+                        typeof mapGisData.aprovechamiento_urbano === 'object') {
+                        tratamiento = mapGisData.aprovechamiento_urbano.tratamiento || '';
+
+                        // Extraer densidad habitacional si existe
+                        if (mapGisData.aprovechamiento_urbano.densidad_habitacional_max) {
+                            densidad = `${mapGisData.aprovechamiento_urbano.densidad_habitacional_max} viv/ha`;
+                        }
+                    }
+
+                    // Extraer uso de suelo si existe
+                    if (mapGisData.uso_suelo &&
+                        typeof mapGisData.uso_suelo === 'object') {
+                        const uso = mapGisData.uso_suelo;
+                        usoSuelo = `${uso.categoria_uso || ''}${uso.subcategoria_uso ? ` - ${uso.subcategoria_uso}` : ''}`;
+
+                        // Añadir porcentaje si está disponible
+                        if (uso.porcentaje) {
+                            usoSuelo += ` (${uso.porcentaje.toFixed(2)}%)`;
+                        }
+                    }
+                }
+
+                // Crear una descripción con información adicional del lote
+                const descripcionAutomatica = `
+Clasificación de suelo: ${mapGisData.clasificacion_suelo || 'No disponible'}
+${mapGisData.restricciones_ambientales ? `
+Restricciones ambientales:
+- ${mapGisData.restricciones_ambientales.amenaza_riesgo || 'No especificado'}
+- ${mapGisData.restricciones_ambientales.retiros_rios || 'No especificado'}
+` : ''}
+${mapGisData.aprovechamiento_urbano ? `
+Aprovechamiento urbano:
+- Tratamiento: ${mapGisData.aprovechamiento_urbano.tratamiento || 'No especificado'}
+- Densidad habitacional máxima: ${mapGisData.aprovechamiento_urbano.densidad_habitacional_max || 'No especificada'} viv/ha
+- Altura normativa: ${mapGisData.aprovechamiento_urbano.altura_normativa || 'No especificada'}
+` : ''}
+`.trim();
+
+                // Usar una función de actualización para evitar problemas con state obsoleto
+                setFormValues(prevValues => ({
+                    // Mantener el nombre que el usuario haya puesto
+                    nombre: prevValues.nombre,
+
+                    // Actualizar la descripción con datos detallados del MapGIS
+                    // pero mantener cualquier descripción previa que el usuario haya agregado
+                    descripcion: prevValues.descripcion
+                        ? prevValues.descripcion
+                        : descripcionAutomatica,
+
+                    // Actualizar los campos con los datos de MapGIS
+                    direccion: mapGisData.direccion || '',
+                    area: areaValue,
+                    cbml: cbmlValue,
+                    matricula: mapGisData.matricula || '',
+                    codigo_catastral: mapGisData.codigo_catastral || '',
+                    tratamiento_pot: tratamiento,
+                    uso_suelo: usoSuelo,
+                    estrato: prevValues.estrato, // Mantener el estrato ya que no viene de MapGIS
+                    latitud: mapGisData.latitud?.toString() || '',
+                    longitud: mapGisData.longitud?.toString() || ''
+                }));
 
                 // Si tiene coordenadas, mostrar el checkbox de ubicación
-                if (result.latitud && result.longitud) {
+                if (mapGisData.latitud && mapGisData.longitud) {
                     setUsarUbicacion(true);
                 }
             }
@@ -487,6 +640,9 @@ export default function NuevoLote() {
                                 value={formValues.tratamiento_pot}
                                 onChange={handleInputChange}
                             />
+                            <p className="text-xs text-gray-500 mt-1">
+                                Define el tipo de intervención urbana permitida en el lote
+                            </p>
                         </div>
 
                         <div className="space-y-1">
@@ -502,6 +658,9 @@ export default function NuevoLote() {
                                 value={formValues.uso_suelo}
                                 onChange={handleInputChange}
                             />
+                            <p className="text-xs text-gray-500 mt-1">
+                                Define los tipos de actividades permitidas en este terreno
+                            </p>
                         </div>
 
                         <div className="col-span-2">
@@ -573,6 +732,38 @@ export default function NuevoLote() {
                     </div>
                 </Form>
             </div>
+
+            {/* Modal de carga para búsqueda MapGIS */}
+            {showLoadingModal && (
+                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+                    <div className="bg-white p-8 rounded-lg shadow-lg max-w-md w-full">
+                        <h3 className="text-lg font-bold mb-4">Consultando información en MapGIS</h3>
+
+                        <div className="mb-4">
+                            <p className="text-gray-600 mb-2">
+                                Esta consulta puede tardar hasta 50 segundos. Por favor espere...
+                            </p>
+                        </div>
+
+                        {/* Barra de progreso */}
+                        <div className="w-full bg-gray-200 rounded-full h-2.5 mb-4">
+                            <div
+                                className="bg-blue-600 h-2.5 rounded-full transition-all duration-300 ease-in-out"
+                                style={{ width: `${loadingProgress}%` }}
+                            ></div>
+                        </div>
+
+                        {/* Animación de carga */}
+                        <div className="flex justify-center my-4">
+                            <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500"></div>
+                        </div>
+
+                        <p className="text-center text-sm text-gray-500">
+                            Tiempo transcurrido: {searchStartTime ? Math.round((Date.now() - searchStartTime) / 1000) : 0} segundos
+                        </p>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }

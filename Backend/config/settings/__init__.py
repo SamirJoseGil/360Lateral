@@ -15,3 +15,5 @@ elif 'testing' in settings_module:
 else:
     # Por defecto, usar configuración de desarrollo
     from .development import *
+
+# Solo revisando el contenido sin modificarlo

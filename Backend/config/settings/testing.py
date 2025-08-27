@@ -80,3 +80,9 @@ REST_FRAMEWORK.update({
         'rest_framework.authentication.SessionAuthentication',
     ],
 })
+
+# =============================================================================
+# LANGUAGES BIDI
+# =============================================================================
+
+# Solo revisando el contenido sin modificarlo

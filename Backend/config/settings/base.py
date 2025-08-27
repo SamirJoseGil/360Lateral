@@ -151,7 +151,7 @@ REST_FRAMEWORK = {
         'rest_framework_simplejwt.authentication.JWTAuthentication',
     ],
     'DEFAULT_PERMISSION_CLASSES': [
-        'rest_framework.permissions.IsAuthenticated',
+        'apps.common.permissions.AllowPublicEndpoints',  # Permiso personalizado que permite endpoints específicos públicos
     ],
     'DEFAULT_FILTER_BACKENDS': [
         'django_filters.rest_framework.DjangoFilterBackend',
@@ -239,6 +239,7 @@ LANGUAGE_CODE = 'es-es'
 TIME_ZONE = 'America/Bogota'
 USE_I18N = True
 USE_TZ = True
+LANGUAGES_BIDI = []  # Languages written right to left (e.g. Hebrew, Arabic)
 
 # =============================================================================
 # STATIC FILES & MEDIA

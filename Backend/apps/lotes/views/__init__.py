@@ -5,6 +5,12 @@ Inicialización del módulo de vistas para la aplicación de lotes
 # Importar vistas CRUD básicas
 from .lotes_views import lote_list, lote_detail
 
+from .lote_views import (
+    lote_create,
+    lote_update,
+    lote_delete
+)
+
 # Importar vistas MapGIS
 from .mapgis_views import (
     scrap_cbml,
@@ -25,10 +31,13 @@ from .test_mapgis_views import (
 # Importar vistas de tratamientos
 from .tratamientos_views import listar_tratamientos
 
+# Exportamos las vistas públicas
+from .public_mapgis_views import PublicCBMLView, PublicMatriculaView, PublicDireccionView
+
 # Definir qué símbolos exporta este módulo
 __all__ = [
     # CRUD de lotes
-    'lote_list', 'lote_detail',
+    'lote_list', 'lote_detail', 'lote_create', 'lote_update', 'lote_delete',
     
     # MapGIS
     'scrap_cbml', 'scrap_matricula', 'scrap_direccion',
@@ -40,4 +49,7 @@ __all__ = [
     
     # Tratamientos
     'listar_tratamientos',
+
+    # Vistas públicas
+    'PublicCBMLView', 'PublicMatriculaView', 'PublicDireccionView',
 ]

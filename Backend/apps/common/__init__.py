@@ -1,3 +1,1 @@
-"""
-Apps comunes y utilidades compartidas
-"""
+# apps.common package

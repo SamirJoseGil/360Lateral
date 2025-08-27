@@ -207,3 +207,9 @@ def get_security_checklist():
     }
 
 SECURITY_CHECKLIST = get_security_checklist()
+
+# =============================================================================
+# LANGUAGES BIDI CHECK
+# =============================================================================
+
+# Solo revisando el contenido sin modificarlo

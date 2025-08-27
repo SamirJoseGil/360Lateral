@@ -51,19 +51,22 @@ class LotesService(BaseService):
                 cached_result['from_cache'] = True
                 return cached_result
             
-            # Realizar consulta según el tipo - CORREGIDO: usar los nombres correctos de los métodos
-            if tipo_busqueda == 'cbml':
-                result = self.mapgis_service.search_by_cbml(valor)
-            elif tipo_busqueda == 'matricula':
-                result = self.mapgis_service.search_by_matricula(valor)
-            else:  # direccion
-                result = self.mapgis_service.search_by_direccion(valor)
+            # Mostrar información detallada para depuración
+            logger.info(f"🔍 Consulta de predio - Tipo: {tipo_busqueda}, Valor: {valor}")
             
-            # Enriquecer resultado - Actualizado para usar success en lugar de encontrado
+            # Realizar consulta según el tipo
+            if tipo_busqueda == 'cbml':
+                result = self.mapgis_service.buscar_por_cbml(valor)
+            elif tipo_busqueda == 'matricula':
+                result = self.mapgis_service.buscar_por_matricula(valor)
+            else:  # direccion
+                result = self.mapgis_service.buscar_por_direccion(valor)
+            
+            # Enriquecer resultado
             result = self._enriquecer_resultado(result, valor, tipo_busqueda)
             
             # Guardar en cache si es exitoso
-            if result.get('success'):  # Cambiado de 'encontrado' a 'success' para coincidir con mapgis_service
+            if result.get('encontrado'):
                 cache.set(cache_key, result, self.cache_timeout)
                 logger.info(f"💾 Resultado guardado en cache: {cache_key}")
             

@@ -55,3 +55,22 @@ class Lote(models.Model):
     
     def __str__(self):
         return f"{self.nombre} ({self.direccion})"
+
+class Tratamiento(models.Model):
+    """
+    Modelo para representar los tratamientos urbanísticos definidos en el POT.
+    """
+    codigo = models.CharField("Código", max_length=10, unique=True, help_text="Código único del tratamiento (ej: CN1)")
+    nombre = models.CharField("Nombre", max_length=100, help_text="Nombre del tratamiento")
+    descripcion = models.TextField("Descripción", blank=True, null=True, help_text="Descripción detallada del tratamiento")
+    detalles = models.JSONField("Detalles", default=dict, blank=True, help_text="Información adicional del tratamiento")
+    fecha_actualizacion = models.DateTimeField("Última actualización", auto_now=True)
+    activo = models.BooleanField("Activo", default=True, help_text="Indica si este tratamiento sigue vigente")
+    
+    class Meta:
+        verbose_name = "Tratamiento Urbanístico"
+        verbose_name_plural = "Tratamientos Urbanísticos"
+        ordering = ['codigo']
+    
+    def __str__(self):
+        return f"{self.codigo} - {self.nombre}"

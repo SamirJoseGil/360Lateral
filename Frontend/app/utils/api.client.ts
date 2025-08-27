@@ -111,3 +111,41 @@ export function checkPermission(userRole: string, requiredRole: string): boolean
   
   return (roles[userRole as keyof typeof roles] || 0) >= (roles[requiredRole as keyof typeof roles] || 0);
 }
+
+// Update the MapGIS endpoints in client-side code if they exist
+type MapGisSearchType = 'cbml' | 'matricula' | 'direccion';
+
+export const fetchMapGisData = async (type: MapGisSearchType, value: string) => {
+  let endpoint = '';
+  
+  switch (type) {
+    case 'cbml':
+      endpoint = '/api/lotes/public/cbml/';
+      break;
+    case 'matricula':
+      endpoint = '/api/lotes/public/matricula/';
+      break;
+    case 'direccion':
+      endpoint = '/api/lotes/public/direccion/';
+      break;
+    default:
+      throw new Error(`Invalid search type: ${type}`);
+  }
+  
+  const payload: Record<string, string> = {};
+  payload[type] = value;
+  
+  const response = await fetch(endpoint, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(payload),
+  });
+  
+  if (!response.ok) {
+    throw new Error(`Error fetching MapGIS data: ${response.status}`);
+  }
+  
+  return await response.json();
+};

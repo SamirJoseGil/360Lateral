@@ -3,11 +3,14 @@ URLs para la aplicación de lotes
 """
 from django.urls import path
 
-# Importar todas las vistas desde el paquete de vistas
-from apps.lotes.views import (
-    # CRUD básico de lotes
+# Importamos todas las vistas desde el módulo principal
+from .views import (
+    # Vistas de lotes
     lote_list, 
     lote_detail,
+    lote_create,
+    lote_update,
+    lote_delete,
     
     # Vistas de MapGIS
     scrap_cbml,
@@ -16,18 +19,22 @@ from apps.lotes.views import (
     consultar_restricciones_completas,
     health_mapgis,
     
-    # Vistas de testing MapGIS
-    test_mapgis_session,
-    test_mapgis_real_connection,
-    test_mapgis_complete_data,
-    investigate_mapgis_endpoints,
-    
     # Vistas de tratamientos
     listar_tratamientos,
+    
+    # Vistas públicas de MapGIS
+    PublicCBMLView,
+    PublicMatriculaView,
+    PublicDireccionView
+)
+
+from .views.tratamiento_views import ( 
+    obtener_tratamiento_por_cbml,
+    actualizar_tratamientos
 )
 
 # Importar vistas de lotes por usuario
-from apps.lotes.api.user_lotes import UserLotesView, my_lotes, user_lote_stats
+from .api.user_lotes import UserLotesView, my_lotes, user_lote_stats
 
 app_name = 'lotes'
 
@@ -38,8 +45,11 @@ urlpatterns = [
     path('usuario/<int:user_id>/stats/', user_lote_stats, name='user-lote-stats'),
     
     # Rutas para CRUD básico de lotes
-    path('', lote_list, name='lote-list'),
-    path('<int:pk>/', lote_detail, name='lote-detail'),
+    path('lotes/', lote_list, name='lote-list'),
+    path('lotes/<int:pk>/', lote_detail, name='lote-detail'),
+    path('lotes/create/', lote_create, name='lote-create'),
+    path('lotes/<int:pk>/update/', lote_update, name='lote-update'),
+    path('lotes/<int:pk>/delete/', lote_delete, name='lote-delete'),
     
     # Rutas para MapGIS
     path('scrap/cbml/', scrap_cbml, name='scrap-cbml'),
@@ -48,12 +58,13 @@ urlpatterns = [
     path('consultar/restricciones/', consultar_restricciones_completas, name='consultar-restricciones'),
     path('health/mapgis/', health_mapgis, name='health-mapgis'),
     
-    # Rutas para pruebas de MapGIS
-    path('test/session/', test_mapgis_session, name='test-session'),
-    path('test/real-connection/', test_mapgis_real_connection, name='test-real-connection'),
-    path('test/complete-data/', test_mapgis_complete_data, name='test-complete-data'),
-    path('investigate/endpoints/', investigate_mapgis_endpoints, name='investigate-endpoints'),
-    
     # Rutas para tratamientos urbanísticos
     path('tratamientos/', listar_tratamientos, name='listar-tratamientos'),
+    path('tratamientos/por-cbml/', obtener_tratamiento_por_cbml, name='tratamiento-por-cbml'),
+    path('tratamientos/actualizar/', actualizar_tratamientos, name='actualizar-tratamientos'),
+
+    # Endpoints públicos para MapGIS - No requieren autenticación
+    path('public/cbml/', PublicCBMLView.as_view(), name='public-cbml'),
+    path('public/matricula/', PublicMatriculaView.as_view(), name='public-matricula'),
+    path('public/direccion/', PublicDireccionView.as_view(), name='public-direccion'),
 ]

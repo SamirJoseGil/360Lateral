@@ -2,30 +2,44 @@
 import { fetchWithAuth } from "~/utils/auth.server";
 
 // URL base para las operaciones de MapGIS
-const BASE_URL = "http://localhost:8000/api/lotes/scrap/";
+const BASE_URL = "http://localhost:8000/api/lotes/public/";
 
-// Tipos para las restricciones
-export type Restriccion = {
-  tipo: string;
-  descripcion: string;
-  normativa?: string;
-  severidad?: "Alta" | "Media" | "Baja";
+// Tipos para los datos de MapGIS actualizados según la nueva respuesta del backend
+export type UsoSuelo = {
+  porcentaje: number;
+  categoria_uso: string;
+  subcategoria_uso: string;
+};
+
+export type AprovechamientoUrbano = {
+  tratamiento: string;
+  densidad_habitacional_max: number;
+  altura_normativa: string;
+};
+
+export type RestriccionesAmbientales = {
+  amenaza_riesgo: string;
+  retiros_rios: string;
 };
 
 // Tipo para los resultados de búsqueda por CBML o matrícula
 export type MapGisLoteDetalle = {
   cbml: string;
-  matricula: string;
-  direccion: string;
-  area: number;
+  area_lote: string;
+  area_lote_m2: number;
+  clasificacion_suelo: string;
+  uso_suelo: UsoSuelo;
+  aprovechamiento_urbano: AprovechamientoUrbano;
+  restricciones_ambientales: RestriccionesAmbientales;
+  
+  // Campos opcionales del modelo anterior que podrían seguir siendo útiles
+  matricula?: string;
+  direccion?: string;
   latitud?: number;
   longitud?: number;
   estrato?: number;
   barrio?: string;
   comuna?: string;
-  uso_suelo?: string;
-  tratamiento_pot?: string;
-  restricciones?: Restriccion[];
 };
 
 // Tipo para los resultados de búsqueda por dirección
@@ -37,16 +51,16 @@ export type MapGisSearchResult = {
 };
 
 export type MapGisResponseDetalle = {
-  success: boolean;
-  data: MapGisLoteDetalle;
-  source: string;
+  encontrado: boolean;
+  datos: MapGisLoteDetalle;
+  fuente: string;
 };
 
 export type MapGisResponseSearch = {
-  success: boolean;
-  count: number;
-  results: MapGisSearchResult[];
-  source: string;
+  encontrado: boolean;
+  cantidad: number;
+  resultados: MapGisSearchResult[];
+  fuente: string;
 };
 
 // Consultar por CBML
