@@ -3,6 +3,7 @@ Modelos para la aplicación de estadísticas.
 """
 from django.db import models
 from django.utils import timezone
+import uuid
 
 class Stat(models.Model):
     """
@@ -22,7 +23,8 @@ class Stat(models.Model):
     name = models.CharField("Nombre", max_length=100)
     value = models.JSONField("Valor", default=dict)
     timestamp = models.DateTimeField("Marca de tiempo", default=timezone.now)
-    user_id = models.IntegerField("ID de Usuario", null=True, blank=True)
+    # Cambiar de IntegerField a CharField para aceptar UUIDs como strings
+    user_id = models.CharField("ID de Usuario", max_length=36, null=True, blank=True)
     session_id = models.CharField("ID de Sesión", max_length=100, null=True, blank=True)
     ip_address = models.GenericIPAddressField("Dirección IP", null=True, blank=True)
     

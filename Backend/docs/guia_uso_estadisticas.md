@@ -50,7 +50,7 @@ Content-Type: application/json
 ### Datos Opcionales
 
 - `value` (objeto JSON): Datos adicionales asociados al evento
-- `user_id` (número): ID del usuario relacionado (se detecta automáticamente si el usuario está autenticado)
+- `user_id` (texto/UUID): ID del usuario relacionado (se detecta automáticamente si el usuario está autenticado)
 - `session_id` (texto): Identificador de sesión del cliente
 - `ip_address` (texto): Dirección IP (se detecta automáticamente si no se proporciona)
 

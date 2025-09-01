@@ -79,7 +79,7 @@ export default function OwnerLayout() {
                         </li>
                         <li>
                             <Link
-                                to="/owner/analisis"
+                                to="/owner/analisis/solicitar"
                                 className="block px-4 py-2 text-gray-700 rounded hover:bg-indigo-50 hover:text-indigo-700"
                             >
                                 Análisis Urbanístico

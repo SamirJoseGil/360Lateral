@@ -3,6 +3,7 @@ import { Outlet, useLoaderData } from "@remix-run/react";
 import type { LoaderFunctionArgs } from "@remix-run/node";
 import { getUser } from "~/utils/auth.server";
 import Sidebar from "~/components/sidebar";
+import { recordEvent } from "~/services/stats.server";
 
 // Loader para verificar autenticación y rol de administrador
 export async function loader({ request }: LoaderFunctionArgs) {
@@ -24,6 +25,21 @@ export async function loader({ request }: LoaderFunctionArgs) {
             "admin": "/admin"
         };
         return redirect(roleMappings[user.role] || "/");
+    }
+
+    // Registrar evento de acceso al panel de administrador
+    try {
+        await recordEvent(request, {
+            type: "view",
+            name: "admin_panel_access",
+            value: {
+                user_id: user.id,
+                role: user.role
+            }
+        });
+    } catch (error) {
+        console.error("Error al registrar evento de acceso a admin:", error);
+        // No interrumpimos el flujo por un error de registro de evento
     }
 
     return json({ user });

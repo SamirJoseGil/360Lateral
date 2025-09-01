@@ -14,6 +14,8 @@ import "./tailwind.css";
 import { getUser } from "./utils/auth.server";
 import Navbar from "./components/navbar";
 import Footer from "./components/footer";
+import { StatsProvider } from "./components/StatsTracker";
+import { getOrCreateSessionId } from "./services/stats.server";
 
 // 🔗 Cargar fuentes y estilos
 export const links: LinksFunction = () => [
@@ -37,7 +39,13 @@ export async function loader({ request }: LoaderFunctionArgs) {
   const user = await getUser(request); // usando función original
   console.log('Root loader - user:', user?.email, user?.role); // Debug info de usuario más compacta
 
-  return json({ user });
+  // Obtener o crear session ID para estadísticas
+  const sessionId = getOrCreateSessionId(request);
+
+  return json({
+    user,
+    sessionId
+  });
 }
 
 export function Layout({ children }: { children: React.ReactNode }) {
@@ -63,7 +71,7 @@ export default function App() {
   const data = useLoaderData<typeof loader>();
 
   return (
-    <>
+    <StatsProvider sessionId={data.sessionId}>
       <Navbar />
       <Outlet />
       <Footer />
@@ -102,6 +110,6 @@ export default function App() {
           `,
         }}
       />
-    </>
+    </StatsProvider>
   );
 }

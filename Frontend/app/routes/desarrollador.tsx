@@ -2,6 +2,7 @@ import { json, redirect } from "@remix-run/node";
 import { Link, useLoaderData } from "@remix-run/react";
 import type { LoaderFunctionArgs } from "@remix-run/node";
 import { getUser, isRedirectLoop, getAccessTokenFromCookies } from "~/utils/auth.server";
+import { getUserActivity, recordEvent } from "~/services/stats.server";
 
 // Tipos para los datos
 type SearchCriteria = {
@@ -44,38 +45,76 @@ export async function loader({ request }: LoaderFunctionArgs) {
         return redirect(`/${user.role}`);
     }
 
-    // Si el usuario es desarrollador, devolvemos sus datos junto con datos de ejemplo
-    const token = await getAccessTokenFromCookies(request);
-
-    // Datos de ejemplo para el dashboard
-    const searchCriteria = [
-        { id: 1, name: "Criterio residencial", area: "300-500", zone: "Norte", budget: "200M-400M", treatment: "Residencial" },
-        { id: 2, name: "Criterio comercial", area: "400-800", zone: "Centro", budget: "500M-800M", treatment: "Comercial" }
-    ];
-
-    const favoriteLots = [
-        { id: 1, name: "Lote Residencial Norte", area: 350, price: 320000000, address: "Calle 123 #45-67", owner: "Juan Pérez", potentialValue: 400000000 },
-        { id: 2, name: "Lote Comercial Centro", area: 520, price: 650000000, address: "Carrera 7 #25-30", owner: "Inversiones XYZ", potentialValue: 800000000 },
-        { id: 3, name: "Lote Mixto Oeste", area: 420, price: 480000000, address: "Avenida 80 #65-43", owner: "María Rodríguez", potentialValue: 600000000 }
-    ];
-
-    const stats = {
-        searches: 24,
-        favorites: favoriteLots.length,
-        offers: 8,
-        matches: 12,
-        analyses: 5, // Valor de ejemplo, ajusta según tus datos reales
-        savedSearches: 3, // Si también usas savedSearches en el dashboard
-        contacts: 7 // Si también usas contacts en el dashboard
-    };
-
-    return json({
-        user,
-        token,
-        searchCriteria,
-        favoriteLots,
-        stats
+    // Registrar evento de visita al dashboard
+    await recordEvent(request, {
+        type: "view",
+        name: "developer_dashboard",
+        value: {
+            user_id: user.id
+        }
     });
+
+    try {
+        // Obtener la actividad del usuario
+        const { activity, headers } = await getUserActivity(request, 30);
+
+        // Si el usuario es desarrollador, devolvemos sus datos junto con datos de ejemplo
+        const token = await getAccessTokenFromCookies(request);
+
+        // Datos de ejemplo para el dashboard, enriquecidos con estadísticas reales
+        const searchCriteria = [
+            { id: 1, name: "Criterio residencial", area: "300-500", zone: "Norte", budget: "200M-400M", treatment: "Residencial" },
+            { id: 2, name: "Criterio comercial", area: "400-800", zone: "Centro", budget: "500M-800M", treatment: "Comercial" }
+        ];
+
+        const favoriteLots = [
+            { id: 1, name: "Lote Residencial Norte", area: 350, price: 320000000, address: "Calle 123 #45-67", owner: "Juan Pérez", potentialValue: 400000000 },
+            { id: 2, name: "Lote Comercial Centro", area: 520, price: 650000000, address: "Carrera 7 #25-30", owner: "Inversiones XYZ", potentialValue: 800000000 },
+            { id: 3, name: "Lote Mixto Oeste", area: 420, price: 480000000, address: "Avenida 80 #65-43", owner: "María Rodríguez", potentialValue: 600000000 }
+        ];
+
+        // Utilizar datos reales de la API para estadísticas
+        const stats = {
+            searches: activity?.events_by_type?.search || 0,
+            favorites: favoriteLots.length,
+            offers: activity?.events_by_type?.action || 0,
+            matches: 12,
+            analyses: activity?.events_by_type?.view || 0,
+            savedSearches: searchCriteria.length,
+            contacts: activity?.events_by_type?.other || 0,
+            totalEvents: activity?.total_events || 0
+        };
+
+        return json({
+            user,
+            token,
+            searchCriteria,
+            favoriteLots,
+            stats,
+            activity
+        }, { headers });
+    } catch (error) {
+        console.error("Error cargando actividad del usuario:", error);
+
+        // Datos de respaldo en caso de error
+        const stats = {
+            searches: 0,
+            favorites: 0,
+            offers: 0,
+            matches: 0,
+            analyses: 0,
+            savedSearches: 0,
+            contacts: 0
+        };
+
+        return json({
+            user,
+            token: await getAccessTokenFromCookies(request),
+            searchCriteria: [],
+            favoriteLots: [],
+            stats
+        });
+    }
 }
 
 // Formateador de moneda para COP
@@ -358,27 +397,27 @@ export default function DeveloperDashboard() {
                                 <tr key={index}>
                                     <td className="px-6 py-4 whitespace-nowrap">
                                         <div className="text-sm font-medium text-gray-900">
-                                            {criteria.name}
+                                            {criteria?.name}
                                         </div>
                                     </td>
                                     <td className="px-6 py-4 whitespace-nowrap">
                                         <div className="text-sm text-gray-900">
-                                            {criteria.zone}
+                                            {criteria?.zone}
                                         </div>
                                     </td>
                                     <td className="px-6 py-4 whitespace-nowrap">
                                         <div className="text-sm text-gray-900">
-                                            {criteria.area}
+                                            {criteria?.area}
                                         </div>
                                     </td>
                                     <td className="px-6 py-4 whitespace-nowrap">
                                         <div className="text-sm text-gray-900">
-                                            {formatCurrency(Number(criteria.budget))}
+                                            {formatCurrency(Number(criteria?.budget))}
                                         </div>
                                     </td>
                                     <td className="px-6 py-4 whitespace-nowrap">
                                         <div className="text-sm text-gray-900">
-                                            {criteria.treatment}
+                                            {criteria?.treatment}
                                         </div>
                                     </td>
                                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
@@ -406,29 +445,29 @@ export default function DeveloperDashboard() {
             <h2 className="text-xl font-bold mb-4">Lotes Favoritos</h2>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
                 {favoriteLots.map((lot) => (
-                    <div key={lot.id} className="bg-white rounded-lg shadow overflow-hidden">
+                    <div key={lot?.id} className="bg-white rounded-lg shadow overflow-hidden">
                         <div className="p-6">
-                            <h3 className="font-bold text-lg mb-2">{lot.address}</h3>
+                            <h3 className="font-bold text-lg mb-2">{lot?.address}</h3>
                             <div className="grid grid-cols-2 gap-4 mb-4">
                                 <div>
                                     <span className="text-gray-500 block text-sm">Área</span>
-                                    <span className="font-medium">{lot.area} m²</span>
+                                    <span className="font-medium">{lot?.area} m²</span>
                                 </div>
                                 <div>
                                     <span className="text-gray-500 block text-sm">Precio</span>
-                                    <span className="font-medium">{formatCurrency(lot.price)}</span>
+                                    <span className="font-medium">{formatCurrency(lot?.price ?? 0)}</span>
                                 </div>
                                 <div>
                                     <span className="text-gray-500 block text-sm">Valor Potencial</span>
                                     <span className="font-medium text-green-600">
-                                        {formatCurrency(lot.potentialValue)}
+                                        {formatCurrency(lot?.potentialValue ?? 0)}
                                     </span>
                                 </div>
                                 <div>
                                     <span className="text-gray-500 block text-sm">ROI Estimado</span>
                                     <span className="font-medium text-green-600">
                                         {Math.round(
-                                            ((lot.potentialValue - lot.price) / lot.price) * 100
+                                            (((lot?.potentialValue ?? 0) - (lot?.price ?? 1)) / (lot?.price ?? 1)) * 100
                                         )}
                                         %
                                     </span>
@@ -436,13 +475,13 @@ export default function DeveloperDashboard() {
                             </div>
                             <div className="flex justify-end space-x-3">
                                 <Link
-                                    to={`/lots/${lot.id}`}
+                                    to={`/lots/${lot?.id}`}
                                     className="text-indigo-600 hover:text-indigo-900"
                                 >
                                     Ver Detalles
                                 </Link>
                                 <Link
-                                    to={`/analisis-lote/${lot.id}`}
+                                    to={`/analisis-lote/${lot?.id}`}
                                     className="text-blue-600 hover:text-blue-900"
                                 >
                                     Análisis

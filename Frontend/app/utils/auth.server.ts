@@ -343,44 +343,28 @@ export async function getUser(request: Request): Promise<any | null> {
   }
 }
 
-// Obtener el token de acceso de las cookies - versión simplificada
+
+// Función que analiza directamente las cookies en la solicitud para obtener el token de acceso
 export async function getAccessTokenFromCookies(request: Request): Promise<string | null> {
-  try {
-    const cookieHeader = request.headers.get('Cookie');
-    console.log("Cookie header in getAccessTokenFromCookies:", cookieHeader ? "present" : "missing");
-    if (!cookieHeader) return null;
-
-    // Parsear las cookies manualmente para depurar mejor
-    const cookies: Record<string, string> = {};
-    cookieHeader.split(';').forEach(pair => {
-      const idx = pair.indexOf('=');
-      if (idx > 0) {
-        const key = pair.substring(0, idx).trim();
-        let value = pair.substring(idx + 1).trim();
-        // Remover comillas si existen
-        if (value.startsWith('"') && value.endsWith('"')) {
-          value = value.slice(1, -1);
-        }
-        cookies[key] = value;
-      }
-    });
-
-    console.log("Available cookies:", Object.keys(cookies));
-    const accessToken = cookies.l360_access;
-    
-    if (!accessToken) {
-      console.log("No l360_access token found in cookies");
-      return null;
-    }
-
-    console.log("Access token found:", accessToken.substring(0, 20) + "...");
-    
-    // Usamos directamente el token JWT sin intentar decodificarlo
-    return accessToken;
-  } catch (error) {
-    console.error('Error general al obtener token de acceso:', error);
+  const cookieHeader = request.headers.get("Cookie");
+  if (!cookieHeader) {
     return null;
   }
+
+  const cookies = cookieHeader.split(';').map(c => c.trim());
+  const accessTokenCookie = cookies.find(c => c.startsWith('l360_access='));
+  
+  if (!accessTokenCookie) {
+    return null;
+  }
+
+  // Extraer el token de la cookie
+  const accessToken = accessTokenCookie.split('=')[1];
+  
+  // Intentar quitar comillas si están presentes
+  return accessToken.startsWith('"') && accessToken.endsWith('"')
+    ? accessToken.slice(1, -1)
+    : accessToken;
 }
 
 // Mejorar loginAction con más debugging
@@ -497,7 +481,6 @@ export function addRedirectCount(url: string): string {
 }
 
 // Función que analiza directamente las cookies en la solicitud para obtener el token de acceso
-// Esta es una solución más directa que puede ayudar si la sesión no funciona correctamente
 export function getTokenDirectlyFromCookies(request: Request): string | null {
   const cookieHeader = request.headers.get("Cookie") || "";
   console.log("Raw cookie header:", cookieHeader);

@@ -6,8 +6,7 @@ from django.db import migrations
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('lotes', '0002_add_new_lote_fields'),
-        ('lotes', '0002_documentos_requeridos'),
+        ('lotes', '0002_add_new_lote_fields')
     ]
 
     operations = [

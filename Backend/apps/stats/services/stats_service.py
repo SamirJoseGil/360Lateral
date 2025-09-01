@@ -5,8 +5,9 @@ import logging
 from datetime import datetime, timedelta, date
 from django.utils import timezone
 from django.db.models import Count, F, Sum
-from django.db import connection, models
+from django.db import connection, models, DatabaseError
 from ..models import Stat, DailySummary
+import uuid
 
 logger = logging.getLogger(__name__)
 
@@ -23,7 +24,7 @@ class StatsService:
             type (str): Tipo de estadística ('view', 'search', etc.)
             name (str): Nombre del evento
             value (dict, optional): Datos asociados al evento
-            user_id (int, optional): ID del usuario que generó el evento
+            user_id (int/uuid, optional): ID del usuario que generó el evento
             session_id (str, optional): ID de sesión
             ip_address (str, optional): Dirección IP
             
@@ -33,6 +34,20 @@ class StatsService:
         try:
             if value is None:
                 value = {}
+            
+            # Convertir user_id a string si es un UUID u otro tipo
+            if user_id is not None:
+                user_id = str(user_id)
+                
+            # Verificar que la tabla existe antes de intentar escribir
+            try:
+                with connection.cursor() as cursor:
+                    cursor.execute("SELECT COUNT(*) FROM stats_stat LIMIT 1")
+            except DatabaseError:
+                logger.error("La tabla stats_stat no existe. Las migraciones no se han aplicado correctamente.")
+                # Guardar en un archivo de respaldo en caso de que la tabla no exista
+                StatsService._save_to_backup_log(type, name, value, user_id, session_id, ip_address)
+                return None
                 
             stat = Stat.objects.create(
                 type=type,
@@ -45,7 +60,53 @@ class StatsService:
             return stat
         except Exception as e:
             logger.error(f"Error al registrar estadística: {e}")
+            # Guardar en un archivo de respaldo en caso de error
+            StatsService._save_to_backup_log(type, name, value, user_id, session_id, ip_address)
             return None
+    
+    @staticmethod
+    def _save_to_backup_log(type, name, value, user_id, session_id, ip_address):
+        """Guarda la estadística en un archivo de respaldo cuando la BD falla"""
+        import json
+        from datetime import datetime
+        import os
+        
+        try:
+            # Crear directorio de logs si no existe
+            log_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__)))), 'logs')
+            if not os.path.exists(log_dir):
+                os.makedirs(log_dir)
+                
+            # Crear archivo de backup
+            backup_file = os.path.join(log_dir, 'stats_backup.log')
+            
+            # Preparar datos para el backup
+            timestamp = datetime.now().isoformat()
+            log_entry = {
+                'type': type,
+                'name': name,
+                'value': value,
+                'timestamp': timestamp,
+                'user_id': str(user_id) if user_id else None,  # Convertir a string por si es UUID
+                'session_id': session_id,
+                'ip_address': str(ip_address) if ip_address else None
+            }
+            
+            # Definir JSON encoder personalizado para objetos UUID y datetime
+            def json_encoder(obj):
+                if isinstance(obj, uuid.UUID):
+                    return str(obj)
+                if hasattr(obj, 'isoformat'):  # Para objetos datetime
+                    return obj.isoformat()
+                return str(obj)  # Fallback para otros tipos no serializables
+            
+            # Escribir en el archivo con encoder personalizado
+            with open(backup_file, 'a') as f:
+                f.write(json.dumps(log_entry, default=json_encoder) + '\n')
+                
+            logger.info(f"Estadística guardada en archivo de respaldo: {backup_file}")
+        except Exception as e:
+            logger.error(f"Error al guardar en archivo de respaldo: {e}")
     
     @staticmethod
     def get_daily_summary(target_date=None):
@@ -58,13 +119,24 @@ class StatsService:
         Returns:
             DailySummary: Objeto de resumen diario
         """
-        if target_date is None:
-            target_date = timezone.now().date()
-        elif isinstance(target_date, datetime):
-            target_date = target_date.date()
-            
-        summary, created = DailySummary.objects.get_or_create(date=target_date)
-        return summary
+        try:
+            if target_date is None:
+                target_date = timezone.now().date()
+            elif isinstance(target_date, datetime):
+                target_date = target_date.date()
+                
+            summary, created = DailySummary.objects.get_or_create(date=target_date)
+            return summary
+        except Exception as e:
+            logger.error(f"Error al obtener resumen diario: {e}")
+            # Crear un objeto vacío en memoria (no persistente)
+            class EmptySummary:
+                def __init__(self):
+                    self.metrics = {}
+                    self.date = target_date
+                def refresh_from_db(self):
+                    pass
+            return EmptySummary()
     
     @staticmethod
     def calculate_daily_metrics(target_date=None):
@@ -196,13 +268,16 @@ class StatsService:
         Obtiene la actividad reciente de un usuario.
         
         Args:
-            user_id (int): ID del usuario
+            user_id (int/str): ID del usuario (puede ser UUID en forma de string)
             days (int): Número de días a considerar
             
         Returns:
             dict: Actividad del usuario
         """
         start_date = timezone.now() - timedelta(days=days)
+        
+        # Asegurar que user_id sea string
+        user_id = str(user_id)
         
         stats = Stat.objects.filter(
             user_id=user_id,

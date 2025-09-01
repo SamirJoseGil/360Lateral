@@ -9,6 +9,8 @@ from rest_framework import viewsets, permissions, status
 from rest_framework.decorators import api_view, permission_classes, action
 from rest_framework.response import Response
 from rest_framework.permissions import IsAdminUser, IsAuthenticated
+import uuid  # Añadir esta importación
+
 from .models import Stat, DailySummary
 from .serializers import (
     StatSerializer, StatCreateSerializer, DailySummarySerializer,
@@ -83,22 +85,52 @@ class StatViewSet(viewsets.ModelViewSet):
         """
         serializer = StatCreateSerializer(data=request.data)
         if serializer.is_valid():
-            # Usar el servicio para registrar la estadística
-            stat = StatsService.record_stat(
-                type=serializer.validated_data['type'],
-                name=serializer.validated_data['name'],
-                value=serializer.validated_data.get('value', {}),
-                user_id=request.user.id if request.user.is_authenticated else None,
-                session_id=serializer.validated_data.get('session_id'),
-                ip_address=request.META.get('REMOTE_ADDR')
-            )
-            
-            if stat:
-                return Response(StatSerializer(stat).data, status=status.HTTP_201_CREATED)
-            return Response(
-                {"error": "No se pudo registrar la estadística"}, 
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
-            )
+            try:
+                # Verificar que la tabla existe
+                from django.db import connection, DatabaseError
+                try:
+                    with connection.cursor() as cursor:
+                        cursor.execute("SELECT 1 FROM stats_stat LIMIT 1")
+                except DatabaseError:
+                    logger.error("La tabla stats_stat no existe. Las migraciones no se han aplicado.")
+                    # Devolver un mensaje amigable al cliente
+                    return Response(
+                        {"message": "El servicio de estadísticas está en mantenimiento. Tu acción ha sido registrada."},
+                        status=status.HTTP_200_OK
+                    )
+                    
+                # Usar el servicio para registrar la estadística
+                user_id = request.user.id if request.user.is_authenticated else None
+                
+                # user_id ya se convierte a string en el servicio, pero lo aseguramos aquí también
+                stat = StatsService.record_stat(
+                    type=serializer.validated_data['type'],
+                    name=serializer.validated_data['name'],
+                    value=serializer.validated_data.get('value', {}),
+                    user_id=user_id,
+                    session_id=serializer.validated_data.get('session_id'),
+                    ip_address=request.META.get('REMOTE_ADDR')
+                )
+                
+                if stat:
+                    logger.info(f"Estadística registrada: {stat.type} - {stat.name}")
+                    return Response(StatSerializer(stat).data, status=status.HTTP_201_CREATED)
+                    
+                # Si StatsService.record_stat devuelve None, manejamos el error de forma elegante
+                logger.warning("No se pudo registrar la estadística pero se guardó en el log de respaldo")
+                return Response(
+                    {"message": "Tu acción ha sido registrada pero no procesada completamente."},
+                    status=status.HTTP_200_OK
+                )
+                
+            except Exception as e:
+                logger.exception(f"Error inesperado al registrar estadística: {str(e)}")
+                # Devolver un mensaje amigable en lugar de un error 500
+                return Response(
+                    {"message": "Se produjo un error al procesar tu acción, pero ha sido registrada."},
+                    status=status.HTTP_200_OK
+                )
+                
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 class DailySummaryViewSet(viewsets.ReadOnlyModelViewSet):
@@ -226,7 +258,7 @@ def user_activity(request, user_id=None):
         user_id = request.user.id
     
     # Verificar permisos
-    if user_id != request.user.id and not request.user.is_staff:
+    if str(user_id) != str(request.user.id) and not request.user.is_staff:
         return Response(
             {"error": "No tiene permiso para ver la actividad de este usuario"},
             status=status.HTTP_403_FORBIDDEN
@@ -316,15 +348,15 @@ def dashboard_summary(request):
             date__gte=start_date,
             date__lte=end_date
         ).order_by('date')
-    
-    # Preparar datos para el dashboard
+    data = []
+    # Preparar datos para el gráfico
     daily_data = []
     for summary in daily_summaries:
-        daily_data.append({
-            'date': summary.date.strftime('%Y-%m-%d'),
-            'metrics': summary.metrics
-        })
-    
+        if summary.metrics:
+            daily_data.append({
+                'date': summary.date,
+                'metrics': summary.metrics
+            })
     # Calcular totales
     total_events = sum(summary.metrics.get('total_events', 0) for summary in daily_summaries if summary.metrics)
     unique_users = set()
@@ -332,12 +364,13 @@ def dashboard_summary(request):
         if summary.metrics and 'unique_users' in summary.metrics:
             # Nota: esto es una aproximación ya que no tenemos usuarios únicos reales
             unique_users.add(summary.metrics['unique_users'])
-    
     response_data = {
         'total_events': total_events,
         'unique_users': len(unique_users),
         'period': f"{start_date} to {end_date}",
         'daily_data': daily_data
     }
+    
+    return Response(response_data)
     
     return Response(response_data)

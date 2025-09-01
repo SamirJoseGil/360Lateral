@@ -284,7 +284,7 @@ export default function AdminUsers() {
                                         <td className="px-6 py-4 whitespace-nowrap">
                                             <div className="flex items-center">
                                                 <div className="h-10 w-10 rounded-full bg-gray-200 flex items-center justify-center text-gray-600 mr-3">
-                                                    {user.name.charAt(0)}
+                                                    {(user.name && user.name.charAt(0)) || "?"}
                                                 </div>
                                                 <div>
                                                     <div className="text-sm font-medium text-gray-900">{user.name}</div>

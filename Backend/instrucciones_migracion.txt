@@ -1,6 +1,6 @@
-# Instrucciones para solucionar el error "no existe la relación «documents_document»"
+# Instrucciones para solucionar problemas con tablas faltantes en la base de datos
 
-Para resolver el error relacionado con la tabla faltante `documents_document`, necesitas ejecutar las migraciones 
+Si recibes errores como "no existe la relación «tabla»", necesitas ejecutar las migraciones 
 para crear las tablas en la base de datos. Sigue estos pasos:
 
 ## 1. Activar el entorno virtual

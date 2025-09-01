@@ -2,28 +2,83 @@ import { json } from "@remix-run/node";
 import { useLoaderData } from "@remix-run/react";
 import type { LoaderFunctionArgs } from "@remix-run/node";
 import { getUser } from "~/utils/auth.server";
+import { getAdminDashboardStats } from "~/services/stats.server";
+import { useState } from "react";
 
 export async function loader({ request }: LoaderFunctionArgs) {
     // El usuario ya ha sido verificado en el layout padre
     const user = await getUser(request);
 
-    // Aquí podrías obtener datos del dashboard como estadísticas, etc.
-    const stats = {
-        users: 128,
-        activeProjects: 45,
-        pendingValidations: 12,
-        recentActivity: 37
-    };
+    try {
+        // Obtener estadísticas del dashboard administrativo (últimos 30 días)
+        const { dashboardStats, headers } = await getAdminDashboardStats(request);
 
-    return json({ user, stats });
+        // Registrar el evento de vista del dashboard
+        try {
+            await fetch('/api/stats/record', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    type: 'view',
+                    name: 'admin_dashboard',
+                    value: { user_id: user.id }
+                }),
+            });
+        } catch (error) {
+            console.error("Error recording stats event:", error);
+        }
+
+        return json({
+            user,
+            stats: {
+                users: dashboardStats.unique_users || 0,
+                activeProjects: dashboardStats.daily_data?.[dashboardStats.daily_data.length - 1]?.metrics?.total_events || 0,
+                pendingValidations: dashboardStats.daily_data?.[0]?.metrics?.events_by_type?.error || 12,
+                recentActivity: dashboardStats.total_events || 0
+            },
+            rawStats: dashboardStats,
+            error: null
+        }, { headers });
+    } catch (error) {
+        console.error("Error cargando estadísticas:", error);
+
+        // Datos de respaldo en caso de error
+        return json({
+            user,
+            stats: {
+                users: 128,
+                activeProjects: 45,
+                pendingValidations: 12,
+                recentActivity: 37
+            },
+            error: "No se pudieron cargar los datos en tiempo real. Mostrando datos de respaldo."
+        });
+    }
 }
 
 export default function AdminDashboard() {
-    const { user, stats } = useLoaderData<typeof loader>();
+    const { user, stats, error } = useLoaderData<typeof loader>();
 
     return (
         <div>
             <h1 className="text-3xl font-bold mb-8">Panel de Administración</h1>
+
+            {typeof error === "string" && (
+                <div className="mb-6 bg-yellow-50 border-l-4 border-yellow-400 p-4">
+                    <div className="flex">
+                        <div className="flex-shrink-0">
+                            <svg className="h-5 w-5 text-yellow-400" viewBox="0 0 20 20" fill="currentColor">
+                                <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                            </svg>
+                        </div>
+                        <div className="ml-3">
+                            <p className="text-sm text-yellow-700">{error}</p>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
                 {/* Tarjeta de estadísticas: Usuarios */}

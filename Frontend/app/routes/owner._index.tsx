@@ -4,6 +4,8 @@ import { Link, useLoaderData } from "@remix-run/react";
 import type { LoaderFunctionArgs } from "@remix-run/node";
 import { getUser } from "~/utils/auth.server";
 import { getMisLotes, getUserLotesStats } from "~/services/lotes.server";
+import { getUserActivity } from "~/services/stats.server";
+import { recordEvent } from "~/services/stats.server";
 
 // Formateador de moneda para COP
 const formatCurrency = (value: number): string => {
@@ -30,10 +32,23 @@ export async function loader({ request }: LoaderFunctionArgs) {
     }
 
     try {
+        // Registrar evento de vista de dashboard
+        await recordEvent(request, {
+            type: "view",
+            name: "owner_dashboard",
+            value: {
+                user_id: user.id
+            }
+        });
+
         // Obtener lotes y estadísticas desde el API
-        const [lotesResponse, statsResponse] = await Promise.all([
+        const [lotesResponse, statsResponse, userStatsResponse] = await Promise.all([
             getMisLotes(request),
-            getUserLotesStats(request)
+            getUserLotesStats(request),
+            getUserActivity(request, 30).catch(err => {
+                console.error("Error obteniendo actividad del usuario:", err);
+                return { activity: null, headers: new Headers() };
+            })
         ]);
 
         // Definir el tipo para lote
@@ -48,7 +63,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
         };
 
         // Limitar a 3 lotes para el dashboard
-        const lotes = (lotesResponse.results ?? []).slice(0, 3).map((lote: LoteType) => ({
+        const lotes = (lotesResponse.lotes ?? []).slice(0, 3).map((lote: LoteType) => ({
             id: lote.id,
             nombre: lote.nombre,
             direccion: lote.direccion,
@@ -82,25 +97,43 @@ export async function loader({ request }: LoaderFunctionArgs) {
             }
         ];
 
+        // Enriquecer los datos con la actividad del usuario
+        const userActivity = userStatsResponse.activity;
+
+        // Calcular valor estimado (podría venir de otra fuente)
+        const valorEstimado = lotes.reduce((sum: number, lote: typeof lotes[number]) => sum + (lote.valorEstimado || 0), 0);
+
         return json({
             user,
-            stats: statsResponse.stats,
+            stats: {
+                ...statsResponse.stats,
+                valorEstimado,
+                documentosCompletos: statsResponse.stats.documentacion_completa || 0,
+                documentosPendientes: lotes.length - (statsResponse.stats.documentacion_completa || 0),
+                totalEventos: userActivity?.total_events || 0,
+                ultimaActividad: userActivity?.last_activity?.timestamp || null
+            },
             lotes,
             solicitudes,
-            headers: { ...lotesResponse.headers, ...statsResponse.headers }
+            headers: {
+                ...lotesResponse.headers,
+                ...statsResponse.headers,
+                ...userStatsResponse.headers
+            }
         });
     } catch (error) {
         console.error("Error cargando datos del dashboard:", error);
 
         // Si hay un error, devolvemos datos de respaldo
         const stats = {
-            totalLotes: 0,
+            total: 0,
             areaTotal: 0,
             valorEstimado: 0,
             lotesActivos: 0,
             lotesPendientes: 0,
             documentosCompletos: 0,
-            documentosPendientes: 0
+            documentosPendientes: 0,
+            totalEventos: 0
         };
 
         return json({ user, stats, lotes: [], solicitudes: [] });

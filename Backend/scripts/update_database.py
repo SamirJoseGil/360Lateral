@@ -31,10 +31,28 @@ def main():
         logger.info("Aplicando migraciones generales...")
         call_command('migrate', interactive=False)
         
-        # 2. Aplicar migraciones específicas para POT
-        logger.info("Aplicando migraciones específicas para la app POT...")
+        # 2. Aplicar migraciones específicas para cada app en orden
+        logger.info("Aplicando migraciones específicas para la app users...")
+        call_command('makemigrations', 'users', interactive=False)
+        call_command('migrate', 'users', interactive=False)
         
-        # Importar y ejecutar el script de migración de POT
+        logger.info("Aplicando migraciones específicas para la app authentication...")
+        call_command('makemigrations', 'authentication', interactive=False)
+        call_command('migrate', 'authentication', interactive=False)
+        
+        logger.info("Aplicando migraciones específicas para la app lotes...")
+        call_command('makemigrations', 'lotes', interactive=False)
+        call_command('migrate', 'lotes', interactive=False)
+        
+        logger.info("Aplicando migraciones específicas para la app documents...")
+        call_command('makemigrations', 'documents', interactive=False)
+        call_command('migrate', 'documents', interactive=False)
+        
+        logger.info("Aplicando migraciones específicas para la app stats...")
+        call_command('makemigrations', 'stats', interactive=False)
+        call_command('migrate', 'stats', interactive=False)
+        
+        logger.info("Aplicando migraciones específicas para la app POT...")
         try:
             pot_script = importlib.import_module('scripts.migrate_pot')
             pot_result = pot_script.main()
@@ -45,8 +63,6 @@ def main():
         
         # 3. Corregir lotes sin usuario
         logger.info("Corrigiendo lotes sin usuario...")
-        
-        # Importar y ejecutar el script de corrección de lotes
         try:
             fix_lotes_script = importlib.import_module('scripts.fix_lotes_usuario')
             lotes_result = fix_lotes_script.main()
@@ -54,6 +70,20 @@ def main():
                 logger.warning("La corrección de lotes completó con advertencias.")
         except Exception as e:
             logger.error(f"Error durante la corrección de lotes: {str(e)}")
+        
+        # 4. Verificar tablas críticas
+        logger.info("Verificando tablas críticas...")
+        from django.db import connection
+        tables_to_check = ['documents_document', 'lotes_lote', 'stats_stat']
+        
+        with connection.cursor() as cursor:
+            for table in tables_to_check:
+                try:
+                    cursor.execute(f"SELECT COUNT(*) FROM {table}")
+                    count = cursor.fetchone()[0]
+                    logger.info(f"✅ Tabla {table} verificada. Contiene {count} registros.")
+                except Exception as e:
+                    logger.error(f"❌ Problema con la tabla {table}: {str(e)}")
         
         logger.info("=== PROCESO DE ACTUALIZACIÓN COMPLETADO ===")
         return 0
