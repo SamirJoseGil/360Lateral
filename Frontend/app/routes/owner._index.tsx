@@ -15,7 +15,10 @@ const formatCurrency = (value: number): string => {
 };
 
 // Formateador de área
-const formatArea = (value: number): string => {
+const formatArea = (value: number | undefined | null): string => {
+    if (typeof value !== "number" || isNaN(value)) {
+        return "0 m²";
+    }
     return `${value.toLocaleString("es-CO")} m²`;
 };
 
@@ -33,8 +36,19 @@ export async function loader({ request }: LoaderFunctionArgs) {
             getUserLotesStats(request)
         ]);
 
+        // Definir el tipo para lote
+        type LoteType = {
+            id: number;
+            nombre: string;
+            direccion: string;
+            area: number;
+            estrato?: number;
+            status: string;
+            documentos?: unknown[];
+        };
+
         // Limitar a 3 lotes para el dashboard
-        const lotes = lotesResponse.lotes.slice(0, 3).map(lote => ({
+        const lotes = (lotesResponse.results ?? []).slice(0, 3).map((lote: LoteType) => ({
             id: lote.id,
             nombre: lote.nombre,
             direccion: lote.direccion,
@@ -364,7 +378,7 @@ export default function OwnerDashboard() {
                             </tr>
                         </thead>
                         <tbody className="bg-white divide-y divide-gray-200">
-                            {lotes.filter((lote) => lote != null).map((lote) => (
+                            {lotes.filter((lote: typeof lotes[number]) => lote != null).map((lote: typeof lotes[number]) => (
                                 <tr key={lote.id}>
                                     <td className="px-6 py-4 whitespace-nowrap">
                                         <div className="text-sm font-medium text-gray-900">{lote.nombre}</div>

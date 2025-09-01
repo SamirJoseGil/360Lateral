@@ -1,73 +1,77 @@
 """
-Serializadores para la aplicación de documentos
+Serializadores para la aplicación de documentos.
 """
 from rest_framework import serializers
-from .models import Documento
-from apps.users.serializers import UserBasicSerializer
+from .models import Document
+from django.contrib.auth import get_user_model
+from apps.lotes.models import Lote
 
-class DocumentoSerializer(serializers.ModelSerializer):
-    """Serializador completo para el modelo Documento."""
-    
-    # Campos personalizados
-    propietario_info = serializers.SerializerMethodField()
-    tipo_display = serializers.CharField(source='get_tipo_display', read_only=True)
-    status_display = serializers.CharField(source='get_status_display', read_only=True)
+User = get_user_model()
+
+class DocumentSerializer(serializers.ModelSerializer):
+    """Serializador básico para el modelo Document"""
+    file_url = serializers.SerializerMethodField()
+    file_name = serializers.SerializerMethodField()
+    user_name = serializers.SerializerMethodField()
     
     class Meta:
-        model = Documento
+        model = Document
         fields = [
-            'id', 'nombre', 'tipo', 'tipo_display', 'descripcion', 
-            'archivo', 'tamano', 'tipo_mime', 'lote', 'propietario', 
-            'propietario_info', 'status', 'status_display', 'fecha_subida',
-            'fecha_modificacion', 'fecha_aprobacion', 'notas'
+            'id', 'title', 'description', 'document_type', 'file', 'file_url', 'file_name',
+            'user', 'user_name', 'lote', 'created_at', 'updated_at', 
+            'file_size', 'mime_type', 'tags', 'metadata', 'is_active'
         ]
-        read_only_fields = [
-            'tamano', 'tipo_mime', 'fecha_subida', 
-            'fecha_modificacion', 'fecha_aprobacion',
-            'propietario_info', 'tipo_display', 'status_display'
-        ]
+        read_only_fields = ['file_size', 'mime_type', 'created_at', 'updated_at', 'file_url', 'file_name', 'user_name']
     
-    def get_propietario_info(self, obj):
-        """Obtiene información del propietario del documento"""
-        return UserBasicSerializer(obj.propietario).data if obj.propietario else None
+    def get_file_url(self, obj):
+        """Retorna la URL del archivo"""
+        request = self.context.get('request')
+        if obj.file and request:
+            return request.build_absolute_uri(obj.file.url)
+        return None
     
-    def validate_archivo(self, value):
-        """Validar el archivo subido."""
-        # Validar tamaño máximo
-        max_size = 10 * 1024 * 1024  # 10 MB
-        if value.size > max_size:
-            raise serializers.ValidationError(
-                f"El archivo no puede tener más de 10 MB (tamaño actual: {value.size / (1024 * 1024):.2f} MB)"
-            )
-        
-        # Validar extensiones permitidas
-        allowed_extensions = ['.pdf', '.doc', '.docx', '.jpg', '.jpeg', '.png', '.txt', '.xlsx', '.xls']
-        ext = value.name.split('.')[-1].lower()
-        if f'.{ext}' not in allowed_extensions:
-            raise serializers.ValidationError(
-                f"Extensión de archivo no permitida. Extensiones válidas: {', '.join(allowed_extensions)}"
-            )
-        
-        return value
+    def get_file_name(self, obj):
+        """Retorna el nombre original del archivo"""
+        if obj.file:
+            return obj.file.name.split('/')[-1]
+        return None
+    
+    def get_user_name(self, obj):
+        """Retorna el nombre del usuario"""
+        if obj.user:
+            return obj.user.get_full_name() or obj.user.username
+        return None
 
-class DocumentoCreateSerializer(DocumentoSerializer):
-    """Serializador para crear documentos con validaciones adicionales."""
-    
-    class Meta(DocumentoSerializer.Meta):
-        fields = [
-            'nombre', 'tipo', 'descripcion', 'archivo', 
-            'lote', 'propietario', 'notas'
-        ]
-
-class DocumentoBasicSerializer(serializers.ModelSerializer):
-    """Serializador básico para listados de documentos."""
-    
-    tipo_display = serializers.CharField(source='get_tipo_display', read_only=True)
-    status_display = serializers.CharField(source='get_status_display', read_only=True)
-    
+class DocumentUploadSerializer(serializers.ModelSerializer):
+    """Serializador para subir documentos"""
     class Meta:
-        model = Documento
-        fields = [
-            'id', 'nombre', 'tipo', 'tipo_display', 'archivo', 
-            'status', 'status_display', 'fecha_subida'
-        ]
+        model = Document
+        fields = ['title', 'description', 'file', 'document_type', 'lote', 'tags', 'metadata']
+    
+    def validate(self, data):
+        """Validaciones adicionales para la subida de documentos"""
+        # Verificar que se proporcione un archivo
+        if 'file' not in data:
+            raise serializers.ValidationError({"file": "Debe proporcionar un archivo para subir."})
+        
+        # Verificar que se asocie con un lote
+        lote = data.get('lote')
+        
+        # Si se proporciona un lote, verificar que exista
+        if lote:
+            try:
+                Lote.objects.get(pk=lote.pk)
+            except Lote.DoesNotExist:
+                raise serializers.ValidationError({"lote": "El lote especificado no existe."})
+        
+        return data
+    
+    def create(self, validated_data):
+        """Crear un nuevo documento"""
+        # Agregar el usuario actual como propietario del documento
+        request = self.context.get('request')
+        if request and hasattr(request, 'user'):
+            validated_data['user'] = request.user
+        
+        # Crear el documento
+        return Document.objects.create(**validated_data)

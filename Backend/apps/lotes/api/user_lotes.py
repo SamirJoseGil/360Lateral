@@ -110,7 +110,7 @@ def my_lotes(request):
     user_id = request.user.id
     
     # Obtener todos los lotes del usuario
-    lotes = Lote.objects.filter(owner=request.user)
+    lotes = Lote.objects.filter(usuario=request.user)
     serializer = LoteSerializer(lotes, many=True)
     
     response_data = {

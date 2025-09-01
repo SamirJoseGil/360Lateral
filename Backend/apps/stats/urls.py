@@ -1,19 +1,21 @@
 """
-URLs para las estadísticas de la aplicación
+URLs para la aplicación de estadísticas.
 """
-from django.urls import path
-from .views import (
-    get_general_stats,
-    get_user_stats,
-    get_document_stats,
-    get_lotes_stats
-)
+from django.urls import path, include
+from rest_framework.routers import DefaultRouter
+from . import views
 
-app_name = 'stats'
+router = DefaultRouter()
+router.register(r'events', views.StatViewSet)
+router.register(r'summaries', views.DailySummaryViewSet)
 
 urlpatterns = [
-    path('general/', get_general_stats, name='general_stats'),
-    path('users/', get_user_stats, name='user_stats'),
-    path('documents/', get_document_stats, name='document_stats'),
-    path('lotes/', get_lotes_stats, name='lote_stats'),
+    # Rutas del router
+    path('', include(router.urls)),
+    
+    # Rutas adicionales
+    path('over-time/', views.stats_over_time, name='stats-over-time'),
+    path('user-activity/', views.user_activity, name='user-activity'),
+    path('user-activity/<int:user_id>/', views.user_activity, name='user-activity-specific'),
+    path('dashboard/', views.dashboard_summary, name='dashboard-summary'),
 ]

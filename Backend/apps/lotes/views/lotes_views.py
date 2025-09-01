@@ -52,7 +52,7 @@ def lote_list(request):
             }, status=500)
     
     elif request.method == 'POST':
-        serializer = LoteSerializer(data=request.data)
+        serializer = LoteSerializer(data=request.data, context={'request': request})
         if serializer.is_valid():
             # Asignar el propietario si no se proporcionó
             if 'owner' not in serializer.validated_data:

@@ -1,24 +1,19 @@
 """
-URLs para la app de documentos
+URLs para la aplicación de documentos
 """
-from django.urls import path
-from .views import (
-    documento_list,
-    documento_detail,
-    mis_documentos,
-    cambiar_estado_documento
-)
+from django.urls import path, include
+from rest_framework.routers import DefaultRouter
+from . import views
 
-app_name = 'documents'
+# Configurar el router para el ViewSet
+router = DefaultRouter()
+router.register(r'documents', views.DocumentViewSet)
 
 urlpatterns = [
-    # CRUD básico de documentos
-    path('', documento_list, name='documento-list'),
-    path('<int:pk>/', documento_detail, name='documento-detail'),
+    # Rutas adicionales específicas - deben ir primero para mayor prioridad
+    path('user/', views.user_documents, name='user-documents'),
+    path('lote/<int:lote_id>/', views.lote_documents, name='lote-documents'),
     
-    # Documentos del usuario autenticado
-    path('mis-documentos/', mis_documentos, name='mis-documentos'),
-    
-    # Cambio de estado (solo admin)
-    path('<int:pk>/estado/', cambiar_estado_documento, name='cambiar-estado-documento'),
+    # Rutas generadas por el router para CRUD completo
+    path('', include(router.urls)),
 ]

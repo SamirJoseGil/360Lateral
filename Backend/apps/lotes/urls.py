@@ -3,6 +3,8 @@ URLs para la aplicación de lotes
 """
 from django.urls import path
 
+from apps.lotes.views.lote_views import lote_create_from_mapgis, lote_search
+
 # Importamos todas las vistas desde el módulo principal
 from .views import (
     # Vistas de lotes
@@ -45,11 +47,13 @@ urlpatterns = [
     path('usuario/<int:user_id>/stats/', user_lote_stats, name='user-lote-stats'),
     
     # Rutas para CRUD básico de lotes
-    path('lotes/', lote_list, name='lote-list'),
-    path('lotes/<int:pk>/', lote_detail, name='lote-detail'),
-    path('lotes/create/', lote_create, name='lote-create'),
-    path('lotes/<int:pk>/update/', lote_update, name='lote-update'),
-    path('lotes/<int:pk>/delete/', lote_delete, name='lote-delete'),
+    path('', lote_list, name='lote-list'),
+    path('<int:pk>/', lote_detail, name='lote-detail'),
+    path('create/', lote_create, name='lote-create'),
+    path('create-from-mapgis/', lote_create_from_mapgis, name='lote-create-from-mapgis'),
+    path('search/', lote_search, name='lote-search'),
+    path('<int:pk>/update/', lote_update, name='lote-update'),
+    path('<int:pk>/delete/', lote_delete, name='lote-delete'),
     
     # Rutas para MapGIS
     path('scrap/cbml/', scrap_cbml, name='scrap-cbml'),
@@ -67,4 +71,12 @@ urlpatterns = [
     path('public/cbml/', PublicCBMLView.as_view(), name='public-cbml'),
     path('public/matricula/', PublicMatriculaView.as_view(), name='public-matricula'),
     path('public/direccion/', PublicDireccionView.as_view(), name='public-direccion'),
+
+    # Rutas directas (sin anidamiento adicional) para compatibilidad con el frontend
+    path('create/', lote_create, name='lote-create-direct'),
+    path('search/', lote_search, name='lote-search-direct'),
+    path('<int:pk>/', lote_detail, name='lote-detail-direct'),
+    path('<int:pk>/update/', lote_update, name='lote-update-direct'),
+    path('<int:pk>/delete/', lote_delete, name='lote-delete-direct'),
+    path('create-from-mapgis/', lote_create_from_mapgis, name='lote-create-from-mapgis-direct'),
 ]

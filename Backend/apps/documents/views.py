@@ -1,258 +1,161 @@
 """
-Vistas para la aplicación de documentos
+Vistas para la aplicación de documentos.
 """
-from rest_framework import status
-from rest_framework.decorators import api_view, permission_classes, parser_classes
-from rest_framework.parsers import MultiPartParser, FormParser
-from rest_framework.permissions import IsAuthenticated, IsAdminUser
-from rest_framework.response import Response
 import logging
-
-from .models import Documento
-from .serializers import DocumentoSerializer, DocumentoBasicSerializer, DocumentoCreateSerializer
+from django.shortcuts import get_object_or_404
+from rest_framework import status, viewsets, permissions
+from rest_framework.response import Response
+from rest_framework.decorators import api_view, permission_classes, action
+from rest_framework.permissions import IsAuthenticated, IsAdminUser
+from .models import Document
+from .serializers import DocumentSerializer, DocumentUploadSerializer
+from django.core.exceptions import PermissionDenied
+from django.utils.decorators import method_decorator
+from django.views.decorators.csrf import csrf_exempt
 
 logger = logging.getLogger(__name__)
-api_logger = logging.getLogger('api.requests')
 
-@api_view(['GET', 'POST'])
-@permission_classes([IsAuthenticated])
-@parser_classes([MultiPartParser, FormParser])
-def documento_list(request):
+class IsOwnerOrAdmin(permissions.BasePermission):
     """
-    Lista todos los documentos o crea uno nuevo
+    Permiso personalizado para permitir solo a propietarios o administradores
+    manipular sus propios documentos.
     """
-    if request.method == 'GET':
-        # Filtrar documentos según rol del usuario
+    def has_object_permission(self, request, view, obj):
+        # Los administradores siempre tienen acceso
         if request.user.is_staff:
-            # Staff ve todos los documentos
-            documentos = Documento.objects.all()
-            api_logger.info(f"Admin {request.user.username} listando todos los documentos")
-        else:
-            # Usuarios normales solo ven sus propios documentos
-            documentos = Documento.objects.filter(propietario=request.user)
-            api_logger.info(f"Usuario {request.user.username} listando sus documentos")
+            return True
         
-        # Opciones de filtrado
-        tipo = request.query_params.get('tipo')
-        status_param = request.query_params.get('status')
-        lote = request.query_params.get('lote')
-        
-        filters_applied = {}
-        
-        if tipo:
-            documentos = documentos.filter(tipo=tipo)
-            filters_applied['tipo'] = tipo
-        
-        if status_param:
-            documentos = documentos.filter(status=status_param)
-            filters_applied['status'] = status_param
-        
-        if lote:
-            documentos = documentos.filter(lote=lote)
-            filters_applied['lote'] = lote
-            
-        if filters_applied:
-            api_logger.info(f"Filtros aplicados: {filters_applied}")
-        
-        # Paginación y serialización
-        serializer = DocumentoBasicSerializer(documentos, many=True)
-        
-        api_logger.info(f"Retornando {documentos.count()} documentos")
-        return Response({
-            'count': documentos.count(),
-            'results': serializer.data
-        })
-    
-    elif request.method == 'POST':
-        # Crear nuevo documento
-        serializer = DocumentoCreateSerializer(data=request.data)
-        if serializer.is_valid():
-            # Establecer propietario automáticamente
-            serializer.validated_data['propietario'] = request.user
-            documento = serializer.save()
-            
-            api_logger.info(
-                f"Documento creado: ID={documento.id}, Nombre={documento.nombre}, "
-                f"Tipo={documento.get_tipo_display()}, Usuario={request.user.username}"
-            )
-            
-            return Response(DocumentoSerializer(documento).data, status=status.HTTP_201_CREATED)
-        
-        api_logger.warning(
-            f"Error al crear documento por {request.user.username}: {serializer.errors}"
-        )
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        # Los propietarios tienen acceso a sus propios documentos
+        return obj.user == request.user
 
-@api_view(['GET', 'PUT', 'DELETE'])
-@permission_classes([IsAuthenticated])
-@parser_classes([MultiPartParser, FormParser])
-def documento_detail(request, pk):
+class DocumentViewSet(viewsets.ModelViewSet):
     """
-    Recupera, actualiza o elimina un documento
+    ViewSet para operaciones CRUD en documentos.
     """
-    try:
-        documento = Documento.objects.get(pk=pk)
-        
-        # Comprobar permisos
-        if not request.user.is_staff and documento.propietario != request.user:
-            api_logger.warning(
-                f"Acceso denegado: Usuario {request.user.username} intentó acceder al documento "
-                f"ID={pk} de {documento.propietario.username}"
-            )
-            return Response(
-                {'error': 'No tiene permiso para acceder a este documento'}, 
-                status=status.HTTP_403_FORBIDDEN
-            )
-            
-    except Documento.DoesNotExist:
-        api_logger.warning(f"Documento no encontrado: ID={pk}, solicitado por {request.user.username}")
-        return Response(
-            {'error': 'Documento no encontrado'}, 
-            status=status.HTTP_404_NOT_FOUND
-        )
+    queryset = Document.objects.filter(is_active=True)
+    serializer_class = DocumentSerializer
+    permission_classes = [IsAuthenticated, IsOwnerOrAdmin]
+    basename = 'document'
     
-    if request.method == 'GET':
-        serializer = DocumentoSerializer(documento)
-        api_logger.info(f"Documento ID={pk} consultado por {request.user.username}")
-        return Response(serializer.data)
+    def get_serializer_class(self):
+        """Determina qué serializador utilizar"""
+        if self.action == 'create' or self.action == 'update':
+            return DocumentUploadSerializer
+        return DocumentSerializer
     
-    elif request.method == 'PUT':
-        # Solo los administradores o el propietario pueden actualizar
-        if not request.user.is_staff and documento.propietario != request.user:
-            api_logger.warning(
-                f"Permiso denegado: Usuario {request.user.username} intentó modificar el documento "
-                f"ID={pk} de {documento.propietario.username}"
-            )
-            return Response(
-                {'error': 'No tiene permiso para modificar este documento'}, 
-                status=status.HTTP_403_FORBIDDEN
-            )
+    def get_queryset(self):
+        """Filtra los resultados según permisos y parámetros"""
+        queryset = Document.objects.filter(is_active=True)
         
-        serializer = DocumentoSerializer(documento, data=request.data, partial=True)
+        # Los administradores pueden ver todos los documentos
+        if not self.request.user.is_staff:
+            # Los usuarios regulares solo pueden ver sus propios documentos
+            queryset = queryset.filter(user=self.request.user)
+        
+        # Filtrar por tipo de documento
+        document_type = self.request.query_params.get('document_type')
+        if document_type:
+            queryset = queryset.filter(document_type=document_type)
+        
+        # Filtrar por lote
+        lote_id = self.request.query_params.get('lote')
+        if lote_id:
+            queryset = queryset.filter(lote_id=lote_id)
+        
+        # Ordenar resultados
+        ordering = self.request.query_params.get('ordering', '-created_at')
+        return queryset.order_by(ordering)
+    
+    def perform_create(self, serializer):
+        """Agregar el usuario actual al crear un documento"""
+        serializer.save(user=self.request.user)
+        logger.info(f"Documento creado: {serializer.data.get('title')} por usuario {self.request.user.username}")
+    
+    @action(detail=False, methods=['post'])
+    def upload(self, request):
+        """
+        Endpoint específico para subir un documento.
+        Mismo comportamiento que create pero con un nombre más intuitivo.
+        """
+        serializer = DocumentUploadSerializer(data=request.data, context={'request': request})
         if serializer.is_valid():
-            # Si un admin cambia el estado a 'aprobado', registrar quién lo aprobó
-            if request.user.is_staff and serializer.validated_data.get('status') == 'approved':
-                serializer.validated_data['aprobado_por'] = request.user
-                api_logger.info(f"Documento ID={pk} aprobado por admin {request.user.username}")
-            
-            documento_actualizado = serializer.save()
-            
-            # Registrar los cambios específicos realizados
-            changed_fields = [field for field in serializer.validated_data.keys()]
-            api_logger.info(
-                f"Documento ID={pk} actualizado por {request.user.username}. "
-                f"Campos modificados: {', '.join(changed_fields)}"
-            )
-            
-            return Response(DocumentoSerializer(documento_actualizado).data)
-        
-        api_logger.warning(
-            f"Error al actualizar documento ID={pk} por {request.user.username}: {serializer.errors}"
-        )
+            document = serializer.save(user=request.user)
+            response_serializer = DocumentSerializer(document, context={'request': request})
+            return Response(response_serializer.data, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     
-    elif request.method == 'DELETE':
-        # Solo administradores o propietario pueden eliminar
-        if not request.user.is_staff and documento.propietario != request.user:
-            api_logger.warning(
-                f"Permiso denegado: Usuario {request.user.username} intentó eliminar el documento "
-                f"ID={pk} de {documento.propietario.username}"
-            )
-            return Response(
-                {'error': 'No tiene permiso para eliminar este documento'}, 
-                status=status.HTTP_403_FORBIDDEN
-            )
-        
-        nombre_documento = documento.nombre
-        tipo_documento = documento.get_tipo_display()
-        propietario_documento = documento.propietario.username
-        
-        documento.delete()
-        
-        api_logger.info(
-            f"Documento eliminado: ID={pk}, Nombre={nombre_documento}, "
-            f"Tipo={tipo_documento}, Propietario={propietario_documento}, "
-            f"Eliminado por={request.user.username}"
-        )
-        
-        return Response(status=status.HTTP_204_NO_CONTENT)
+    @action(detail=True, methods=['get'])
+    def download(self, request, pk=None):
+        """
+        Endpoint para obtener la URL de descarga directa de un documento.
+        """
+        document = self.get_object()
+        if document.file:
+            return Response({
+                'download_url': request.build_absolute_uri(document.file.url),
+                'file_name': document.file.name.split('/')[-1],
+                'file_size': document.file_size,
+                'mime_type': document.mime_type
+            })
+        return Response({"error": "No hay archivo asociado a este documento"}, status=status.HTTP_404_NOT_FOUND)
+    
+    @action(detail=True, methods=['post'])
+    def archive(self, request, pk=None):
+        """
+        Endpoint para archivar un documento (marcar como inactivo)
+        """
+        document = self.get_object()
+        document.is_active = False
+        document.save()
+        return Response({"message": "Documento archivado correctamente"})
+    
+    @action(detail=False, methods=['get'])
+    def types(self, request):
+        """
+        Endpoint para obtener la lista de tipos de documento disponibles
+        """
+        return Response([
+            {'value': key, 'label': label}
+            for key, label in Document.DOCUMENT_TYPES
+        ])
 
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
-def mis_documentos(request):
+def user_documents(request):
     """
-    Devuelve los documentos del usuario autenticado
+    Lista todos los documentos del usuario actual
     """
-    documentos = Documento.objects.filter(propietario=request.user)
-    
-    # Filtrar por tipo si se especifica
-    tipo = request.query_params.get('tipo')
-    status_param = request.query_params.get('status')
-    
-    filters_applied = {}
-    
-    if tipo:
-        documentos = documentos.filter(tipo=tipo)
-        filters_applied['tipo'] = tipo
-    
-    if status_param:
-        documentos = documentos.filter(status=status_param)
-        filters_applied['status'] = status_param
-        
-    if filters_applied:
-        api_logger.info(f"Usuario {request.user.username} filtrando sus documentos: {filters_applied}")
-    else:
-        api_logger.info(f"Usuario {request.user.username} consultando todos sus documentos")
-    
-    serializer = DocumentoBasicSerializer(documentos, many=True)
-    return Response({
-        'count': documentos.count(),
-        'results': serializer.data
-    })
+    documents = Document.objects.filter(user=request.user, is_active=True)
+    serializer = DocumentSerializer(documents, many=True, context={'request': request})
+    return Response(serializer.data)
 
-@api_view(['POST'])
-@permission_classes([IsAuthenticated, IsAdminUser])
-def cambiar_estado_documento(request, pk):
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def lote_documents(request, lote_id):
     """
-    Cambia el estado de un documento (solo para administradores)
+    Lista todos los documentos asociados a un lote específico
     """
+    # Verificar acceso al lote
     try:
-        documento = Documento.objects.get(pk=pk)
-    except Documento.DoesNotExist:
-        api_logger.warning(f"Documento no encontrado: ID={pk}, solicitado por admin {request.user.username}")
-        return Response(
-            {'error': 'Documento no encontrado'}, 
-            status=status.HTTP_404_NOT_FOUND
-        )
-    
-    nuevo_estado = request.data.get('status')
-    if not nuevo_estado:
-        api_logger.warning(f"Admin {request.user.username} intentó cambiar estado de documento ID={pk} sin especificar estado")
-        return Response(
-            {'error': 'Debe proporcionar un estado'}, 
-            status=status.HTTP_400_BAD_REQUEST
-        )
-    
-    if nuevo_estado not in [choice[0] for choice in Documento.STATUS_CHOICES]:
-        api_logger.warning(f"Admin {request.user.username} intentó cambiar estado de documento ID={pk} a valor inválido: {nuevo_estado}")
-        return Response(
-            {'error': f'Estado inválido. Opciones válidas: {[choice[0] for choice in Documento.STATUS_CHOICES]}'}, 
-            status=status.HTTP_400_BAD_REQUEST
-        )
-    
-    estado_anterior = documento.status
-    
-    # Actualizar estado y registrar quién lo cambió
-    documento.status = nuevo_estado
-    if nuevo_estado == 'approved':
-        documento.aprobado_por = request.user
-        documento.fecha_aprobacion = None  # Se establecerá automáticamente en save()
-    
-    documento.save()
-    
-    api_logger.info(
-        f"Estado de documento ID={pk} cambiado por admin {request.user.username}: "
-        f"{estado_anterior} → {nuevo_estado}, Documento: {documento.nombre}"
-    )
-    
-    return Response(DocumentoSerializer(documento).data)
+        from apps.lotes.models import Lote
+        lote = get_object_or_404(Lote, pk=lote_id)
+        
+        # Solo el propietario del lote o un admin puede ver sus documentos
+        if not request.user.is_staff and hasattr(lote, 'usuario') and lote.usuario != request.user:
+            raise PermissionDenied("No tienes permiso para ver estos documentos")
+        
+        # Verificar si la tabla Document existe antes de intentar consultarla
+        try:
+            # Comprobar si la tabla existe haciendo una consulta simple
+            Document.objects.first()
+            documents = Document.objects.filter(lote=lote, is_active=True)
+            serializer = DocumentSerializer(documents, many=True, context={'request': request})
+            return Response(serializer.data)
+        except Exception as e:
+            logger.error(f"Error al consultar documentos: {e}")
+            return Response({"message": "El módulo de documentos no está completamente configurado"}, 
+                           status=status.HTTP_503_SERVICE_UNAVAILABLE)
+    except ImportError:
+        logger.error("No se pudo importar el modelo Lote")
+        return Response({"error": "Error en la configuración del sistema"}, 
+                       status=status.HTTP_500_INTERNAL_SERVER_ERROR)

@@ -1,0 +1,52 @@
+from django.db import migrations, models
+import django.utils.timezone
+import django.db.models.deletion
+import uuid
+import os
+from django.conf import settings
+
+
+def document_upload_path(instance, filename):
+    """Determina la ruta de subida para los documentos"""
+    # Generar una ruta basada en la fecha y un UUID
+    ymd = django.utils.timezone.now().strftime('%Y/%m/%d')
+    uuid_name = uuid.uuid4().hex
+    extension = os.path.splitext(filename)[1].lower()
+    return f'documents/{ymd}/{uuid_name}{extension}'
+
+
+class Migration(migrations.Migration):
+
+    initial = True
+
+    dependencies = [
+        migrations.swappable_dependency(settings.AUTH_USER_MODEL),
+        ('lotes', '0001_initial'),
+    ]
+
+    operations = [
+        migrations.CreateModel(
+            name='Document',
+            fields=[
+                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
+                ('title', models.CharField(max_length=255, verbose_name='Título')),
+                ('description', models.TextField(blank=True, null=True, verbose_name='Descripción')),
+                ('file', models.FileField(upload_to=document_upload_path, verbose_name='Archivo')),
+                ('document_type', models.CharField(choices=[('general', 'General'), ('plano', 'Plano'), ('contrato', 'Contrato'), ('licencia', 'Licencia'), ('factura', 'Factura'), ('otro', 'Otro')], default='general', max_length=50, verbose_name='Tipo de documento')),
+                ('created_at', models.DateTimeField(auto_now_add=True, verbose_name='Fecha de creación')),
+                ('updated_at', models.DateTimeField(auto_now=True, verbose_name='Última actualización')),
+                ('file_size', models.PositiveIntegerField(default=0, verbose_name='Tamaño del archivo (bytes)')),
+                ('mime_type', models.CharField(blank=True, max_length=100, null=True, verbose_name='Tipo MIME')),
+                ('tags', models.JSONField(blank=True, default=list, verbose_name='Etiquetas')),
+                ('metadata', models.JSONField(blank=True, default=dict, verbose_name='Metadatos adicionales')),
+                ('is_active', models.BooleanField(default=True, verbose_name='Activo')),
+                ('lote', models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.CASCADE, related_name='documents', to='lotes.lote')),
+                ('user', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='documents', to=settings.AUTH_USER_MODEL)),
+            ],
+            options={
+                'verbose_name': 'Documento',
+                'verbose_name_plural': 'Documentos',
+                'ordering': ['-created_at'],
+            },
+        ),
+    ]

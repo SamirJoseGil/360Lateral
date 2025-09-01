@@ -1,238 +1,225 @@
 """
-Servicio para estadísticas de la aplicación
+Servicios para el procesamiento y análisis de estadísticas.
 """
 import logging
-from typing import Dict, List, Any
-from django.db.models import Count, Q, Sum, Avg, F, ExpressionWrapper, FloatField
-from django.db.models.functions import TruncMonth, TruncWeek, TruncDay
+from datetime import datetime, timedelta, date
 from django.utils import timezone
-from datetime import timedelta
+from django.db.models import Count, F, Sum
+from django.db import connection, models
+from ..models import Stat, DailySummary
 
 logger = logging.getLogger(__name__)
 
 class StatsService:
     """
-    Servicio para recopilar estadísticas de la aplicación
+    Clase de servicio para procesar y analizar estadísticas.
     """
-    
-    def __init__(self):
-        # Importaciones tardías para evitar problemas circulares
-        from apps.users.models import User
-        from apps.lotes.models import Lote
-        from apps.documents.models import Documento
-        
-        self.User = User
-        self.Lote = Lote
-        self.Documento = Documento
-    
-    def get_general_stats(self) -> Dict[str, Any]:
+    @staticmethod
+    def record_stat(type, name, value=None, user_id=None, session_id=None, ip_address=None):
         """
-        Obtiene estadísticas generales de la aplicación
+        Registra un evento estadístico en la base de datos.
+        
+        Args:
+            type (str): Tipo de estadística ('view', 'search', etc.)
+            name (str): Nombre del evento
+            value (dict, optional): Datos asociados al evento
+            user_id (int, optional): ID del usuario que generó el evento
+            session_id (str, optional): ID de sesión
+            ip_address (str, optional): Dirección IP
+            
+        Returns:
+            Stat: Objeto estadístico creado
         """
         try:
-            # Estadísticas de usuarios
-            users_count = self.User.objects.count()
-            active_users = self.User.objects.filter(is_active=True).count()
-            staff_users = self.User.objects.filter(is_staff=True).count()
-            
-            # Estadísticas de lotes
-            lotes_count = self.Lote.objects.count()
-            
-            # Estadísticas de documentos
-            docs_count = self.Documento.objects.count()
-            
-            # Calcular porcentajes y proporciones
-            user_activation_rate = (active_users / users_count * 100) if users_count > 0 else 0
-            
-            # Devolver resultados
-            return {
-                "success": True,
-                "stats": {
-                    "users": {
-                        "total": users_count,
-                        "active": active_users,
-                        "staff": staff_users,
-                        "activation_rate": round(user_activation_rate, 2)
-                    },
-                    "lotes": {
-                        "total": lotes_count
-                    },
-                    "documents": {
-                        "total": docs_count
-                    },
-                    "timestamp": timezone.now().isoformat()
-                }
-            }
-        
-        except Exception as e:
-            logger.error(f"Error obteniendo estadísticas generales: {e}")
-            return {
-                "success": False,
-                "error": f"Error al obtener estadísticas: {str(e)}"
-            }
-    
-    def get_user_stats(self) -> Dict[str, Any]:
-        """
-        Obtiene estadísticas detalladas de usuarios
-        """
-        try:
-            # Total de usuarios por rol
-            users_by_role = list(self.User.objects.values('role')
-                                .annotate(count=Count('id'))
-                                .order_by('-count'))
-            
-            # Usuarios registrados por mes (últimos 6 meses)
-            six_months_ago = timezone.now() - timedelta(days=180)
-            users_by_month = list(self.User.objects.filter(date_joined__gte=six_months_ago)
-                                .annotate(month=TruncMonth('date_joined'))
-                                .values('month')
-                                .annotate(count=Count('id'))
-                                .order_by('month'))
-            
-            # Tasa de actividad (últimos 30 días)
-            thirty_days_ago = timezone.now() - timedelta(days=30)
-            recently_active = self.User.objects.filter(
-                last_login__gte=thirty_days_ago
-            ).count()
-            active_rate = (recently_active / self.User.objects.count() * 100) if self.User.objects.count() > 0 else 0
-            
-            return {
-                "success": True,
-                "stats": {
-                    "by_role": users_by_role,
-                    "by_month": [
-                        {
-                            "month": item["month"].strftime("%Y-%m"),
-                            "count": item["count"]
-                        }
-                        for item in users_by_month
-                    ],
-                    "activity": {
-                        "active_last_30_days": recently_active,
-                        "active_rate": round(active_rate, 2),
-                    },
-                    "timestamp": timezone.now().isoformat()
-                }
-            }
-        
-        except Exception as e:
-            logger.error(f"Error obteniendo estadísticas de usuarios: {e}")
-            return {
-                "success": False,
-                "error": f"Error al obtener estadísticas de usuarios: {str(e)}"
-            }
-    
-    def get_document_stats(self) -> Dict[str, Any]:
-        """
-        Obtiene estadísticas detalladas de documentos
-        """
-        try:
-            # Total de documentos por estado
-            docs_by_status = list(self.Documento.objects.values('status')
-                                 .annotate(count=Count('id'))
-                                 .order_by('-count'))
-            
-            # Documentos por tipo
-            docs_by_type = list(self.Documento.objects.values('tipo')
-                               .annotate(count=Count('id'))
-                               .order_by('-count'))
-            
-            # Documentos subidos por mes (últimos 6 meses)
-            six_months_ago = timezone.now() - timedelta(days=180)
-            docs_by_month = list(self.Documento.objects.filter(fecha_subida__gte=six_months_ago)
-                                .annotate(month=TruncMonth('fecha_subida'))
-                                .values('month')
-                                .annotate(count=Count('id'))
-                                .order_by('month'))
-            
-            # Tiempo promedio de aprobación (en días)
-            from django.db.models import F, ExpressionWrapper, fields
-            
-            # Asumiendo que hay campos fecha_subida y fecha_aprobacion
-            avg_approval_time = self.Documento.objects.filter(
-                status='approved',
-                fecha_aprobacion__isnull=False
-            ).annotate(
-                dias_aprobacion=ExpressionWrapper(
-                    F('fecha_aprobacion') - F('fecha_subida'),
-                    output_field=fields.DurationField()
-                )
-            ).aggregate(
-                avg_days=Avg(F('dias_aprobacion'))
+            if value is None:
+                value = {}
+                
+            stat = Stat.objects.create(
+                type=type,
+                name=name,
+                value=value,
+                user_id=user_id,
+                session_id=session_id,
+                ip_address=ip_address
             )
-            
-            avg_days = 0
-            if avg_approval_time['avg_days']:
-                avg_days = avg_approval_time['avg_days'].total_seconds() / (3600 * 24)
-            
-            return {
-                "success": True,
-                "stats": {
-                    "by_status": docs_by_status,
-                    "by_type": docs_by_type,
-                    "by_month": [
-                        {
-                            "month": item["month"].strftime("%Y-%m"),
-                            "count": item["count"]
-                        }
-                        for item in docs_by_month
-                    ],
-                    "approval_time": {
-                        "avg_days": round(avg_days, 2)
-                    },
-                    "timestamp": timezone.now().isoformat()
-                }
-            }
-        
+            return stat
         except Exception as e:
-            logger.error(f"Error obteniendo estadísticas de documentos: {e}")
-            return {
-                "success": False,
-                "error": f"Error al obtener estadísticas de documentos: {str(e)}"
-            }
+            logger.error(f"Error al registrar estadística: {e}")
+            return None
     
-    def get_lotes_stats(self) -> Dict[str, Any]:
+    @staticmethod
+    def get_daily_summary(target_date=None):
         """
-        Obtiene estadísticas detalladas de lotes
-        """
-        try:
-            # Total de lotes por estado
-            lotes_by_status = list(self.Lote.objects.values('status')
-                                  .annotate(count=Count('id'))
-                                  .order_by('-count'))
-            
-            # Distribución por estrato
-            lotes_by_estrato = list(self.Lote.objects.exclude(estrato__isnull=True)
-                                   .values('estrato')
-                                   .annotate(count=Count('id'))
-                                   .order_by('estrato'))
-            
-            # Lotes por zona/comuna
-            lotes_by_zona = list(self.Lote.objects.exclude(barrio__isnull=True)
-                               .values('barrio')
-                               .annotate(count=Count('id'))
-                               .order_by('-count')[:10])  # Top 10 barrios
-            
-            # Área promedio de lotes
-            avg_area = self.Lote.objects.aggregate(avg_area=Avg('area'))['avg_area'] or 0
-            
-            return {
-                "success": True,
-                "stats": {
-                    "by_status": lotes_by_status,
-                    "by_estrato": lotes_by_estrato,
-                    "by_zona": lotes_by_zona,
-                    "area": {
-                        "avg_area": round(avg_area, 2),
-                        "unit": "m²"
-                    },
-                    "timestamp": timezone.now().isoformat()
-                }
-            }
+        Obtiene o crea el resumen diario para una fecha específica.
         
-        except Exception as e:
-            logger.error(f"Error obteniendo estadísticas de lotes: {e}")
-            return {
-                "success": False,
-                "error": f"Error al obtener estadísticas de lotes: {str(e)}"
-            }
+        Args:
+            target_date (date, optional): Fecha objetivo. Por defecto, hoy.
+            
+        Returns:
+            DailySummary: Objeto de resumen diario
+        """
+        if target_date is None:
+            target_date = timezone.now().date()
+        elif isinstance(target_date, datetime):
+            target_date = target_date.date()
+            
+        summary, created = DailySummary.objects.get_or_create(date=target_date)
+        return summary
+    
+    @staticmethod
+    def calculate_daily_metrics(target_date=None):
+        """
+        Calcula métricas para un día específico y actualiza el resumen diario.
+        
+        Args:
+            target_date (date, optional): Fecha objetivo. Por defecto, hoy.
+            
+        Returns:
+            dict: Métricas calculadas
+        """
+        if target_date is None:
+            target_date = timezone.now().date()
+        elif isinstance(target_date, datetime):
+            target_date = target_date.date()
+            
+        # Obtener estadísticas del día
+        start_datetime = datetime.combine(target_date, datetime.min.time())
+        end_datetime = datetime.combine(target_date, datetime.max.time())
+        
+        day_stats = Stat.objects.filter(
+            timestamp__gte=start_datetime,
+            timestamp__lte=end_datetime
+        )
+        
+        # Calcular métricas
+        metrics = {
+            'total_events': day_stats.count(),
+            'events_by_type': {},
+            'unique_users': day_stats.values('user_id').exclude(user_id__isnull=True).distinct().count(),
+            'unique_sessions': day_stats.values('session_id').exclude(session_id__isnull=True).distinct().count(),
+            'top_events': list(day_stats.values('name').annotate(
+                count=Count('id')).order_by('-count')[:10])
+        }
+        
+        # Eventos por tipo
+        for stat_type, _ in Stat.STAT_TYPES:
+            type_count = day_stats.filter(type=stat_type).count()
+            metrics['events_by_type'][stat_type] = type_count
+            
+        # Guardar en el resumen diario
+        summary = StatsService.get_daily_summary(target_date)
+        summary.metrics = metrics
+        summary.save()
+        
+        return metrics
+    
+    @staticmethod
+    def get_stats_over_time(start_date=None, end_date=None, interval='day', stat_type=None):
+        """
+        Obtiene estadísticas agregadas a lo largo del tiempo.
+        
+        Args:
+            start_date (date, optional): Fecha de inicio
+            end_date (date, optional): Fecha de fin
+            interval (str): Intervalo de tiempo ('day', 'week', 'month')
+            stat_type (str, optional): Filtrar por tipo de estadística
+            
+        Returns:
+            list: Datos agregados por intervalo de tiempo
+        """
+        if end_date is None:
+            end_date = timezone.now().date()
+        if start_date is None:
+            start_date = end_date - timedelta(days=30)
+            
+        # Formato para truncar fecha según el intervalo
+        trunc_format = {
+            'day': 'day',
+            'week': 'week',
+            'month': 'month'
+        }.get(interval, 'day')
+        
+        query = Stat.objects.all()
+        
+        # Filtrar por fechas y tipo si es necesario
+        query = query.filter(timestamp__date__gte=start_date, timestamp__date__lte=end_date)
+        if stat_type:
+            query = query.filter(type=stat_type)
+            
+        # Agregar por intervalo de tiempo
+        result = []
+        
+        if connection.vendor == 'postgresql':
+            # Para PostgreSQL usamos date_trunc
+            from django.db.models.functions import TruncDay, TruncWeek, TruncMonth
+            
+            trunc_class = {
+                'day': TruncDay,
+                'week': TruncWeek,
+                'month': TruncMonth
+            }.get(interval, TruncDay)
+            
+            aggregated = query.annotate(
+                period=trunc_class('timestamp')
+            ).values('period').annotate(
+                count=Count('id')
+            ).order_by('period')
+            
+            result = list(aggregated)
+        else:
+            # Para otros motores hacemos agrupación manual
+            # Esta implementación es simplificada y podría necesitar ajustes
+            # según el motor de BD específico
+            if interval == 'day':
+                # Agrupación por día
+                for day_offset in range((end_date - start_date).days + 1):
+                    current_date = start_date + timedelta(days=day_offset)
+                    count = query.filter(
+                        timestamp__date=current_date
+                    ).count()
+                    result.append({
+                        'period': datetime.combine(current_date, datetime.min.time()),
+                        'count': count
+                    })
+            elif interval == 'week':
+                # Implementar agrupación por semana
+                pass
+            elif interval == 'month':
+                # Implementar agrupación por mes
+                pass
+                
+        return result
+    
+    @staticmethod
+    def get_user_activity(user_id, days=30):
+        """
+        Obtiene la actividad reciente de un usuario.
+        
+        Args:
+            user_id (int): ID del usuario
+            days (int): Número de días a considerar
+            
+        Returns:
+            dict: Actividad del usuario
+        """
+        start_date = timezone.now() - timedelta(days=days)
+        
+        stats = Stat.objects.filter(
+            user_id=user_id,
+            timestamp__gte=start_date
+        ).order_by('-timestamp')
+        
+        activity = {
+            'total_events': stats.count(),
+            'events_by_type': {},
+            'recent_events': list(stats.values('name', 'type', 'timestamp', 'value')[:20]),
+            'first_activity': stats.order_by('timestamp').first(),
+            'last_activity': stats.first()
+        }
+        
+        # Eventos por tipo
+        for stat_type, _ in Stat.STAT_TYPES:
+            type_count = stats.filter(type=stat_type).count()
+            activity['events_by_type'][stat_type] = type_count
+            
+        return activity

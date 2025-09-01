@@ -1,30 +1,42 @@
 // filepath: d:\Accesos Directos\Escritorio\frontendx\app\services\lotes.server.ts
 import { API_URL, fetchWithAuth } from "~/utils/auth.server";
+import { getAccessTokenFromCookies } from "~/utils/auth.server";
 
-// Tipos y interfaces
-export type Lote = {
-  id: string;
+// Define interfaces for the backend models
+export interface Lote {
+  id?: number; // Only optional when creating
   nombre: string;
-  descripcion?: string;
+  cbml: string;
   direccion: string;
-  area: number;
-  codigo_catastral?: string;
+  area?: number;
+  descripcion?: string;
   matricula?: string;
-  cbml?: string;
+  codigo_catastral?: string;
+  barrio?: string;
+  estrato?: number;
   latitud?: number;
   longitud?: number;
-  estrato?: number;
-  owner: {
-    id: string;
-    name: string;
-    email?: string;
-  };
   tratamiento_pot?: string;
   uso_suelo?: string;
-  status: "active" | "pending" | "archived";
-  created_at: string;
+  clasificacion_suelo?: string;
+  metadatos?: Record<string, any>;
+  status?: string;
+  owner?: number | string;
+  created_at?: string;
   updated_at?: string;
-};
+  fecha_creacion?: string;
+  // Nuevos campos para documentación requerida
+  doc_ctl_subido?: boolean;
+  doc_planos_subido?: boolean;
+  doc_topografia_subido?: boolean;
+  limite_tiempo_docs?: string;
+  tiempo_restante?: number; // En segundos
+  documentos_requeridos?: {
+    ctl: boolean;
+    planos: boolean;
+    topografia: boolean;
+  };
+}
 
 export type LoteStats = {
   total: number;
@@ -72,10 +84,11 @@ export async function getMisLotes(request: Request, searchQuery?: string) {
     const data = await response.json();
     console.log(`[Lotes] Datos recibidos: { hasResults: ${!!data}, count: ${data.count || 0} }`);
     
-    return {
+    // Ensure we're returning the results array from the API
+    return { 
+      lotes: data.results || [], 
       count: data.count || 0,
-      results: data.results || [],
-      headers: setCookieHeaders
+      headers: setCookieHeaders 
     };
   } catch (error) {
     console.error("[Lotes] Error obteniendo lotes:", error);
@@ -156,7 +169,12 @@ async function generateStatsFromLotes(request: Request, userId?: string) {
     lotesResponse = await getMisLotes(request);
   }
   
-  const lotes = lotesResponse.results || [];
+  const lotes =
+    Array.isArray((lotesResponse as any).lotes)
+      ? (lotesResponse as any).lotes
+      : Array.isArray((lotesResponse as any).data)
+      ? (lotesResponse as any).data
+      : [];
   
   // Calcular estadísticas basadas en los lotes disponibles
   const stats: LoteStats = {
@@ -215,36 +233,55 @@ export async function getLoteById(request: Request, loteId: string) {
   }
 }
 
+// Función para obtener tratamientos POT
+export async function getTratamientosPOT(request: Request) {
+  try {
+    const endpoint = `${API_URL}/api/pot/tratamientos/lista/`;
+    const accessToken = await getAccessTokenFromCookies(request);
+
+    const response = await fetch(endpoint, {
+      method: "GET",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${accessToken}`,
+      },
+    });
+
+    const data = await response.json();
+    return { tratamientos: data.results, headers: response.headers };
+  } catch (error) {
+    console.error("Error obteniendo tratamientos POT:", error);
+    return { tratamientos: [], headers: new Headers() };
+  }
+}
+
 // Crear un nuevo lote
 export async function createLote(request: Request, loteData: Omit<Lote, 'id' | 'created_at' | 'updated_at'>) {
   console.log(`Creando nuevo lote: ${loteData.nombre}`);
   
   try {
     const endpoint = `${API_URL}/api/lotes/`;
-    console.log(`[Lotes] POSTing to endpoint: ${endpoint}`);
+    console.log("[Lotes] POSTing to endpoint:", endpoint);
     
+    // Usar fetchWithAuth en lugar de manejar el token y CSRF manualmente
     const { res: response, setCookieHeaders } = await fetchWithAuth(request, endpoint, {
-      method: 'POST',
+      method: "POST",
       headers: {
-        'Content-Type': 'application/json'
+        "Content-Type": "application/json"
       },
-      body: JSON.stringify(loteData)
+      body: JSON.stringify(loteData),
     });
-    
+
     if (!response.ok) {
-      console.error(`[Lotes] Error en la respuesta de la API: ${response.status} ${response.statusText}`);
       const errorText = await response.text();
-      console.error(`[Lotes] Cuerpo de respuesta de error: ${errorText}`);
-      throw new Error(`Error al crear lote: ${response.statusText}`);
+      console.error("[Lotes] Error creando lote:", response.status, errorText);
+      throw new Error(`Error creando lote: ${response.status} ${errorText}`);
     }
-    
+
     const data = await response.json();
-    console.log(`[Lotes] Lote creado con ID: ${data.id}`);
+    console.log("[Lotes] Lote creado con ID:", data.id);
     
-    return {
-      lote: data,
-      headers: setCookieHeaders
-    };
+    return { lote: data, headers: setCookieHeaders };
   } catch (error) {
     console.error("[Lotes] Error creando lote:", error);
     throw error;
@@ -315,50 +352,5 @@ export async function deleteLote(request: Request, loteId: string) {
   } catch (error) {
     console.error(`[Lotes] Error eliminando lote ${loteId}:`, error);
     throw error;
-  }
-}
-
-// Obtener tratamientos POT disponibles
-export async function getTratamientosPOT(request: Request) {
-  console.log("Obteniendo tratamientos POT disponibles");
-  
-  try {
-    const endpoint = `${API_URL}/api/lotes/tratamientos/`;
-    console.log(`[Lotes] Fetching tratamientos from endpoint: ${endpoint}`);
-    
-    const { res: response, setCookieHeaders } = await fetchWithAuth(request, endpoint);
-    
-    if (!response.ok) {
-      console.error(`[Lotes] Error en la respuesta de la API: ${response.status} ${response.statusText}`);
-      const errorText = await response.text();
-      console.error(`[Lotes] Cuerpo de respuesta de error: ${errorText}`);
-      throw new Error(`Error al obtener tratamientos POT: ${response.statusText}`);
-    }
-    
-    const data = await response.json();
-    console.log(`[Lotes] Tratamientos POT recibidos: ${data.length || 0}`);
-    
-    return {
-      tratamientos: data,
-      headers: setCookieHeaders
-    };
-  } catch (error) {
-    console.error("[Lotes] Error obteniendo tratamientos POT:", error);
-    
-    // Si hay un error, devolver un array de fallback con datos comunes
-    const fallbackTratamientos = [
-      { id: 1, nombre: "Renovación urbana" },
-      { id: 2, nombre: "Desarrollo" },
-      { id: 3, nombre: "Consolidación" },
-      { id: 4, nombre: "Conservación" },
-      { id: 5, nombre: "Mejoramiento Integral" }
-    ];
-    
-    console.log("[Lotes] Usando tratamientos POT de fallback");
-    
-    return {
-      tratamientos: fallbackTratamientos,
-      headers: {}
-    };
   }
 }

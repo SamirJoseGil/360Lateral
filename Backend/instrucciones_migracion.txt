@@ -1,0 +1,51 @@
+# Instrucciones para solucionar el error "no existe la relación «documents_document»"
+
+Para resolver el error relacionado con la tabla faltante `documents_document`, necesitas ejecutar las migraciones 
+para crear las tablas en la base de datos. Sigue estos pasos:
+
+## 1. Activar el entorno virtual
+
+```
+cd C:\Users\samir\Documents\GitHub\360Lateral\Backend
+venv\Scripts\activate
+```
+
+## 2. Aplicar las migraciones
+
+```
+python manage.py migrate documents
+```
+
+Si el comando anterior falla, puedes intentar crear las migraciones primero:
+
+```
+python manage.py makemigrations documents
+python manage.py migrate documents
+```
+
+## 3. Verificar que las migraciones se aplicaron correctamente
+
+```
+python manage.py showmigrations documents
+```
+
+Deberías ver algo como:
+```
+documents
+ [X] 0001_initial
+```
+
+## 4. Reiniciar el servidor
+
+```
+python manage.py runserver
+```
+
+## Nota importante
+
+- Si experimentas más errores relacionados con migraciones, considera aplicar todas las migraciones pendientes:
+  ```
+  python manage.py migrate
+  ```
+
+- En caso de problemas persistentes, podría ser necesario verificar la conexión a la base de datos y los permisos de usuario.

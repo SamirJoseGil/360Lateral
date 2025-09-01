@@ -1,193 +1,79 @@
 """
-Modelos para la aplicación de documentos.
+Modelos para la gestión de documentos en el sistema.
 """
-import os
 from django.db import models
-from django.utils import timezone
-from django.utils.translation import gettext_lazy as _
 from django.conf import settings
+from django.utils import timezone
+import os
+import uuid
 
-from apps.users.models import User
-from apps.lotes.models import Lote
+def document_upload_path(instance, filename):
+    """Determina la ruta de subida para los documentos"""
+    # Generar una ruta basada en la fecha y un UUID
+    ymd = timezone.now().strftime('%Y/%m/%d')
+    uuid_name = uuid.uuid4().hex
+    extension = os.path.splitext(filename)[1].lower()
+    return f'documents/{ymd}/{uuid_name}{extension}'
 
-def documento_upload_path(instance, filename):
+class Document(models.Model):
     """
-    Genera la ruta donde se guardarán los documentos subidos.
-    
-    Args:
-        instance: Instancia del documento que se está guardando
-        filename: Nombre original del archivo
-    
-    Returns:
-        Ruta relativa donde se guardará el documento
+    Modelo para representar documentos subidos al sistema
     """
-    # Formato: documentos/tipo_documento/año/mes/lote_id_filename
-    lote_id = instance.lote.id if instance.lote else 'sin_lote'
-    extension = os.path.splitext(filename)[1]
-    safe_filename = f"{instance.tipo.lower()}_{timezone.now().strftime('%Y%m%d%H%M%S')}{extension}"
-    
-    return f'documentos/{instance.tipo}/{timezone.now().year}/{timezone.now().month}/{lote_id}_{safe_filename}'
-
-class Documento(models.Model):
-    """
-    Modelo para documentos relacionados con lotes.
-    """
-    
-    # Opciones para el tipo de documento
-    TIPO_CHOICES = (
-        ('contrato', 'Contrato'),
-        ('escritura', 'Escritura'),
+    DOCUMENT_TYPES = [
+        ('general', 'General'),
         ('plano', 'Plano'),
-        ('impuesto', 'Impuesto Predial'),
-        ('avaluo', 'Avalúo'),
-        ('estudio', 'Estudio de Suelos'),
-        ('ambiental', 'Certificado Ambiental'),
+        ('contrato', 'Contrato'),
+        ('licencia', 'Licencia'),
+        ('factura', 'Factura'),
         ('otro', 'Otro'),
-    )
+    ]
     
-    # Opciones para el estado del documento
-    STATUS_CHOICES = (
-        ('pending', 'Pendiente'),
-        ('approved', 'Aprobado'),
-        ('rejected', 'Rechazado'),
-        ('archived', 'Archivado'),
-    )
+    title = models.CharField("Título", max_length=255)
+    description = models.TextField("Descripción", blank=True, null=True)
+    file = models.FileField("Archivo", upload_to=document_upload_path)
+    document_type = models.CharField("Tipo de documento", max_length=50, choices=DOCUMENT_TYPES, default='general')
     
-    # Relaciones
-    lote = models.ForeignKey(
-        Lote, 
-        on_delete=models.CASCADE,
-        related_name='documentos',
-        verbose_name=_("Lote asociado"),
-        null=True,
-        blank=True,
-    )
+    # Campos para relaciones
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='documents')
+    lote = models.ForeignKey('lotes.Lote', on_delete=models.CASCADE, related_name='documents', null=True, blank=True)
     
-    propietario = models.ForeignKey(
-        User,
-        on_delete=models.CASCADE,
-        related_name='documentos',
-        verbose_name=_("Propietario"),
-    )
-    
-    # Metadatos del documento
-    nombre = models.CharField(
-        _("Nombre del documento"),
-        max_length=255,
-    )
-    
-    tipo = models.CharField(
-        _("Tipo de documento"),
-        max_length=20,
-        choices=TIPO_CHOICES,
-        default='otro',
-    )
-    
-    descripcion = models.TextField(
-        _("Descripción"),
-        blank=True,
-        null=True,
-    )
-    
-    # Archivo
-    archivo = models.FileField(
-        _("Archivo"),
-        upload_to=documento_upload_path,
-        max_length=500,
-    )
-    
-    tamano = models.IntegerField(
-        _("Tamaño en bytes"),
-        null=True,
-        blank=True,
-    )
-    
-    tipo_mime = models.CharField(
-        _("Tipo MIME"),
-        max_length=100,
-        null=True,
-        blank=True,
-    )
-    
-    # Estado del documento
-    status = models.CharField(
-        _("Estado"),
-        max_length=10,
-        choices=STATUS_CHOICES,
-        default='pending',
-    )
-    
-    # Fechas
-    fecha_subida = models.DateTimeField(
-        _("Fecha de subida"),
-        auto_now_add=True,
-    )
-    
-    fecha_modificacion = models.DateTimeField(
-        _("Fecha de última modificación"),
-        auto_now=True,
-    )
-    
-    fecha_aprobacion = models.DateTimeField(
-        _("Fecha de aprobación"),
-        null=True,
-        blank=True,
-    )
-    
-    # Metadatos adicionales
-    notas = models.TextField(
-        _("Notas adicionales"),
-        blank=True,
-        null=True,
-    )
-    
-    # Campos para trazabilidad
-    aprobado_por = models.ForeignKey(
-        User,
-        on_delete=models.SET_NULL,
-        related_name='documentos_aprobados',
-        verbose_name=_("Aprobado por"),
-        null=True,
-        blank=True,
-    )
+    # Campos de metadatos y control
+    created_at = models.DateTimeField("Fecha de creación", auto_now_add=True)
+    updated_at = models.DateTimeField("Última actualización", auto_now=True)
+    file_size = models.PositiveIntegerField("Tamaño del archivo (bytes)", default=0)
+    mime_type = models.CharField("Tipo MIME", max_length=100, blank=True, null=True)
+    tags = models.JSONField("Etiquetas", default=list, blank=True)
+    metadata = models.JSONField("Metadatos adicionales", default=dict, blank=True)
+    is_active = models.BooleanField("Activo", default=True)
     
     class Meta:
-        verbose_name = _("Documento")
-        verbose_name_plural = _("Documentos")
-        ordering = ['-fecha_subida']
-    
+        verbose_name = "Documento"
+        verbose_name_plural = "Documentos"
+        ordering = ['-created_at']
+        
     def __str__(self):
-        return f"{self.nombre} - {self.get_tipo_display()} ({self.get_status_display()})"
-    
+        return self.title
+        
     def save(self, *args, **kwargs):
-        """Sobrescribe el método save para establecer tamaño y tipo MIME."""
-        if self.archivo and not self.tamano:
-            try:
-                self.tamano = self.archivo.size
-                # Intentar determinar el tipo MIME
-                import mimetypes
-                mime_type, _ = mimetypes.guess_type(self.archivo.name)
-                if mime_type:
-                    self.tipo_mime = mime_type
-            except:
-                # Si hay algún error al obtener el tamaño, continuamos sin establecerlo
-                pass
+        # Si es un objeto nuevo, calcular el tamaño del archivo
+        if self.pk is None and self.file:
+            self.file_size = self.file.size
             
-        # Si cambia el estado a aprobado, establecer la fecha de aprobación
-        if self.status == 'approved' and not self.fecha_aprobacion:
-            self.fecha_aprobacion = timezone.now()
-            
+            # Detectar el tipo MIME basado en la extensión
+            filename = self.file.name
+            ext = os.path.splitext(filename)[1].lower()
+            mime_map = {
+                '.pdf': 'application/pdf',
+                '.doc': 'application/msword',
+                '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+                '.xls': 'application/vnd.ms-excel',
+                '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                '.jpg': 'image/jpeg',
+                '.jpeg': 'image/jpeg',
+                '.png': 'image/png',
+                '.dwg': 'application/acad',
+                '.dxf': 'application/dxf',
+            }
+            self.mime_type = mime_map.get(ext, 'application/octet-stream')
+        
         super().save(*args, **kwargs)
-    
-    def get_file_extension(self):
-        """Devuelve la extensión del archivo."""
-        return os.path.splitext(self.archivo.name)[1].lower() if self.archivo else ''
-    
-    def is_image(self):
-        """Determina si el documento es una imagen."""
-        image_extensions = ['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.tiff', '.webp']
-        return self.get_file_extension() in image_extensions
-    
-    def is_pdf(self):
-        """Determina si el documento es un PDF."""
-        return self.get_file_extension() == '.pdf'

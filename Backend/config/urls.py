@@ -55,7 +55,8 @@ urlpatterns = [
     path('api/users/', include('apps.users.urls')),
     path('api/lotes/', include('apps.lotes.urls')),
     path('api/stats/', include('apps.stats.urls')),
-    path('api/documentos/', include('apps.documents.urls')),  # Agregamos ruta para documentos
+    path('api/pot/', include('apps.pot.urls')),
+    path('api/documents/', include('apps.documents.urls')),
     
     # Health check
     path('health/', include('apps.health_check.urls')),
