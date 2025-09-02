@@ -1,73 +1,53 @@
 import { json, redirect } from "@remix-run/node";
 import { Link, useLoaderData } from "@remix-run/react";
 import type { LoaderFunctionArgs } from "@remix-run/node";
-import { getUser, isRedirectLoop, getAccessTokenFromCookies } from "~/utils/auth.server";
+import { getUser, getAccessTokenFromCookies } from "~/utils/auth.server";
 import { getUserActivity, recordEvent } from "~/services/stats.server";
 
 // Tipos para los datos
 type SearchCriteria = {
+    id: number;
     name: string;
-    location: string;
-    minArea: number;
-    maxArea: number;
-    budget: number;
+    area: string;
+    zone: string;
+    budget: string;
     treatment: string;
 };
 
 type FavoriteLot = {
-    id: string;
-    address: string;
+    id: number;
+    name: string;
     area: number;
     price: number;
+    address: string;
+    owner: string;
     potentialValue: number;
 };
 
 export async function loader({ request }: LoaderFunctionArgs) {
-    // Si detectamos un bucle de redirección, enviamos al usuario al inicio
-    if (isRedirectLoop(request)) {
-        console.warn("Detected redirect loop in developer dashboard. Breaking loop.");
-        return redirect("/");
-    }
-
-    // Verificar que el usuario esté autenticado y sea desarrollador
+    // El usuario ya ha sido verificado en el layout padre
     const user = await getUser(request);
-    if (!user) {
-        console.log("Developer dashboard: No user found, redirecting to homepage");
-        return redirect("/");
-    }
-
-    // Solo redirigimos si el usuario no es desarrollador
-    if (user.role !== "developer") {
-        console.log(`Non-developer user trying to access developer dashboard: ${user.role}`);
-        // Usar redirección simple
-        const url = new URL(request.url);
-        url.searchParams.set("_rc", "1"); // Añadir contador de redirecciones manualmente
-        return redirect(`/${user.role}`);
-    }
-
-    // Registrar evento de visita al dashboard
-    await recordEvent(request, {
-        type: "view",
-        name: "developer_dashboard",
-        value: {
-            user_id: user.id
-        }
-    });
 
     try {
+        // Registrar evento de visita al dashboard
+        await recordEvent(request, {
+            type: "view",
+            name: "developer_dashboard",
+            value: {
+                user_id: user.id
+            }
+        });
+
         // Obtener la actividad del usuario
         const { activity, headers } = await getUserActivity(request, 30);
 
-        // Si el usuario es desarrollador, devolvemos sus datos junto con datos de ejemplo
-        const token = await getAccessTokenFromCookies(request);
-
         // Datos de ejemplo para el dashboard, enriquecidos con estadísticas reales
-        const searchCriteria = [
+        const searchCriteria: SearchCriteria[] = [
             { id: 1, name: "Criterio residencial", area: "300-500", zone: "Norte", budget: "200M-400M", treatment: "Residencial" },
             { id: 2, name: "Criterio comercial", area: "400-800", zone: "Centro", budget: "500M-800M", treatment: "Comercial" }
         ];
 
-        const favoriteLots = [
+        const favoriteLots: FavoriteLot[] = [
             { id: 1, name: "Lote Residencial Norte", area: 350, price: 320000000, address: "Calle 123 #45-67", owner: "Juan Pérez", potentialValue: 400000000 },
             { id: 2, name: "Lote Comercial Centro", area: 520, price: 650000000, address: "Carrera 7 #25-30", owner: "Inversiones XYZ", potentialValue: 800000000 },
             { id: 3, name: "Lote Mixto Oeste", area: 420, price: 480000000, address: "Avenida 80 #65-43", owner: "María Rodríguez", potentialValue: 600000000 }
@@ -87,7 +67,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
 
         return json({
             user,
-            token,
+            token: await getAccessTokenFromCookies(request),
             searchCriteria,
             favoriteLots,
             stats,
@@ -104,7 +84,8 @@ export async function loader({ request }: LoaderFunctionArgs) {
             matches: 0,
             analyses: 0,
             savedSearches: 0,
-            contacts: 0
+            contacts: 0,
+            totalEvents: 0
         };
 
         return json({
@@ -131,10 +112,10 @@ export default function DeveloperDashboard() {
         useLoaderData<typeof loader>();
 
     return (
-        <div className="container mx-auto px-4 py-8">
+        <div>
             <header className="mb-8">
                 <h1 className="text-3xl font-bold">Panel de Desarrollador</h1>
-                <p className="text-gray-600">
+                <p className="text-gray-600 mt-2">
                     Bienvenido, {user.name}. Encuentra tu próxima oportunidad de desarrollo.
                 </p>
             </header>
@@ -246,7 +227,7 @@ export default function DeveloperDashboard() {
             <h2 className="text-xl font-bold mb-4">Accesos Rápidos</h2>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
                 <Link
-                    to="/lots/search"
+                    to="/developer/search"
                     className="bg-white rounded-lg shadow hover:shadow-md transition-shadow p-6 flex flex-col items-center text-center"
                 >
                     <div className="p-3 rounded-full bg-indigo-100 text-indigo-800 mb-4">
@@ -270,7 +251,7 @@ export default function DeveloperDashboard() {
                 </Link>
 
                 <Link
-                    to="/analisis-lote"
+                    to="/developer/analysis"
                     className="bg-white rounded-lg shadow hover:shadow-md transition-shadow p-6 flex flex-col items-center text-center"
                 >
                     <div className="p-3 rounded-full bg-blue-100 text-blue-800 mb-4">
@@ -294,7 +275,7 @@ export default function DeveloperDashboard() {
                 </Link>
 
                 <Link
-                    to="/favorites"
+                    to="/developer/favorites"
                     className="bg-white rounded-lg shadow hover:shadow-md transition-shadow p-6 flex flex-col items-center text-center"
                 >
                     <div className="p-3 rounded-full bg-red-100 text-red-800 mb-4">
@@ -318,7 +299,7 @@ export default function DeveloperDashboard() {
                 </Link>
 
                 <Link
-                    to="/search-criteria"
+                    to="/developer/investment"
                     className="bg-white rounded-lg shadow hover:shadow-md transition-shadow p-6 flex flex-col items-center text-center"
                 >
                     <div className="p-3 rounded-full bg-yellow-100 text-yellow-800 mb-4">
@@ -337,7 +318,7 @@ export default function DeveloperDashboard() {
                             />
                         </svg>
                     </div>
-                    <h3 className="font-semibold mb-1">Criterios de Búsqueda</h3>
+                    <h3 className="font-semibold mb-1">Criterios de Inversión</h3>
                     <p className="text-gray-500 text-sm">Configura tu tesis de inversión</p>
                 </Link>
             </div>
@@ -393,113 +374,152 @@ export default function DeveloperDashboard() {
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-gray-200">
-                            {searchCriteria.map((criteria, index) => (
-                                <tr key={index}>
-                                    <td className="px-6 py-4 whitespace-nowrap">
-                                        <div className="text-sm font-medium text-gray-900">
-                                            {criteria?.name}
-                                        </div>
-                                    </td>
-                                    <td className="px-6 py-4 whitespace-nowrap">
-                                        <div className="text-sm text-gray-900">
-                                            {criteria?.zone}
-                                        </div>
-                                    </td>
-                                    <td className="px-6 py-4 whitespace-nowrap">
-                                        <div className="text-sm text-gray-900">
-                                            {criteria?.area}
-                                        </div>
-                                    </td>
-                                    <td className="px-6 py-4 whitespace-nowrap">
-                                        <div className="text-sm text-gray-900">
-                                            {formatCurrency(Number(criteria?.budget))}
-                                        </div>
-                                    </td>
-                                    <td className="px-6 py-4 whitespace-nowrap">
-                                        <div className="text-sm text-gray-900">
-                                            {criteria?.treatment}
-                                        </div>
-                                    </td>
-                                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                                        <Link
-                                            to={`/lots/search?criteria=${index}`}
-                                            className="text-indigo-600 hover:text-indigo-900 mr-4"
-                                        >
-                                            Buscar
-                                        </Link>
-                                        <Link
-                                            to={`/search-criteria/${index}/edit`}
-                                            className="text-yellow-600 hover:text-yellow-900"
-                                        >
-                                            Editar
+                            {searchCriteria && searchCriteria.length > 0 ? (
+                                searchCriteria.map((criteria) => (
+                                    <tr key={criteria?.id}>
+                                        <td className="px-6 py-4 whitespace-nowrap">
+                                            <div className="text-sm font-medium text-gray-900">
+                                                {criteria?.name}
+                                            </div>
+                                        </td>
+                                        <td className="px-6 py-4 whitespace-nowrap">
+                                            <div className="text-sm text-gray-900">
+                                                {criteria?.zone}
+                                            </div>
+                                        </td>
+                                        <td className="px-6 py-4 whitespace-nowrap">
+                                            <div className="text-sm text-gray-900">
+                                                {criteria?.area}
+                                            </div>
+                                        </td>
+                                        <td className="px-6 py-4 whitespace-nowrap">
+                                            <div className="text-sm text-gray-900">
+                                                {criteria?.budget}
+                                            </div>
+                                        </td>
+                                        <td className="px-6 py-4 whitespace-nowrap">
+                                            <div className="text-sm text-gray-900">
+                                                {criteria?.treatment}
+                                            </div>
+                                        </td>
+                                        <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                                            <Link
+                                                to={`/developer/search?criteria=${criteria?.id}`}
+                                                className="text-indigo-600 hover:text-indigo-900 mr-4"
+                                            >
+                                                Buscar
+                                            </Link>
+                                            <Link
+                                                to={`/developer/investment/${criteria?.id}`}
+                                                className="text-yellow-600 hover:text-yellow-900"
+                                            >
+                                                Editar
+                                            </Link>
+                                        </td>
+                                    </tr>
+                                ))
+                            ) : (
+                                <tr>
+                                    <td colSpan={6} className="px-6 py-4 text-center text-gray-500">
+                                        No hay criterios de inversión guardados.
+                                        <Link to="/developer/investment/new" className="ml-2 text-indigo-600 hover:text-indigo-900">
+                                            Crear uno nuevo
                                         </Link>
                                     </td>
                                 </tr>
-                            ))}
+                            )}
                         </tbody>
                     </table>
+                </div>
+                <div className="mt-4 flex justify-end">
+                    <Link
+                        to="/developer/investment/new"
+                        className="px-4 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2"
+                    >
+                        Crear nuevo criterio
+                    </Link>
                 </div>
             </div>
 
             {/* Lotes Favoritos */}
             <h2 className="text-xl font-bold mb-4">Lotes Favoritos</h2>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
-                {favoriteLots.map((lot) => (
-                    <div key={lot?.id} className="bg-white rounded-lg shadow overflow-hidden">
-                        <div className="p-6">
-                            <h3 className="font-bold text-lg mb-2">{lot?.address}</h3>
-                            <div className="grid grid-cols-2 gap-4 mb-4">
-                                <div>
-                                    <span className="text-gray-500 block text-sm">Área</span>
-                                    <span className="font-medium">{lot?.area} m²</span>
-                                </div>
-                                <div>
-                                    <span className="text-gray-500 block text-sm">Precio</span>
-                                    <span className="font-medium">{formatCurrency(lot?.price ?? 0)}</span>
-                                </div>
-                                <div>
-                                    <span className="text-gray-500 block text-sm">Valor Potencial</span>
-                                    <span className="font-medium text-green-600">
-                                        {formatCurrency(lot?.potentialValue ?? 0)}
-                                    </span>
-                                </div>
-                                <div>
-                                    <span className="text-gray-500 block text-sm">ROI Estimado</span>
-                                    <span className="font-medium text-green-600">
-                                        {Math.round(
-                                            (((lot?.potentialValue ?? 0) - (lot?.price ?? 1)) / (lot?.price ?? 1)) * 100
-                                        )}
-                                        %
-                                    </span>
+                {favoriteLots && favoriteLots.length > 0 ? (
+                    favoriteLots.map((lot) =>
+                        lot ? (
+                            <div key={lot.id} className="bg-white rounded-lg shadow overflow-hidden">
+                                <div className="p-6">
+                                    <h3 className="font-bold text-lg mb-2">{lot.name}</h3>
+                                    <p className="text-gray-500 mb-4">{lot.address}</p>
+                                    <div className="grid grid-cols-2 gap-4 mb-4">
+                                        <div>
+                                            <span className="text-gray-500 block text-sm">Área</span>
+                                            <span className="font-medium">{lot.area} m²</span>
+                                        </div>
+                                        <div>
+                                            <span className="text-gray-500 block text-sm">Precio</span>
+                                            <span className="font-medium">{formatCurrency(lot.price)}</span>
+                                        </div>
+                                        <div>
+                                            <span className="text-gray-500 block text-sm">Valor Potencial</span>
+                                            <span className="font-medium text-green-600">
+                                                {formatCurrency(lot.potentialValue)}
+                                            </span>
+                                        </div>
+                                        <div>
+                                            <span className="text-gray-500 block text-sm">ROI Estimado</span>
+                                            <span className="font-medium text-green-600">
+                                                {Math.round(
+                                                    ((lot.potentialValue - lot.price) / lot.price) * 100
+                                                )}
+                                                %
+                                            </span>
+                                        </div>
+                                    </div>
+                                    <div className="flex justify-end space-x-3">
+                                        <Link
+                                            to={`/developer/lots/${lot.id}`}
+                                            className="text-indigo-600 hover:text-indigo-900"
+                                        >
+                                            Ver Detalles
+                                        </Link>
+                                        <Link
+                                            to={`/developer/analysis/${lot.id}`}
+                                            className="text-blue-600 hover:text-blue-900"
+                                        >
+                                            Análisis
+                                        </Link>
+                                    </div>
                                 </div>
                             </div>
-                            <div className="flex justify-end space-x-3">
-                                <Link
-                                    to={`/lots/${lot?.id}`}
-                                    className="text-indigo-600 hover:text-indigo-900"
-                                >
-                                    Ver Detalles
-                                </Link>
-                                <Link
-                                    to={`/analisis-lote/${lot?.id}`}
-                                    className="text-blue-600 hover:text-blue-900"
-                                >
-                                    Análisis
-                                </Link>
-                            </div>
-                        </div>
+                        ) : null
+                    )
+                ) : (
+                    <div className="col-span-2 bg-white p-6 rounded-lg shadow text-center">
+                        <svg className="h-12 w-12 text-gray-400 mx-auto mb-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
+                        </svg>
+                        <p className="text-gray-500 mb-3">No tienes lotes favoritos aún.</p>
+                        <Link
+                            to="/developer/search"
+                            className="text-indigo-600 hover:text-indigo-900"
+                        >
+                            Buscar lotes disponibles
+                        </Link>
                     </div>
-                ))}
+                )}
             </div>
 
-            <div className="text-center">
-                <Link
-                    to="/favorites"
-                    className="inline-block bg-indigo-600 hover:bg-indigo-700 text-white py-2 px-4 rounded"
-                >
-                    Ver Todos mis Favoritos
-                </Link>
-            </div>
+            {favoriteLots && favoriteLots.length > 0 && (
+                <div className="text-center">
+                    <Link
+                        to="/developer/favorites"
+                        className="inline-block bg-indigo-600 hover:bg-indigo-700 text-white py-2 px-4 rounded"
+                    >
+                        Ver Todos mis Favoritos
+                    </Link>
+                </div>
+            )}
         </div>
     );
 }

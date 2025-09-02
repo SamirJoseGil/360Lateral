@@ -1,4 +1,5 @@
-import { API_URL, fetchWithAuth } from "~/utils/auth.server";
+import { API_URL, fetchWithAuth, getAccessTokenFromCookies } from "~/utils/auth.server";
+import { v4 as uuid } from "uuid";
 
 // Constante para la URL base de la API de estadísticas
 const STATS_API_URL = `${API_URL}/api/stats`;
@@ -62,29 +63,48 @@ export async function recordEvent(request: Request, eventData: EventData) {
   console.log(`[Stats] Registrando evento: ${eventData.type} - ${eventData.name}`);
   
   try {
-    const { res, setCookieHeaders } = await fetchWithAuth(request, `${STATS_API_URL}/events/record/`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify(eventData)
-    });
+    const token = await getAccessTokenFromCookies(request);
+    const sessionId = getOrCreateSessionId(request);
     
-    if (!res.ok) {
-      console.error(`[Stats] Error registrando evento: ${res.status}`);
-      throw new Error(`Error registrando evento: ${res.status}`);
+    const headers = new Headers();
+    
+    // Si no hay token, aún registraremos eventos anónimos
+    const authHeader = token ? `Bearer ${token}` : "";
+    
+    // Establecer cookies independientemente del éxito de la llamada a la API
+    headers.append("Set-Cookie", `l360_stats_sid=${sessionId}; Path=/; Max-Age=${60 * 60 * 24 * 365}; HttpOnly; SameSite=Lax`);
+    
+    // Sin necesidad de llamar realmente a la API en desarrollo
+    if (process.env.NODE_ENV === "development") {
+      console.log("Evento de estadísticas:", eventData);
+      return { success: true, headers };
     }
     
-    const data = await res.json();
-    return {
-      event: data,
-      headers: setCookieHeaders
+    // Llamar a la API de estadísticas
+    const apiUrl = process.env.API_URL || "http://localhost:8000";
+    const response = await fetch(`${apiUrl}/api/stats/record`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(authHeader ? { Authorization: authHeader } : {})
+      },
+      body: JSON.stringify({
+        session_id: sessionId,
+        type: eventData.type,
+        name: eventData.name,
+        value: eventData.value || {}
+      })
+    });
+    
+    // Devolver resultado con cookie de sesión
+    return { 
+      success: response.ok,
+      headers
     };
   } catch (error) {
-    console.error("[Stats] Error en recordEvent:", error);
-    // No lanzamos error para evitar interrumpir el flujo de la aplicación
-    return {
-      event: null,
+    console.error("Error registrando evento:", error);
+    return { 
+      success: false,
       headers: new Headers()
     };
   }
@@ -95,21 +115,79 @@ export async function getLatestSummary(request: Request) {
   console.log("[Stats] Obteniendo resumen diario más reciente");
   
   try {
-    const { res, setCookieHeaders } = await fetchWithAuth(request, `${STATS_API_URL}/summaries/latest/`);
+    const token = await getAccessTokenFromCookies(request);
+    const headers = new Headers();
     
-    if (!res.ok) {
-      console.error(`[Stats] Error obteniendo resumen: ${res.status}`);
-      throw new Error(`Error obteniendo resumen: ${res.status}`);
+    // Datos simulados para desarrollo
+    if (process.env.NODE_ENV === "development" || !token) {
+      return {
+        summary: {
+          timestamp: new Date().toISOString(),
+          metrics: {
+            unique_users: 128,
+            unique_sessions: 187,
+            total_events: 423,
+            events_by_type: {
+              view: 156,
+              search: 124,
+              action: 87,
+              error: 56
+            },
+            top_events: [
+              { name: "home_view", count: 52 },
+              { name: "lot_search", count: 35 },
+              { name: "document_upload", count: 22 },
+              { name: "analysis_report", count: 18 }
+            ]
+          }
+        },
+        headers
+      };
     }
     
-    const data = await res.json();
+    const apiUrl = process.env.API_URL || "http://localhost:8000";
+    const response = await fetch(`${apiUrl}/api/stats/summary`, {
+      headers: { 
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json"
+      }
+    });
+    
+    if (!response.ok) {
+      return {
+        summary: {
+          timestamp: new Date().toISOString(),
+          metrics: {
+            unique_users: 0,
+            unique_sessions: 0,
+            total_events: 0,
+            events_by_type: {}
+          }
+        },
+        headers
+      };
+    }
+    
+    const data = await response.json();
+    
     return {
       summary: data,
-      headers: setCookieHeaders
+      headers
     };
   } catch (error) {
-    console.error("[Stats] Error en getLatestSummary:", error);
-    throw error;
+    console.error("Error fetching summary:", error);
+    return { 
+      summary: {
+        timestamp: new Date().toISOString(),
+        metrics: {
+          unique_users: 0,
+          unique_sessions: 0,
+          total_events: 0,
+          events_by_type: {}
+        }
+      }, 
+      headers: new Headers() 
+    };
   }
 }
 
@@ -123,32 +201,59 @@ export async function getStatsOverTime(request: Request, options: {
   console.log(`[Stats] Obteniendo estadísticas a lo largo del tiempo: ${JSON.stringify(options)}`);
   
   try {
-    // Construir URL con parámetros
-    let url = `${STATS_API_URL}/over-time/`;
-    const params = new URLSearchParams();
+    const token = await getAccessTokenFromCookies(request);
+    const headers = new Headers();
     
-    if (options.start_date) params.append('start_date', options.start_date);
-    if (options.end_date) params.append('end_date', options.end_date);
-    if (options.interval) params.append('interval', options.interval);
-    if (options.type) params.append('type', options.type);
-    
-    if (params.toString()) url += `?${params.toString()}`;
-    
-    const { res, setCookieHeaders } = await fetchWithAuth(request, url);
-    
-    if (!res.ok) {
-      console.error(`[Stats] Error obteniendo estadísticas temporales: ${res.status}`);
-      throw new Error(`Error obteniendo estadísticas temporales: ${res.status}`);
+    // Datos simulados para desarrollo
+    if (process.env.NODE_ENV === "development" || !token) {
+      const now = new Date();
+      const defaultEnd = now.toISOString().split('T')[0];
+      const defaultStart = new Date(now.getTime() - 29 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+      const mockData = generateMockTimeSeriesData({
+        start_date: options.start_date || defaultStart,
+        end_date: options.end_date || defaultEnd,
+        interval: options.interval,
+        type: options.type
+      });
+      return {
+        timeSeriesData: mockData,
+        headers
+      };
     }
     
-    const data = await res.json();
+    // Construir cadena de consulta
+    const queryParams = new URLSearchParams();
+    for (const [key, value] of Object.entries(options)) {
+      if (value) queryParams.append(key, value);
+    }
+    
+    const apiUrl = process.env.API_URL || "http://localhost:8000";
+    const response = await fetch(`${apiUrl}/api/stats/time-series?${queryParams.toString()}`, {
+      headers: { 
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json"
+      }
+    });
+    
+    if (!response.ok) {
+      return {
+        timeSeriesData: [],
+        headers
+      };
+    }
+    
+    const data = await response.json();
+    
     return {
-      timeSeriesData: data,
-      headers: setCookieHeaders
+      timeSeriesData: data.results || [],
+      headers
     };
   } catch (error) {
-    console.error("[Stats] Error en getStatsOverTime:", error);
-    throw error;
+    console.error("Error fetching stats over time:", error);
+    return { 
+      timeSeriesData: [], 
+      headers: new Headers() 
+    };
   }
 }
 
@@ -157,24 +262,38 @@ export async function getUserActivity(request: Request, days?: number) {
   console.log(`[Stats] Obteniendo actividad del usuario: ${days || 30} días`);
   
   try {
-    let url = `${STATS_API_URL}/user-activity/`;
-    if (days) url += `?days=${days}`;
+    const token = await getAccessTokenFromCookies(request);
+    const headers = new Headers();
     
-    const { res, setCookieHeaders } = await fetchWithAuth(request, url);
-    
-    if (!res.ok) {
-      console.error(`[Stats] Error obteniendo actividad del usuario: ${res.status}`);
-      throw new Error(`Error obteniendo actividad del usuario: ${res.status}`);
+    // Sin token, no se puede obtener actividad del usuario
+    if (!token) {
+      return { activity: null, headers };
     }
     
-    const data = await res.json();
+    const apiUrl = process.env.API_URL || "http://localhost:8000";
+    const response = await fetch(`${apiUrl}/api/stats/user-activity?days=${days || 30}`, {
+      headers: { 
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json"
+      }
+    });
+    
+    if (!response.ok) {
+      return { activity: null, headers };
+    }
+    
+    const data = await response.json();
+    
     return {
       activity: data,
-      headers: setCookieHeaders
+      headers
     };
   } catch (error) {
-    console.error("[Stats] Error en getUserActivity:", error);
-    throw error;
+    console.error("Error fetching user activity:", error);
+    return { 
+      activity: null, 
+      headers: new Headers() 
+    };
   }
 }
 
@@ -183,68 +302,116 @@ export async function getAdminDashboardStats(request: Request, days?: number) {
   console.log(`[Stats] Obteniendo estadísticas de dashboard admin: ${days || 30} días`);
   
   try {
-    let url = `${STATS_API_URL}/dashboard/`;
-    if (days) url += `?days=${days}`;
+    const token = await getAccessTokenFromCookies(request);
+    const headers = new Headers();
     
-    const { res, setCookieHeaders } = await fetchWithAuth(request, url);
-    
-    if (!res.ok) {
-      console.error(`[Stats] Error obteniendo estadísticas de dashboard admin: ${res.status}`);
-      throw new Error(`Error obteniendo estadísticas de dashboard admin: ${res.status}`);
+    if (process.env.NODE_ENV === "development" || !token) {
+      // Devolver datos simulados
+      return {
+        dashboardStats: {
+          unique_users: 128,
+          daily_data: Array.from({ length: 30 }, (_, i) => ({
+            date: new Date(Date.now() - i * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+            metrics: {
+              total_events: 45 + Math.floor(Math.random() * 20),
+              events_by_type: {
+                view: 20 + Math.floor(Math.random() * 10),
+                search: 15 + Math.floor(Math.random() * 10),
+                action: 5 + Math.floor(Math.random() * 5),
+                error: 5 + Math.floor(Math.random() * 5)
+              }
+            }
+          })),
+          total_events: 1200
+        },
+        headers
+      };
     }
     
-    const data = await res.json();
+    const apiUrl = process.env.API_URL || "http://localhost:8000";
+    const response = await fetch(`${apiUrl}/api/stats/admin-dashboard`, {
+      headers: { 
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json"
+      }
+    });
+    
+    if (!response.ok) {
+      throw new Error(`Error en la API: ${response.status}`);
+    }
+    
+    const data = await response.json();
+    
     return {
       dashboardStats: data,
-      headers: setCookieHeaders
+      headers
     };
   } catch (error) {
-    console.error("[Stats] Error en getAdminDashboardStats:", error);
-    throw error;
-  }
-}
-
-// Función para obtener actividad de un usuario específico (solo admin)
-export async function getUserActivityById(request: Request, userId: string, days?: number) {
-  console.log(`[Stats] Obteniendo actividad del usuario ${userId}: ${days || 30} días`);
-  
-  try {
-    let url = `${STATS_API_URL}/user-activity/${userId}/`;
-    if (days) url += `?days=${days}`;
-    
-    const { res, setCookieHeaders } = await fetchWithAuth(request, url);
-    
-    if (!res.ok) {
-      console.error(`[Stats] Error obteniendo actividad del usuario ${userId}: ${res.status}`);
-      throw new Error(`Error obteniendo actividad del usuario ${userId}: ${res.status}`);
-    }
-    
-    const data = await res.json();
-    return {
-      activity: data,
-      headers: setCookieHeaders
+    console.error("Error fetching admin dashboard stats:", error);
+    return { 
+      dashboardStats: {
+        unique_users: 0,
+        daily_data: [],
+        total_events: 0
+      }, 
+      headers: new Headers() 
     };
-  } catch (error) {
-    console.error(`[Stats] Error en getUserActivityById (${userId}):`, error);
-    throw error;
   }
 }
 
 // Utility function - Get session ID from cookies or generate one
 export function getOrCreateSessionId(request: Request): string {
-  const cookieHeader = request.headers.get("Cookie");
-  if (!cookieHeader) return generateSessionId();
-  
-  const cookies = cookieHeader.split(';').map(c => c.trim());
-  const sessionCookie = cookies.find(c => c.startsWith('l360_session_id='));
+  // Verificar cookies en busca de un ID de sesión existente
+  const cookieHeader = request.headers.get("Cookie") || "";
+  const cookies = cookieHeader.split(";").map(cookie => cookie.trim());
+  const sessionCookie = cookies.find(cookie => cookie.startsWith("l360_stats_sid="));
   
   if (sessionCookie) {
-    return sessionCookie.split('=')[1];
+    return sessionCookie.split("=")[1];
   }
   
-  return generateSessionId();
+  // No se encontró ningún ID de sesión, crear uno nuevo
+  return uuid();
 }
 
-function generateSessionId(): string {
-  return `s_${Math.random().toString(36).substring(2, 15)}${Math.random().toString(36).substring(2, 15)}`;
+// Helper function to generate mock time series data
+function generateMockTimeSeriesData(params: {
+  start_date: string;
+  end_date: string;
+  interval?: string;
+  type?: string;
+}) {
+  const start = new Date(params.start_date);
+  const end = new Date(params.end_date);
+  
+  const data = [];
+  const currentDate = new Date(start);
+  
+  // Determinar tamaño del paso según el intervalo
+  let step = 1;
+  let stepUnit: 'day' | 'month' = 'day';
+  
+  if (params.interval === 'week') {
+    step = 7;
+  } else if (params.interval === 'month') {
+    stepUnit = 'month';
+  }
+  
+  // Generar puntos de datos
+  while (currentDate <= end) {
+    data.push({
+      period: currentDate.toISOString().split('T')[0],
+      count: Math.floor(Math.random() * 50) + 10,
+      type: params.type || 'all'
+    });
+    
+    // Avanzar al siguiente período
+    if (stepUnit === 'day') {
+      currentDate.setDate(currentDate.getDate() + step);
+    } else {
+      currentDate.setMonth(currentDate.getMonth() + step);
+    }
+  }
+  
+  return data;
 }

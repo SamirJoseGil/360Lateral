@@ -1,98 +1,93 @@
-import { createContext, useContext, useEffect } from "react";
-import { useLocation, useMatches } from "@remix-run/react";
+import React, { createContext, useContext, useEffect } from 'react';
+import { useLocation, useMatches } from '@remix-run/react';
 
-// Tipo para los eventos de estadísticas
-type EventType = 'view' | 'search' | 'action' | 'api' | 'error' | 'other';
-
-// Contexto para el rastreador de estadísticas
+// Context for stats tracking
 type StatsContextType = {
-    recordEvent: (type: EventType, name: string, value?: Record<string, any>) => void;
+    trackEvent: (eventType: string, eventName: string, eventValue?: any) => void;
     sessionId: string;
 };
 
 const StatsContext = createContext<StatsContextType | undefined>(undefined);
 
-// Hook personalizado para usar el contexto de estadísticas
-export function useStats() {
-    const context = useContext(StatsContext);
-    if (context === undefined) {
-        throw new Error('useStats debe ser usado dentro de un StatsProvider');
-    }
-    return context;
-}
-
-// Función para enviar el evento al servidor
-async function sendEventToServer(data: any) {
-    try {
-        // Usamos fetch directamente ya que esto se ejecuta en el cliente
-        await fetch('/api/stats/record', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify(data),
-        });
-    } catch (error) {
-        console.error('Error al enviar evento estadístico:', error);
-    }
-}
-
-// Componente proveedor de contexto para estadísticas
+// Provider component
 export function StatsProvider({
     children,
-    sessionId = ''
+    sessionId = 'unknown-session'
 }: {
     children: React.ReactNode;
-    sessionId?: string;
+    sessionId: string;
 }) {
     const location = useLocation();
     const matches = useMatches();
 
-    // Obtener o generar un sessionId
-    const actualSessionId = sessionId || getOrCreateSessionId();
+    // Track page view when location changes
+    useEffect(() => {
+        trackPageView(location.pathname);
+    }, [location]);
 
-    // Función para registrar un evento
-    const recordEvent = (type: EventType, name: string, value: Record<string, any> = {}) => {
-        const eventData = {
-            type,
-            name,
-            value,
-            session_id: actualSessionId,
-            timestamp: new Date().toISOString(),
-            url: window.location.href
-        };
+    // Function to track events
+    const trackEvent = async (eventType: string, eventName: string, eventValue?: any) => {
+        try {
+            // Map event type to our standard types
+            const mappedType = mapEventType(eventType);
 
-        // Enviarlo al servidor
-        sendEventToServer(eventData);
+            // Send to server endpoint
+            await fetch('/api/stats/record', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    type: mappedType,
+                    name: eventName,
+                    value: eventValue || {},
+                    session_id: sessionId
+                }),
+            });
+        } catch (error) {
+            // Fail silently in production, log in development
+            if (process.env.NODE_ENV !== 'production') {
+                console.error('Error tracking event:', error);
+            }
+        }
     };
 
-    // Registrar automáticamente eventos de visualización de página
-    useEffect(() => {
-        // Encontrar el ID de la ruta y su handle para obtener información sobre la página
-        const routeId = matches[matches.length - 1]?.id || '';
-        const routeHandle = matches[matches.length - 1]?.handle || {};
+    // Track page view
+    const trackPageView = (path: string) => {
+        trackEvent('view', `page_view`, { path });
+    };
 
-        // Crear un nombre descriptivo para la página
-        let pageName = routeId;
-        if ((routeHandle as any).pageName) {
-            pageName = (routeHandle as any).pageName;
-        }
+    // Map event types to standard types
+    const mapEventType = (type: string): string => {
+        const typeMap: Record<string, string> = {
+            'view': 'view',
+            'click': 'action',
+            'search': 'search',
+            'error': 'error',
+            'submit': 'action',
+            'success': 'action',
+            'failure': 'error'
+        };
 
-        // Registrar evento de visualización
-        recordEvent('view', `page_view_${pageName}`, {
-            path: location.pathname,
-            search: location.search,
-            referrer: document.referrer
-        });
-
-    }, [location.pathname, location.search]);
+        return typeMap[type.toLowerCase()] || 'other';
+    };
 
     return (
-        <StatsContext.Provider value={{ recordEvent, sessionId: actualSessionId }}>
+        <StatsContext.Provider value={{ trackEvent, sessionId }}>
             {children}
         </StatsContext.Provider>
     );
 }
+
+// Hook for using stats
+export function useStats() {
+    const context = useContext(StatsContext);
+    if (context === undefined) {
+        throw new Error('useStats must be used within a StatsProvider');
+    }
+    return context;
+}
+// (Removed duplicate and erroneous return/provider code)
 
 // Función para obtener o crear un sessionId
 function getOrCreateSessionId(): string {

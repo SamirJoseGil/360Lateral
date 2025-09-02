@@ -6,20 +6,19 @@ const BASE_URL = "http://localhost:8000/api/lotes/public/";
 
 // Tipos para los datos de MapGIS actualizados según la nueva respuesta del backend
 export type UsoSuelo = {
-  porcentaje: number;
   categoria_uso: string;
   subcategoria_uso: string;
 };
 
 export type AprovechamientoUrbano = {
   tratamiento: string;
-  densidad_habitacional_max: number;
-  altura_normativa: string;
+  densidad_habitacional_max?: number;
+  altura_normativa?: string;
 };
 
 export type RestriccionesAmbientales = {
-  amenaza_riesgo: string;
-  retiros_rios: string;
+  amenaza_riesgo?: string;
+  retiros_rios?: string;
 };
 
 // Tipo para los resultados de búsqueda por CBML o matrícula

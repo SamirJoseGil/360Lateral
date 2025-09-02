@@ -1,5 +1,5 @@
 // app/utils/auth.server.ts
-import { createCookie, json, redirect } from "@remix-run/node";
+import { createCookie, json, redirect, createCookieSessionStorage } from "@remix-run/node";
 import type { HeadersFunction } from "@remix-run/node";
 import { ENV, isProd } from "~/env.server";
 import { isExpired } from "./jwt.server";
@@ -35,6 +35,19 @@ const refreshTokenCookie = createCookie("l360_refresh", {
   sameSite: "lax",
   path: "/",
   maxAge: 60 * 60 * 24 * 7, // 7 días
+});
+
+// Session storage
+export const sessionStorage = createCookieSessionStorage({
+  cookie: {
+    name: "l360_session",
+    httpOnly: true,
+    maxAge: 60 * 60 * 24 * 30, // 30 días
+    path: "/",
+    sameSite: "lax",
+    secrets: [process.env.SESSION_SECRET || "dev-secret-key"],
+    secure: process.env.NODE_ENV === "production",
+  },
 });
 
 // Helpers para setear/limpiar en headers
@@ -342,7 +355,6 @@ export async function getUser(request: Request): Promise<any | null> {
     return null;
   }
 }
-
 
 // Función que analiza directamente las cookies en la solicitud para obtener el token de acceso
 export async function getAccessTokenFromCookies(request: Request): Promise<string | null> {
