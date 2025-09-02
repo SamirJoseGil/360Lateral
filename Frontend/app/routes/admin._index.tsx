@@ -2,43 +2,83 @@ import { json } from "@remix-run/node";
 import { useLoaderData } from "@remix-run/react";
 import type { LoaderFunctionArgs } from "@remix-run/node";
 import { getUser } from "~/utils/auth.server";
-import { getAdminDashboardStats } from "~/services/stats.server";
+import {
+    getAdminDashboardStats,
+    recordEvent,
+    getUsersStats,
+    getLotesStats,
+    getDocumentosStats,
+    getRecentActivity
+} from "~/services/stats.server";
 import { useState } from "react";
-
-export async function loader({ request }: LoaderFunctionArgs) {
+import { usePageView } from "~/hooks/useStats"; export async function loader({ request }: LoaderFunctionArgs) {
     // El usuario ya ha sido verificado en el layout padre
     const user = await getUser(request);
 
     try {
-        // Obtener estadísticas del dashboard administrativo (últimos 30 días)
-        const { dashboardStats, headers } = await getAdminDashboardStats(request);
-
         // Registrar el evento de vista del dashboard
         try {
-            await fetch('/api/stats/record', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({
-                    type: 'view',
-                    name: 'admin_dashboard',
-                    value: { user_id: user.id }
-                }),
+            await recordEvent(request, {
+                type: 'view',
+                name: 'admin_dashboard_view',
+                value: { user_id: user.id }
             });
         } catch (error) {
-            console.error("Error recording stats event:", error);
+            console.error("Error al registrar evento de estadísticas:", error);
         }
+
+        // Obtener todos los datos del dashboard usando los endpoints específicos
+        const [
+            dashboardResponse,
+            usersResponse,
+            lotesResponse,
+            documentosResponse,
+            recentActivityResponse
+        ] = await Promise.all([
+            getAdminDashboardStats(request),
+            getUsersStats(request),
+            getLotesStats(request),
+            getDocumentosStats(request),
+            getRecentActivity(request, 7) // últimos 7 días
+        ]);
+
+        const { dashboardStats } = dashboardResponse;
+        const { usersStats } = usersResponse;
+        const { lotesStats } = lotesResponse;
+        const { documentosStats } = documentosResponse;
+        const { recentActivity } = recentActivityResponse;
+
+        // Combinar todos los headers para mantener cookies
+        const headers = new Headers();
+        [
+            dashboardResponse.headers,
+            usersResponse.headers,
+            lotesResponse.headers,
+            documentosResponse.headers,
+            recentActivityResponse.headers
+        ].forEach(h => {
+            if (h) {
+                for (const [key, value] of h.entries()) {
+                    headers.append(key, value);
+                }
+            }
+        });
 
         return json({
             user,
             stats: {
-                users: dashboardStats.unique_users || 0,
-                activeProjects: dashboardStats.daily_data?.[dashboardStats.daily_data.length - 1]?.metrics?.total_events || 0,
-                pendingValidations: dashboardStats.daily_data?.[0]?.metrics?.events_by_type?.error || 12,
-                recentActivity: dashboardStats.total_events || 0
+                users: usersStats.total || dashboardStats.unique_users || 0,
+                activeProjects: lotesStats.activos || dashboardStats.daily_data?.[dashboardStats.daily_data.length - 1]?.metrics?.total_events || 0,
+                pendingValidations: documentosStats.pendientes || dashboardStats.daily_data?.[0]?.metrics?.events_by_type?.error || 12,
+                recentActivity: recentActivity.recent_events?.length || dashboardStats.total_events || 0
             },
             rawStats: dashboardStats,
+            detailedStats: {
+                users: usersStats,
+                lotes: lotesStats,
+                documentos: documentosStats,
+                recentActivity: recentActivity
+            },
             error: null
         }, { headers });
     } catch (error) {
@@ -53,17 +93,31 @@ export async function loader({ request }: LoaderFunctionArgs) {
                 pendingValidations: 12,
                 recentActivity: 37
             },
+            rawStats: {},
+            detailedStats: {
+                users: {},
+                lotes: {},
+                documentos: {},
+                recentActivity: {}
+            },
             error: "No se pudieron cargar los datos en tiempo real. Mostrando datos de respaldo."
         });
     }
 }
 
 export default function AdminDashboard() {
-    const { user, stats, error } = useLoaderData<typeof loader>();
+    const { user, stats, error, detailedStats } = useLoaderData<typeof loader>();
 
-    return (
+    // Estado para mostrar/ocultar secciones del dashboard
+    const [activeTab, setActiveTab] = useState<'resumen' | 'actividad' | 'documentos'>('resumen');
+
+    // Registrar vista de página en el cliente
+    usePageView('admin_dashboard_client_view', {
+        user_id: user.id
+    }, [user.id]); return (
         <div>
-            <h1 className="text-3xl font-bold mb-8">Panel de Administración</h1>
+            <h1 className="text-3xl font-bold mb-4">Panel de Administración</h1>
+            <p className="text-gray-600 mb-8">Bienvenido al panel de control de 360Lateral.</p>
 
             {typeof error === "string" && (
                 <div className="mb-6 bg-yellow-50 border-l-4 border-yellow-400 p-4">
@@ -80,6 +134,40 @@ export default function AdminDashboard() {
                 </div>
             )}
 
+            {/* Tabs para navegar entre secciones */}
+            <div className="border-b border-gray-200 mb-6">
+                <nav className="-mb-px flex space-x-6">
+                    <button
+                        onClick={() => setActiveTab('resumen')}
+                        className={`py-4 px-1 border-b-2 font-medium text-sm ${activeTab === 'resumen'
+                            ? 'border-blue-500 text-blue-600'
+                            : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                            }`}
+                    >
+                        Resumen General
+                    </button>
+                    <button
+                        onClick={() => setActiveTab('actividad')}
+                        className={`py-4 px-1 border-b-2 font-medium text-sm ${activeTab === 'actividad'
+                            ? 'border-blue-500 text-blue-600'
+                            : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                            }`}
+                    >
+                        Actividad Reciente
+                    </button>
+                    <button
+                        onClick={() => setActiveTab('documentos')}
+                        className={`py-4 px-1 border-b-2 font-medium text-sm ${activeTab === 'documentos'
+                            ? 'border-blue-500 text-blue-600'
+                            : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                            }`}
+                    >
+                        Documentos
+                    </button>
+                </nav>
+            </div>
+
+            {/* Grid de tarjetas de estadísticas */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
                 {/* Tarjeta de estadísticas: Usuarios */}
                 <div className="bg-white rounded-lg shadow p-6">
@@ -145,7 +233,7 @@ export default function AdminDashboard() {
                 <div className="bg-white rounded-lg shadow p-6">
                     <div className="flex items-center justify-between">
                         <div>
-                            <p className="text-sm font-medium text-gray-500">Actividad Reciente</p>
+                            <p className="text-sm font-medium text-gray-500">Eventos Recientes</p>
                             <p className="text-3xl font-bold text-gray-900">{stats.recentActivity}</p>
                         </div>
                         <div className="bg-purple-100 p-3 rounded-full">
@@ -155,53 +243,210 @@ export default function AdminDashboard() {
                         </div>
                     </div>
                     <div className="mt-4">
-                        <a href="/admin/actividad" className="text-sm font-medium text-blue-600 hover:text-blue-500">
-                            Ver actividad
-                        </a>
+                        <button
+                            onClick={() => setActiveTab('actividad')}
+                            className="text-sm font-medium text-blue-600 hover:text-blue-500"
+                        >
+                            Ver actividad reciente
+                        </button>
                     </div>
                 </div>
             </div>
 
-            {/* Sección de bienvenida */}
-            <div className="mt-8 bg-white rounded-lg shadow p-6">
-                <h2 className="text-xl font-semibold mb-4">¡Bienvenido, {user.name}!</h2>
-                <p className="text-gray-600">
-                    Este es tu panel de administración centralizado. Desde aquí puedes gestionar usuarios,
-                    revisar validaciones pendientes, y ver análisis detallados de la plataforma.
-                </p>
-                <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-4">
-                    <div className="border rounded-lg p-4 hover:bg-gray-50">
-                        <h3 className="font-medium">Gestión de Usuarios</h3>
-                        <p className="text-sm text-gray-500 mt-1">Administra los usuarios de la plataforma</p>
-                        <a href="/admin/usuarios" className="mt-2 text-sm text-blue-600 flex items-center">
-                            Ir a Usuarios
-                            <svg className="h-4 w-4 ml-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7" />
-                            </svg>
-                        </a>
-                    </div>
-                    <div className="border rounded-lg p-4 hover:bg-gray-50">
-                        <h3 className="font-medium">Validación de Documentos</h3>
-                        <p className="text-sm text-gray-500 mt-1">Revisa y aprueba documentos pendientes</p>
-                        <a href="/admin/validacion" className="mt-2 text-sm text-blue-600 flex items-center">
-                            Ir a Validación
-                            <svg className="h-4 w-4 ml-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7" />
-                            </svg>
-                        </a>
-                    </div>
-                    <div className="border rounded-lg p-4 hover:bg-gray-50">
-                        <h3 className="font-medium">Análisis y Reportes</h3>
-                        <p className="text-sm text-gray-500 mt-1">Visualiza métricas y genera reportes</p>
-                        <a href="/admin/analisis" className="mt-2 text-sm text-blue-600 flex items-center">
-                            Ir a Análisis
-                            <svg className="h-4 w-4 ml-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7" />
-                            </svg>
-                        </a>
+            {/* Sección de contenido según la pestaña activa */}
+            {activeTab === 'resumen' && (
+                <div className="mt-8 bg-white rounded-lg shadow p-6">
+                    <h2 className="text-xl font-semibold mb-4">¡Bienvenido, {user.name}!</h2>
+                    <p className="text-gray-600">
+                        Este es tu panel de administración centralizado. Desde aquí puedes gestionar usuarios,
+                        revisar validaciones pendientes, y ver análisis detallados de la plataforma.
+                    </p>
+                    <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <div className="border rounded-lg p-4 hover:bg-gray-50">
+                            <h3 className="font-medium">Gestión de Usuarios</h3>
+                            <p className="text-sm text-gray-500 mt-1">Administra los usuarios de la plataforma</p>
+                            <a href="/admin/usuarios" className="mt-2 text-sm text-blue-600 flex items-center">
+                                Ir a Usuarios
+                                <svg className="h-4 w-4 ml-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7" />
+                                </svg>
+                            </a>
+                        </div>
+                        <div className="border rounded-lg p-4 hover:bg-gray-50">
+                            <h3 className="font-medium">Validación de Documentos</h3>
+                            <p className="text-sm text-gray-500 mt-1">Revisa y aprueba documentos pendientes</p>
+                            <a href="/admin/validacion" className="mt-2 text-sm text-blue-600 flex items-center">
+                                Ir a Validación
+                                <svg className="h-4 w-4 ml-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7" />
+                                </svg>
+                            </a>
+                        </div>
+                        <div className="border rounded-lg p-4 hover:bg-gray-50">
+                            <h3 className="font-medium">Análisis y Reportes</h3>
+                            <p className="text-sm text-gray-500 mt-1">Visualiza métricas y genera reportes</p>
+                            <a href="/admin/analisis" className="mt-2 text-sm text-blue-600 flex items-center">
+                                Ir a Análisis
+                                <svg className="h-4 w-4 ml-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7" />
+                                </svg>
+                            </a>
+                        </div>
                     </div>
                 </div>
-            </div>
+            )}
+
+            {activeTab === 'actividad' && (
+                <div className="mt-8 space-y-6">
+                    <div className="bg-white rounded-lg shadow overflow-hidden">
+                        <div className="p-6 border-b">
+                            <h2 className="text-lg font-semibold">Actividad Reciente</h2>
+                            <p className="text-gray-500 text-sm mt-1">Últimos eventos registrados en el sistema</p>
+                        </div>
+                        <div className="overflow-x-auto">
+                            <table className="w-full">
+                                <thead className="bg-gray-50">
+                                    <tr>
+                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Evento</th>
+                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Tipo</th>
+                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Usuario</th>
+                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Fecha</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="bg-white divide-y divide-gray-200">
+                                    {/* Eventos simulados si no tenemos datos reales */}
+                                    {(detailedStats?.recentActivity?.recent_events || [
+                                        { name: 'lote_detail', type: 'view', timestamp: new Date().toISOString(), user_id: 1 },
+                                        { name: 'search_lotes', type: 'search', timestamp: new Date(Date.now() - 5 * 60 * 1000).toISOString(), user_id: 2 },
+                                        { name: 'document_upload', type: 'action', timestamp: new Date(Date.now() - 15 * 60 * 1000).toISOString(), user_id: 3 },
+                                        { name: 'api_error', type: 'error', timestamp: new Date(Date.now() - 35 * 60 * 1000).toISOString(), user_id: 4 }
+                                    ]).slice(0, 10).map((event: { name: string; type: string; timestamp: string; user_id: number }, index: number) => (
+                                        <tr key={index}>
+                                            <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{event.name}</td>
+                                            <td className="px-6 py-4 whitespace-nowrap text-sm">
+                                                <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium
+                                                ${event.type === 'view' ? 'bg-blue-100 text-blue-800' :
+                                                        event.type === 'search' ? 'bg-green-100 text-green-800' :
+                                                            event.type === 'action' ? 'bg-purple-100 text-purple-800' :
+                                                                event.type === 'error' ? 'bg-red-100 text-red-800' : 'bg-gray-100 text-gray-800'}`}>
+                                                    {event.type}
+                                                </span>
+                                            </td>
+                                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">Usuario {event.user_id}</td>
+                                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                                {new Date(event.timestamp).toLocaleString()}
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                        <div className="bg-gray-50 px-6 py-4 border-t">
+                            <a href="/admin/estadisticas" className="text-sm font-medium text-blue-600 hover:text-blue-500">
+                                Ver todas las estadísticas
+                            </a>
+                        </div>
+                    </div>
+
+                    <div className="bg-white rounded-lg shadow p-6">
+                        <h2 className="text-lg font-semibold mb-4">Distribución por Tipo de Evento</h2>
+                        <div className="space-y-4">
+                            {Object.entries(detailedStats?.recentActivity?.activity_by_type || {
+                                view: 320,
+                                search: 145,
+                                action: 80,
+                                error: 12
+                            }).map(([type, count], index) => {
+                                const countNumber = Number(count);
+                                const total = Object.values(detailedStats?.recentActivity?.activity_by_type || {
+                                    view: 320,
+                                    search: 145,
+                                    action: 80,
+                                    error: 12
+                                }).reduce((a: number, b: any) => a + Number(b), 0);
+                                const percentage = (countNumber / total) * 100;
+
+                                return (
+                                    <div key={index}>
+                                        <div className="flex justify-between items-center mb-1">
+                                            <span className="text-sm font-medium">{type}</span>
+                                            <span className="text-sm text-gray-500">
+                                                {countNumber} ({percentage.toFixed(1)}%)
+                                            </span>
+                                        </div>
+                                        <div className="w-full bg-gray-200 rounded-full h-2.5">
+                                            <div
+                                                className="bg-blue-600 h-2.5 rounded-full"
+                                                style={{ width: `${percentage}%` }}
+                                            ></div>
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {activeTab === 'documentos' && (
+                <div className="mt-8 space-y-6">
+                    <div className="bg-white rounded-lg shadow p-6">
+                        <h2 className="text-lg font-semibold mb-4">Estadísticas de Documentos</h2>
+
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+                            <div className="bg-gray-50 p-4 rounded-lg">
+                                <h3 className="text-sm font-medium text-gray-500">Total Documentos</h3>
+                                <p className="text-2xl font-bold">
+                                    {detailedStats?.documentos?.total || 0}
+                                </p>
+                            </div>
+                            <div className="bg-gray-50 p-4 rounded-lg">
+                                <h3 className="text-sm font-medium text-gray-500">Documentos Pendientes</h3>
+                                <p className="text-2xl font-bold text-amber-600">
+                                    {detailedStats?.documentos?.pendientes || 0}
+                                </p>
+                            </div>
+                            <div className="bg-gray-50 p-4 rounded-lg">
+                                <h3 className="text-sm font-medium text-gray-500">Documentos Rechazados</h3>
+                                <p className="text-2xl font-bold text-red-600">
+                                    {detailedStats?.documentos?.rechazados || 0}
+                                </p>
+                            </div>
+                        </div>
+
+                        <div className="flex justify-end">
+                            <a href="/admin/validacion" className="text-sm font-medium text-blue-600 hover:text-blue-500">
+                                Ir a validación de documentos
+                            </a>
+                        </div>
+                    </div>
+
+                    <div className="bg-white rounded-lg shadow p-6">
+                        <h2 className="text-lg font-semibold mb-4">Estadísticas de Lotes</h2>
+
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+                            <div className="bg-gray-50 p-4 rounded-lg">
+                                <h3 className="text-sm font-medium text-gray-500">Total Lotes</h3>
+                                <p className="text-2xl font-bold">
+                                    {detailedStats?.lotes?.total || 0}
+                                </p>
+                            </div>
+                            <div className="bg-gray-50 p-4 rounded-lg">
+                                <h3 className="text-sm font-medium text-gray-500">Lotes Activos</h3>
+                                <p className="text-2xl font-bold text-green-600">
+                                    {detailedStats?.lotes?.activos || 0}
+                                </p>
+                            </div>
+                            <div className="bg-gray-50 p-4 rounded-lg">
+                                <h3 className="text-sm font-medium text-gray-500">Lotes Inactivos</h3>
+                                <p className="text-2xl font-bold text-gray-600">
+                                    {detailedStats?.lotes?.inactivos || 0}
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }

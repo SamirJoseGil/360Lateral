@@ -15,7 +15,7 @@ import "./tailwind.css";
 import { getUser } from "./utils/auth.server";
 import Navbar from "./components/navbar";
 import Footer from "./components/footer";
-import { StatsProvider } from "./components/StatsTracker";
+import { StatsProvider, PageViewTracker } from "./components/StatsTracker";
 import { getOrCreateSessionId } from "./services/stats.server";
 
 // 🔗 Cargar fuentes y estilos
@@ -94,55 +94,68 @@ export default function App() {
 
   return (
     <StatsProvider sessionId={data.sessionId}>
-      <div className="flex flex-col min-h-screen">
-        <Navbar user={currentUser} />
-        <main className="flex-grow">
-          <Outlet />
-        </main>
-        <Footer />
-      </div>
+      <html lang="es" className="h-full">
+        <head>
+          <meta charSet="utf-8" />
+          <meta name="viewport" content="width=device-width, initial-scale=1" />
+          <Meta />
+          <Links />
+        </head>
+        <body className="h-full">
+          {/* Stats tracking for all page views */}
+          <PageViewTracker />
 
-      {/* 
-        Script mejorado para detectar cambios en las cookies
-        y actualizar el estado de autenticación
-      */}
-      <script
-        dangerouslySetInnerHTML={{
-          __html: `
-            // Función para detectar cambios en las cookies
-            function checkCookieChanges() {
-              const currentCookies = document.cookie;
-              if (window.lastKnownCookies && window.lastKnownCookies !== currentCookies) {
-                console.log("Cookie changes detected");
-                
-                // Verificar específicamente si las cookies de autenticación fueron eliminadas
-                const hasAuthCookie = document.cookie.includes('l360_access=');
-                const hadAuthCookie = window.lastKnownCookies.includes('l360_access=');
-                
-                if (hadAuthCookie && !hasAuthCookie) {
-                  console.log("Auth cookies removed, refreshing app state");
-                  // Disparar un evento de cierre de sesión
-                  window.dispatchEvent(new CustomEvent('auth:logout'));
-                  // Recargar la página para actualizar todo el estado
-                  window.location.reload();
+          <div className="flex flex-col min-h-screen">
+            <Navbar user={currentUser} />
+            <main className="flex-grow">
+              <Outlet />
+            </main>
+            <Footer />
+          </div>
+
+          {/* 
+            Script mejorado para detectar cambios en las cookies
+            y actualizar el estado de autenticación
+          */}
+          <script
+            dangerouslySetInnerHTML={{
+              __html: `
+                // Función para detectar cambios en las cookies
+                function checkCookieChanges() {
+                  const currentCookies = document.cookie;
+                  if (window.lastKnownCookies && window.lastKnownCookies !== currentCookies) {
+                    console.log("Cookie changes detected");
+                    
+                    // Verificar específicamente si las cookies de autenticación fueron eliminadas
+                    const hasAuthCookie = document.cookie.includes('l360_access=');
+                    const hadAuthCookie = window.lastKnownCookies.includes('l360_access=');
+                    
+                    if (hadAuthCookie && !hasAuthCookie) {
+                      console.log("Auth cookies removed, refreshing app state");
+                      // Disparar un evento de cierre de sesión
+                      window.dispatchEvent(new CustomEvent('auth:logout'));
+                      // Recargar la página para actualizar todo el estado
+                      window.location.reload();
+                    }
+                  }
+                  window.lastKnownCookies = currentCookies;
                 }
-              }
-              window.lastKnownCookies = currentCookies;
-            }
-            
-            // Establecer el estado inicial de las cookies
-            window.lastKnownCookies = document.cookie;
-            
-            // Comprobar cambios cada 500ms
-            setInterval(checkCookieChanges, 500);
-            
-            // También escuchar evento personalizado
-            window.addEventListener('auth:logout', function() {
-              console.log("Auth logout event detected, refreshing");
-            });
-          `,
-        }}
-      />
+                
+                // Establecer el estado inicial de las cookies
+                window.lastKnownCookies = document.cookie;
+                
+                // Comprobar cambios cada 500ms
+                setInterval(checkCookieChanges, 500);
+                
+                // También escuchar evento personalizado
+                window.addEventListener('auth:logout', function() {
+                  console.log("Auth logout event detected, refreshing");
+                });
+              `,
+            }}
+          />
+        </body>
+      </html>
     </StatsProvider>
   );
 }

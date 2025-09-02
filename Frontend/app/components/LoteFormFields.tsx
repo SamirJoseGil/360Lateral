@@ -373,58 +373,6 @@ export default function LoteFormFields({
                     onChange={onInputChange}
                 ></textarea>
             </div>
-
-            {/* Ubicación geográfica */}
-            <div className="col-span-2">
-                <div className="flex items-center mb-2">
-                    <input
-                        type="checkbox"
-                        id="ubicacion"
-                        checked={usarUbicacion}
-                        onChange={() => setUsarUbicacion(!usarUbicacion)}
-                        className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded"
-                    />
-                    <label htmlFor="ubicacion" className="ml-2 block text-sm text-gray-700">
-                        Especificar ubicación geográfica
-                    </label>
-                </div>
-
-                {usarUbicacion && (
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-3 border-t border-gray-200 pt-4">
-                        <div className="space-y-1">
-                            <label htmlFor="latitud" className="block text-sm font-medium text-gray-700">
-                                Latitud
-                            </label>
-                            <input
-                                type="number"
-                                step="0.000001"
-                                id="latitud"
-                                name="latitud"
-                                placeholder="Ej: 6.244203"
-                                className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
-                                value={formValues.latitud}
-                                onChange={onInputChange}
-                            />
-                        </div>
-
-                        <div className="space-y-1">
-                            <label htmlFor="longitud" className="block text-sm font-medium text-gray-700">
-                                Longitud
-                            </label>
-                            <input
-                                type="number"
-                                step="0.000001"
-                                id="longitud"
-                                name="longitud"
-                                placeholder="Ej: -75.573553"
-                                className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
-                                value={formValues.longitud}
-                                onChange={onInputChange}
-                            />
-                        </div>
-                    </div>
-                )}
-            </div>
         </div>
     );
 }

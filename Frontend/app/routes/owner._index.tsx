@@ -74,28 +74,6 @@ export async function loader({ request }: LoaderFunctionArgs) {
             documentosCompletos: (lote.documentos || []).length >= 3 // Simplificación para el ejemplo
         }));
 
-        // Solicitudes recibidas de análisis o interés - Esto podría venir de otro endpoint
-        // Por ahora usamos datos de ejemplo
-        const solicitudes = [
-            {
-                id: 1,
-                tipo: "analisis",
-                loteId: lotes[0]?.id || 1,
-                loteNombre: lotes[0]?.nombre || "Lote Centro",
-                solicitante: "Constructora XYZ",
-                fecha: "2025-08-20",
-                estado: "pendiente"
-            },
-            {
-                id: 2,
-                tipo: "interes",
-                loteId: lotes[1]?.id || 2,
-                loteNombre: lotes[1]?.nombre || "Lote Sur",
-                solicitante: "Desarrollos ABC",
-                fecha: "2025-08-18",
-                estado: "revisado"
-            }
-        ];
 
         // Enriquecer los datos con la actividad del usuario
         const userActivity = userStatsResponse.activity;
@@ -114,7 +92,6 @@ export async function loader({ request }: LoaderFunctionArgs) {
                 ultimaActividad: userActivity?.last_activity?.timestamp || null
             },
             lotes,
-            solicitudes,
             headers: {
                 ...lotesResponse.headers,
                 ...statsResponse.headers,
@@ -141,7 +118,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
 }
 
 export default function OwnerDashboard() {
-    const { user, stats, lotes, solicitudes } = useLoaderData<typeof loader>();
+    const { user, stats, lotes } = useLoaderData<typeof loader>();
 
     return (
         <div className="p-6">
@@ -476,88 +453,6 @@ export default function OwnerDashboard() {
                         className="text-sm font-medium text-indigo-600 hover:text-indigo-900"
                     >
                         Ver todos los lotes →
-                    </Link>
-                </div>
-            </div>
-
-            {/* Solicitudes Recientes */}
-            <h2 className="text-xl font-bold mb-4">Solicitudes Recientes</h2>
-            <div className="bg-white rounded-lg shadow mb-8">
-                <div className="overflow-x-auto">
-                    <table className="min-w-full">
-                        <thead className="bg-gray-50">
-                            <tr>
-                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                    Tipo
-                                </th>
-                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                    Lote
-                                </th>
-                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                    Solicitante
-                                </th>
-                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                    Fecha
-                                </th>
-                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                    Estado
-                                </th>
-                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                    Acción
-                                </th>
-                            </tr>
-                        </thead>
-                        <tbody className="bg-white divide-y divide-gray-200">
-                            {solicitudes.filter((solicitud) => solicitud != null).map((solicitud) => (
-                                <tr key={solicitud.id}>
-                                    <td className="px-6 py-4 whitespace-nowrap">
-                                        <span
-                                            className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${solicitud.tipo === "analisis"
-                                                ? "bg-blue-100 text-blue-800"
-                                                : "bg-green-100 text-green-800"
-                                                }`}
-                                        >
-                                            {solicitud.tipo === "analisis" ? "Análisis" : "Interés"}
-                                        </span>
-                                    </td>
-                                    <td className="px-6 py-4 whitespace-nowrap">
-                                        <div className="text-sm text-gray-900">{solicitud.loteNombre}</div>
-                                    </td>
-                                    <td className="px-6 py-4 whitespace-nowrap">
-                                        <div className="text-sm text-gray-500">{solicitud.solicitante}</div>
-                                    </td>
-                                    <td className="px-6 py-4 whitespace-nowrap">
-                                        <div className="text-sm text-gray-500">{solicitud.fecha}</div>
-                                    </td>
-                                    <td className="px-6 py-4 whitespace-nowrap">
-                                        <span
-                                            className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${solicitud.estado === "pendiente"
-                                                ? "bg-yellow-100 text-yellow-800"
-                                                : "bg-gray-100 text-gray-800"
-                                                }`}
-                                        >
-                                            {solicitud.estado === "pendiente" ? "Pendiente" : "Revisado"}
-                                        </span>
-                                    </td>
-                                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                                        <Link
-                                            to={`/owner/solicitudes/${solicitud.id}`}
-                                            className="text-indigo-600 hover:text-indigo-900"
-                                        >
-                                            Ver Detalles
-                                        </Link>
-                                    </td>
-                                </tr>
-                            ))}
-                        </tbody>
-                    </table>
-                </div>
-                <div className="bg-gray-50 px-6 py-3 border-t border-gray-200 text-right">
-                    <Link
-                        to="/owner/solicitudes"
-                        className="text-sm font-medium text-indigo-600 hover:text-indigo-900"
-                    >
-                        Ver todas las solicitudes →
                     </Link>
                 </div>
             </div>

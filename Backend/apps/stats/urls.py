@@ -2,20 +2,28 @@
 URLs para la aplicación de estadísticas.
 """
 from django.urls import path, include
-from rest_framework.routers import DefaultRouter
-from . import views
+from rest_framework import routers
+from apps.stats.views import StatViewSet
+from apps.stats.dashboard_views import (
+    DashboardStatsView, 
+    UsersStatsView, 
+    LotesStatsView, 
+    DocumentosStatsView, 
+    RecentActivityView
+)
 
-router = DefaultRouter()
-router.register(r'events', views.StatViewSet)
-router.register(r'summaries', views.DailySummaryViewSet)
+# Create a router for DRF viewsets
+router = routers.DefaultRouter()
+router.register(r'events', StatViewSet)
 
 urlpatterns = [
-    # Rutas del router
+    # Include router URLs
     path('', include(router.urls)),
     
-    # Rutas adicionales
-    path('over-time/', views.stats_over_time, name='stats-over-time'),
-    path('user-activity/', views.user_activity, name='user-activity'),
-    path('user-activity/<int:user_id>/', views.user_activity, name='user-activity-specific'),
-    path('dashboard/', views.dashboard_summary, name='dashboard-summary'),
+    # Dashboard statistics endpoints
+    path('dashboard/', DashboardStatsView.as_view(), name='stats-dashboard'),
+    path('dashboard/users/', UsersStatsView.as_view(), name='stats-users'),
+    path('dashboard/lotes/', LotesStatsView.as_view(), name='stats-lotes'),
+    path('dashboard/documentos/', DocumentosStatsView.as_view(), name='stats-documentos'),
+    path('dashboard/recent-activity/', RecentActivityView.as_view(), name='stats-recent-activity'),
 ]

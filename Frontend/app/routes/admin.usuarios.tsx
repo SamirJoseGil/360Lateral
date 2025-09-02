@@ -3,7 +3,9 @@ import { Form, Link, useLoaderData, useSearchParams, useFetcher } from "@remix-r
 import type { LoaderFunctionArgs, ActionFunctionArgs } from "@remix-run/node";
 import { getUser } from "~/utils/auth.server";
 import { useState, useEffect } from "react";
+import { usePageView, recordAction } from "~/hooks/useStats";
 import { getAllUsers, deleteUser, updateUserStatus, handleApiError, type User } from "~/services/users.server";
+import { recordEvent } from "~/services/stats.server";
 
 type LoaderData = {
     user: any;
@@ -35,6 +37,20 @@ export async function loader({ request }: LoaderFunctionArgs): Promise<ReturnTyp
         // Obtener usuarios de la API
         const { users, headers } = await getAllUsers(request, searchQuery);
         console.log(`Admin users loader - fetched ${users.length} users`);
+
+        // Registrar evento de vista de la página de usuarios
+        try {
+            await recordEvent(request, {
+                type: "view",
+                name: "admin_users_page",
+                value: {
+                    user_id: user.id,
+                    search_query: searchQuery || undefined
+                }
+            });
+        } catch (error) {
+            console.error("Error al registrar evento de estadísticas:", error);
+        }
 
         // Devolver los datos con las cookies actualizadas si es necesario
         return json({
@@ -97,6 +113,18 @@ export async function action({ request }: ActionFunctionArgs) {
     try {
         if (action === "delete") {
             const result = await deleteUser(request, userId);
+
+            // Registrar evento de eliminación de usuario
+            try {
+                await recordEvent(request, {
+                    type: "action",
+                    name: "user_delete_server",
+                    value: { userId }
+                });
+            } catch (error) {
+                console.error("Error al registrar evento de eliminación:", error);
+            }
+
             return json({
                 success: true,
                 message: "Usuario eliminado exitosamente"
@@ -108,6 +136,18 @@ export async function action({ request }: ActionFunctionArgs) {
         if (action === "updateStatus") {
             const status = formData.get("status") as "active" | "inactive" | "pending";
             const result = await updateUserStatus(request, userId, status);
+
+            // Registrar evento de actualización de estado
+            try {
+                await recordEvent(request, {
+                    type: "action",
+                    name: "user_status_update_server",
+                    value: { userId, status }
+                });
+            } catch (error) {
+                console.error("Error al registrar evento de actualización:", error);
+            }
+
             return json({
                 success: true,
                 message: `Estado actualizado a ${status}`,
@@ -137,6 +177,13 @@ export default function AdminUsers() {
         message: string;
     } | null>(null);
 
+    // Registrar vista de página de usuarios
+    usePageView('admin_users_page', {
+        user_id: user.id,
+        search_query: searchQuery || undefined,
+        users_count: users.length
+    }, [user.id, searchQuery, users.length]);
+
     // Limpiar notificación después de 3 segundos
     useEffect(() => {
         if (notification) {
@@ -159,6 +206,13 @@ export default function AdminUsers() {
             { method: "post" }
         );
 
+        // Registrar evento de acción (del lado del cliente)
+        recordAction('user_status_change', {
+            userId,
+            name,
+            status: newStatus
+        });
+
         setNotification({
             type: 'success',
             message: `Estado de ${name} actualizado a ${newStatus === "active" ? "Activo" :
@@ -174,6 +228,9 @@ export default function AdminUsers() {
                 { _action: "delete", userId },
                 { method: "post" }
             );
+
+            // Registrar evento de acción (del lado del cliente)
+            recordAction('user_delete', { userId, name });
 
             setNotification({
                 type: 'success',

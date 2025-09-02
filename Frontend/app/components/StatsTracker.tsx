@@ -1,6 +1,101 @@
 import React, { createContext, useContext, useEffect } from 'react';
 import { useLocation, useMatches } from '@remix-run/react';
 
+/**
+ * Propiedades del componente de seguimiento de vistas de página
+ */
+type PageViewTrackerProps = {
+    /**
+     * Nombre de la página o sección (si se omite, se usará la ruta)
+     */
+    pageName?: string;
+
+    /**
+     * Datos adicionales para enviar con el evento de vista
+     */
+    additionalData?: Record<string, any>;
+};
+
+/**
+ * Componente para rastrear automáticamente vistas de página
+ * Se debe colocar en los layouts o componentes principales
+ */
+export function PageViewTracker({ pageName, additionalData = {} }: PageViewTrackerProps) {
+    const location = useLocation();
+
+    useEffect(() => {
+        // Obtener nombre de página de la prop o de la URL
+        const name = pageName || `page_view_${location.pathname.replace(/\//g, '_')}`;
+
+        // Crear datos del evento
+        const eventData = {
+            type: 'view',
+            name,
+            value: {
+                pathname: location.pathname,
+                search: location.search,
+                timestamp: new Date().toISOString(),
+                ...additionalData
+            }
+        };
+
+        // Enviar evento al endpoint de estadísticas
+        fetch('/api/stats/record', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(eventData),
+        }).catch(error => {
+            console.error("Error registrando vista de página:", error);
+        });
+    }, [location.pathname, location.search, pageName, additionalData]);
+
+    // Este componente no renderiza nada
+    return null;
+}
+
+/**
+ * Propiedades del componente de rastreador de eventos
+ */
+type EventTrackerProps = {
+    /**
+     * Tipo de evento (view, search, action, etc.)
+     */
+    type: 'view' | 'search' | 'action' | 'api' | 'error' | 'other';
+
+    /**
+     * Nombre descriptivo del evento
+     */
+    name: string;
+
+    /**
+     * Datos adicionales para enviar con el evento
+     */
+    value?: Record<string, any>;
+};
+
+/**
+ * Hook para rastrear eventos
+ * @returns Función para registrar eventos
+ */
+export function useEventTracker() {
+    return function trackEvent({ type, name, value = {} }: EventTrackerProps): Promise<any> {
+        return fetch('/api/stats/record', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ type, name, value }),
+        })
+            .then(response => response.json())
+            .catch(error => {
+                console.error("Error registrando evento:", error);
+                throw error;
+            });
+    };
+}
+
 // Context for stats tracking
 type StatsContextType = {
     trackEvent: (eventType: string, eventName: string, eventValue?: any) => void;
@@ -87,7 +182,6 @@ export function useStats() {
     }
     return context;
 }
-// (Removed duplicate and erroneous return/provider code)
 
 // Función para obtener o crear un sessionId
 function getOrCreateSessionId(): string {

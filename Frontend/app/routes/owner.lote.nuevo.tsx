@@ -4,12 +4,14 @@ import { Form, useActionData, useNavigation, Link } from "@remix-run/react";
 import { useState, useEffect } from "react";
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "@remix-run/node";
 import { getUser } from "~/utils/auth.server";
-import { createLote, getTratamientosPOT } from "~/services/lotes.server";
+import { createLote, getTratamientosPOT, getLotePotData } from "~/services/lotes.server";
 import StatusModal from "~/components/StatusModal";
 import { consultarPorCBML, consultarPorMatricula, consultarPorDireccion } from "~/services/mapgis.server";
 import LoteSearchSection from "~/components/LoteSearchSection";
 import LoteFormFields from "~/components/LoteFormFields";
 import type { DireccionResult } from "~/components/DireccionSearchResults";
+import { analyzeSellability, extractPotDataFromText } from "~/utils/pot-analysis";
+import PotAnalysis from "~/components/PotAnalysis";
 
 // Tipo para los datos de un nuevo lote
 type NuevoLoteData = {
@@ -59,10 +61,22 @@ export async function loader({ request }: LoaderFunctionArgs) {
                     result = await consultarPorCBML(request, searchValue);
                     console.log('Resultado CBML:', result);
                     if ((result.resultado as any).encontrado) {
+                        // Intentar obtener datos POT adicionales
+                        let potData = null;
+                        try {
+                            const potResponse = await getLotePotData(request, searchValue);
+                            potData = potResponse.potData;
+                            console.log('Datos POT obtenidos:', potData);
+                        } catch (potError) {
+                            console.error('Error obteniendo datos POT:', potError);
+                            // Seguimos sin datos POT, no es crítico
+                        }
+
                         return json({
                             user,
                             searchResult: result.resultado.datos,
                             searchType: 'cbml',
+                            potData,
                             headers: result.headers
                         });
                     }
@@ -334,6 +348,10 @@ export default function NuevoLote() {
         longitud: ''
     });
 
+    // Estado para almacenar los datos del POT estructurados y el análisis de vendibilidad
+    const [potData, setPotData] = useState<any>(null);
+    const [sellabilityAnalysis, setSellabilityAnalysis] = useState<any>(null);
+
     // Función para manejar los datos recibidos del componente de búsqueda
     const handleMapGisDataReceived = (mapGisData: any) => {
         if (!mapGisData) return;
@@ -401,6 +419,28 @@ export default function NuevoLote() {
         if (mapGisData.latitud && mapGisData.longitud) {
             setUsarUbicacion(true);
         }
+
+        // Construir datos del POT para análisis
+        const newPotData = {
+            area: parseFloat(areaValue) || undefined,
+            clasificacion: clasificacionSuelo,
+            uso_suelo: usoSuelo,
+            tratamiento: tratamiento,
+            densidad: parseFloat(densidad) || undefined,
+            restricciones: (restriccionRiesgo || restriccionRetiros) ?
+                (restriccionRiesgo && restriccionRetiros ? 2 : 1) : 0,
+            detalles_restricciones: [
+                restriccionRiesgo,
+                restriccionRetiros
+            ].filter(Boolean)
+        };
+
+        // Guardar los datos del POT y realizar análisis de vendibilidad
+        setPotData(newPotData);
+        const analysis = analyzeSellability(newPotData);
+        setSellabilityAnalysis(analysis);
+
+        console.log("Análisis de vendibilidad generado:", analysis);
     };
 
     // Manejar selección de un resultado de dirección
@@ -419,6 +459,35 @@ export default function NuevoLote() {
     const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
         const { name, value } = e.target;
         setFormValues(prev => ({ ...prev, [name]: value }));
+
+        // Actualizar análisis POT cuando cambien campos relevantes
+        const potFields = ['area', 'clasificacion_suelo', 'uso_suelo', 'tratamiento_pot',
+            'restriccion_ambiental_riesgo', 'restriccion_ambiental_retiros',
+            'densidad_habitacional'];
+
+        if (potFields.includes(name)) {
+            // Actualizar con un pequeño retraso para permitir que el estado se actualice
+            setTimeout(() => {
+                const updatedValues = { ...formValues, [name]: value };
+                const updatedPotData = {
+                    area: parseFloat(updatedValues.area) || undefined,
+                    clasificacion: updatedValues.clasificacion_suelo,
+                    uso_suelo: updatedValues.uso_suelo,
+                    tratamiento: updatedValues.tratamiento_pot,
+                    densidad: parseFloat(updatedValues.densidad_habitacional) || undefined,
+                    restricciones: (updatedValues.restriccion_ambiental_riesgo || updatedValues.restriccion_ambiental_retiros) ?
+                        ((updatedValues.restriccion_ambiental_riesgo && updatedValues.restriccion_ambiental_retiros) ? 2 : 1) : 0,
+                    detalles_restricciones: [
+                        updatedValues.restriccion_ambiental_riesgo,
+                        updatedValues.restriccion_ambiental_retiros
+                    ].filter(Boolean)
+                };
+
+                setPotData(updatedPotData);
+                const analysis = analyzeSellability(updatedPotData);
+                setSellabilityAnalysis(analysis);
+            }, 100);
+        }
     };
 
     // Manejar el estado de navegación para mostrar el modal de carga/éxito
@@ -462,9 +531,54 @@ export default function NuevoLote() {
         }
     }, [navigation.state, navigationFormMethod, actionData, showStatusModal]);
 
+    // Verificar si hay datos POT en la respuesta del loader
+    useEffect(() => {
+        if (navigation.location && navigation.location.search.includes('searchType=cbml')) {
+            const state = navigation.state === 'loading' ? 'loading' :
+                navigation.state === 'submitting' ? 'submitting' : 'idle';
+
+            if (state === 'idle' && navigation.formData === undefined) {
+                // Extraer los datos de la navegación
+                const data = (navigation as any).data;
+
+                if (data?.potData) {
+                    console.log("Datos POT recibidos del backend:", data.potData);
+
+                    // Convertir los datos en el formato que espera nuestro análisis
+                    const rawPotData = data.potData.raw_text || '';
+                    let structuredPotData;
+
+                    if (rawPotData) {
+                        // Usar el extractor de texto si hay texto sin procesar
+                        structuredPotData = extractPotDataFromText(rawPotData);
+                    } else {
+                        // Crear estructura manualmente con los datos disponibles
+                        structuredPotData = {
+                            area: data.potData.area,
+                            clasificacion: data.potData.clasificacion_suelo,
+                            uso_suelo: data.potData.uso_suelo?.categoria_uso,
+                            tratamiento: data.potData.aprovechamiento_urbano?.tratamiento,
+                            densidad: parseFloat(data.potData.aprovechamiento_urbano?.densidad_habitacional_max || '0'),
+                            restricciones: data.potData.restricciones_ambientales ?
+                                (data.potData.restricciones_ambientales.amenaza_riesgo &&
+                                    data.potData.restricciones_ambientales.retiros_rios ? 2 : 1) : 0
+                        };
+                    }
+
+                    // Actualizar el estado para el análisis
+                    setPotData(structuredPotData);
+
+                    // Generar análisis de vendibilidad
+                    const analysis = analyzeSellability(structuredPotData);
+                    setSellabilityAnalysis(analysis);
+                }
+            }
+        }
+    }, [navigation.state, navigation.location]);
+
     return (
         <>
-            <div className="p-6">
+            <div className="p-8 py-32">
                 <div className="mb-6 flex items-center">
                     <Link
                         to="/owner/mis-lotes"
@@ -506,6 +620,57 @@ export default function NuevoLote() {
                             setUsarUbicacion={setUsarUbicacion}
                             actionData={actionData}
                         />
+
+                        {/* Sección de análisis POT y vendibilidad */}
+                        {potData && (
+                            <div className="mt-8 border-t border-gray-200 pt-6">
+                                <h3 className="text-lg font-medium leading-6 text-gray-900 mb-4">
+                                    Análisis de Normativa y Vendibilidad
+                                </h3>
+                                <PotAnalysis potData={potData} />
+
+                                {/* Resumen de vendibilidad */}
+                                {sellabilityAnalysis && (
+                                    <div className={`mt-4 p-4 rounded-md ${sellabilityAnalysis.canSell
+                                            ? 'bg-green-50 border-green-200'
+                                            : 'bg-yellow-50 border-yellow-200'
+                                        } border`}
+                                    >
+                                        <div className="flex">
+                                            <div className={`flex-shrink-0 ${sellabilityAnalysis.canSell ? 'text-green-600' : 'text-yellow-600'
+                                                }`}>
+                                                {sellabilityAnalysis.canSell ? (
+                                                    <svg className="h-5 w-5" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
+                                                        <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.707a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                                                    </svg>
+                                                ) : (
+                                                    <svg className="h-5 w-5" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
+                                                        <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                                                    </svg>
+                                                )}
+                                            </div>
+                                            <div className="ml-3">
+                                                <h3 className={`text-sm font-medium ${sellabilityAnalysis.canSell ? 'text-green-800' : 'text-yellow-800'
+                                                    }`}>
+                                                    {sellabilityAnalysis.canSell
+                                                        ? 'Lote comercializable'
+                                                        : 'Lote con restricciones para venta'}
+                                                </h3>
+                                                <div className="mt-2 text-sm">
+                                                    <ul className="list-disc space-y-1 pl-5">
+                                                        {sellabilityAnalysis.recommendations.map((rec: string, idx: number) => (
+                                                            <li key={idx} className={sellabilityAnalysis.canSell ? 'text-green-700' : 'text-yellow-700'}>
+                                                                {rec}
+                                                            </li>
+                                                        ))}
+                                                    </ul>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+                        )}
 
                         <div className="mt-6 flex items-center justify-end">
                             <Link

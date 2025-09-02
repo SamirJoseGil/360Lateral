@@ -1,9 +1,11 @@
 import { json, redirect } from "@remix-run/node";
 import { Outlet, useLoaderData } from "@remix-run/react";
 import type { LoaderFunctionArgs } from "@remix-run/node";
+import { usePageView } from "~/hooks/useStats";
 import { getUser } from "~/utils/auth.server";
 import Sidebar from "~/components/sidebar";
 import { recordEvent } from "~/services/stats.server";
+import { PageViewTracker } from "~/components/StatsTracker";
 
 // Loader para verificar autenticación y rol de administrador
 export async function loader({ request }: LoaderFunctionArgs) {
@@ -55,10 +57,20 @@ export default function AdminLayout() {
         { to: "/admin/usuarios", label: "Usuarios", icon: "users" },
         { to: "/admin/validacion", label: "Validación", icon: "check-circle" },
         { to: "/admin/analisis", label: "Análisis", icon: "chart-bar" },
+        { to: "/admin/estadisticas", label: "Estadísticas", icon: "chart-line" },
     ];
+
+    // Registrar vista de página cuando el componente se monta
+    usePageView('admin_panel_view', {
+        user_id: user.id,
+        role: user.role
+    }, [user.id, user.role]);
 
     return (
         <div className="flex h-screen bg-gray-100">
+            {/* Tracking de estadísticas para el panel admin */}
+            <PageViewTracker pageName="admin_layout" additionalData={{ user_id: user.id, role: user.role }} />
+
             {/* Sidebar */}
             <Sidebar
                 options={sidebarOptions}

@@ -354,3 +354,33 @@ export async function deleteLote(request: Request, loteId: string) {
     throw error;
   }
 }
+
+// Obtener los datos POT de un lote específico por CBML
+export async function getLotePotData(request: Request, cbml: string) {
+  console.log(`Obteniendo datos POT para el lote con CBML: ${cbml}`);
+  
+  try {
+    const endpoint = `${API_URL}/api/pot/lote/${cbml}/`;
+    console.log(`[POT] Fetching from endpoint: ${endpoint}`);
+    
+    const { res: response, setCookieHeaders } = await fetchWithAuth(request, endpoint);
+    
+    if (!response.ok) {
+      console.error(`[POT] Error en la respuesta de la API: ${response.status} ${response.statusText}`);
+      const errorText = await response.text();
+      console.error(`[POT] Cuerpo de respuesta de error: ${errorText}`);
+      throw new Error(`Error al obtener datos POT: ${response.statusText}`);
+    }
+    
+    const data = await response.json();
+    console.log(`[POT] Datos POT recibidos para CBML ${cbml}`);
+    
+    return {
+      potData: data,
+      headers: setCookieHeaders
+    };
+  } catch (error) {
+    console.error(`[POT] Error obteniendo datos POT para CBML ${cbml}:`, error);
+    throw error;
+  }
+}

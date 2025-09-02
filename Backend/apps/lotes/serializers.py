@@ -2,7 +2,7 @@
 Serializers para la aplicación de lotes
 """
 from rest_framework import serializers
-from .models import Lote
+from .models import Lote, Favorite
 from django.contrib.auth import get_user_model
 
 User = get_user_model()
@@ -15,6 +15,7 @@ class LoteSerializer(serializers.ModelSerializer):
         allow_null=True,
         default=None
     )
+    is_favorite = serializers.SerializerMethodField()
     
     class Meta:
         model = Lote
@@ -23,7 +24,7 @@ class LoteSerializer(serializers.ModelSerializer):
             'matricula', 'barrio', 'estrato', 'codigo_catastral',
             'latitud', 'longitud', 'tratamiento_pot', 'uso_suelo',
             'clasificacion_suelo', 'estado', 'metadatos', 'owner',
-            'fecha_creacion', 'fecha_actualizacion'
+            'fecha_creacion', 'fecha_actualizacion', 'is_favorite'
             # Ensure no 'proyecto' field is present here if not in the model
         ]
         read_only_fields = ['id', 'fecha_creacion', 'fecha_actualizacion']
@@ -57,6 +58,15 @@ class LoteSerializer(serializers.ModelSerializer):
         # Crear el lote con los datos validados
         return Lote.objects.create(**validated_data)
 
+    def get_is_favorite(self, obj):
+        """
+        Check if the current user has added this lot to favorites.
+        """
+        request = self.context.get('request')
+        if request and request.user.is_authenticated:
+            return obj.favorited_by.filter(user=request.user).exists()
+        return False
+
 class LoteDetailSerializer(serializers.ModelSerializer):
     owner = serializers.PrimaryKeyRelatedField(
         queryset=User.objects.all(),
@@ -76,3 +86,33 @@ class LoteDetailSerializer(serializers.ModelSerializer):
             'fecha_creacion', 'fecha_actualizacion'
         ]
         read_only_fields = ['id', 'fecha_creacion', 'fecha_actualizacion']
+
+class FavoriteSerializer(serializers.ModelSerializer):
+    """
+    Serializer for the Favorite model.
+    """
+    lote_id = serializers.PrimaryKeyRelatedField(
+        source='lote',
+        queryset=Lote.objects.all()
+    )
+    lote_detail = serializers.SerializerMethodField()
+    
+    class Meta:
+        model = Favorite
+        fields = ['id', 'lote_id', 'lote_detail', 'created_at', 'notes']
+        read_only_fields = ['created_at']
+    
+    def get_lote_detail(self, obj):
+        """
+        Provides a simplified representation of the associated lot.
+        """
+        from .serializers import LoteListSerializer
+        return LoteListSerializer(obj.lote).data
+    
+    def create(self, validated_data):
+        """
+        Create a new favorite, setting the user from the request.
+        """
+        user = self.context['request'].user
+        validated_data['user'] = user
+        return super().create(validated_data)

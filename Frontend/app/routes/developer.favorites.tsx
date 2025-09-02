@@ -1,7 +1,8 @@
 import { json } from "@remix-run/node";
-import { Link, useLoaderData } from "@remix-run/react";
+import { Link, useLoaderData, useFetcher } from "@remix-run/react";
 import type { LoaderFunctionArgs } from "@remix-run/node";
 import { getUser } from "~/utils/auth.server";
+import { fetchWithAuth, API_URL } from "~/utils/auth.server";
 import { useState } from "react";
 import { recordEvent } from "~/services/stats.server";
 

@@ -1,4 +1,4 @@
-import { Link, NavLink } from "@remix-run/react";
+import { Link, NavLink, useFetcher } from "@remix-run/react";
 import React, { useState } from "react";
 
 type SidebarOption = {
@@ -16,8 +16,17 @@ type SidebarProps = {
     };
 };
 
+type LogoutResponse = {
+    success: boolean;
+    message?: string;
+    shouldRefresh?: boolean;
+    redirectTo?: string;
+};
+
 export default function Sidebar({ options, user }: SidebarProps) {
     const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+    const [isProfileOpen, setIsProfileOpen] = useState(false);
+    const logoutFetcher = useFetcher<LogoutResponse>();
 
     const getIconSvg = (iconName: string) => {
         switch (iconName) {
@@ -79,6 +88,20 @@ export default function Sidebar({ options, user }: SidebarProps) {
         return user.email.split('@')[0];
     };
 
+    const handleLogout = (e: React.MouseEvent) => {
+        e.preventDefault();
+        console.log("Initiating logout process");
+
+        // Cerrar menú de perfil
+        setIsProfileOpen(false);
+
+        // Usar fetcher para enviar la solicitud al endpoint de API
+        logoutFetcher.submit({}, {
+            method: "post",
+            action: "/api/auth/logout"
+        });
+    };
+
     return (
         <div className="w-64 bg-white shadow-md flex flex-col h-full">
             <div className="p-4 border-b border-gray-200">
@@ -124,8 +147,10 @@ export default function Sidebar({ options, user }: SidebarProps) {
                     </li>
                     <li>
                         <Link
-                            to="/logout"
+                            to="/api/auth/logout"
                             className="flex items-center px-4 py-2 text-gray-700 rounded hover:bg-indigo-50 hover:text-indigo-700"
+                            onClick={handleLogout}
+                            type="submit"
                         >
                             <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-3" viewBox="0 0 20 20" fill="currentColor">
                                 <path fillRule="evenodd" d="M3 3a1 1 0 00-1 1v12a1 1 0 001 1h12a1 1 0 001-1V4a1 1 0 00-1-1H3zm9.53 5.47a.75.75 0 00-1.06 0L8.75 10.19V6a.75.75 0 00-1.5 0v6c0 .414.336.75.75.75h6a.75.75 0 000-1.5h-4.19l2.72-2.72a.75.75 0 000-1.06z" clipRule="evenodd" />

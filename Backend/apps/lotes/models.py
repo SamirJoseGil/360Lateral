@@ -261,3 +261,39 @@ class TratamientoAreaMinimaVivienda(models.Model):
     
     def __str__(self):
         return f"{self.tratamiento.nombre} - {self.get_tipo_vivienda_display()}"
+
+
+class Favorite(models.Model):
+    """
+    Model to store user favorite lots.
+    """
+    user = models.ForeignKey(
+        'users.User',  # Assuming your user model is in apps.users
+        on_delete=models.CASCADE,
+        related_name='favorites',
+        verbose_name='Usuario'
+    )
+    lote = models.ForeignKey(
+        'Lote',  # Reference to the Lote model in the same app
+        on_delete=models.CASCADE,
+        related_name='favorited_by',
+        verbose_name='Lote'
+    )
+    created_at = models.DateTimeField(
+        auto_now_add=True,
+        verbose_name='Fecha de creación'
+    )
+    notes = models.TextField(
+        blank=True,
+        null=True,
+        verbose_name='Notas'
+    )
+
+    class Meta:
+        verbose_name = 'Favorito'
+        verbose_name_plural = 'Favoritos'
+        unique_together = ('user', 'lote')  # Prevent duplicate favorites
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f'{self.user} - {self.lote}'

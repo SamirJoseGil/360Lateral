@@ -1,9 +1,11 @@
 """
 URLs para la aplicación de lotes
 """
-from django.urls import path
+from django.urls import path, include
+from rest_framework.routers import DefaultRouter
 
 from apps.lotes.views.lote_views import lote_create_from_mapgis, lote_search
+from .views.favorites_views import FavoriteViewSet
 
 # Importamos todas las vistas desde el módulo principal
 from .views import (
@@ -39,6 +41,10 @@ from .views.tratamiento_views import (
 from .api.user_lotes import UserLotesView, my_lotes, user_lote_stats
 
 app_name = 'lotes'
+
+# Create a router for the favorite viewset
+favorites_router = DefaultRouter()
+favorites_router.register(r'favorites', FavoriteViewSet, basename='favorite')
 
 urlpatterns = [
     # Rutas para lotes por usuario
@@ -79,4 +85,7 @@ urlpatterns = [
     path('<int:pk>/update/', lote_update, name='lote-update-direct'),
     path('<int:pk>/delete/', lote_delete, name='lote-delete-direct'),
     path('create-from-mapgis/', lote_create_from_mapgis, name='lote-create-from-mapgis-direct'),
+
+    # Include favorites endpoints
+    path('', include(favorites_router.urls)),
 ]

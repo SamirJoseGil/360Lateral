@@ -4,6 +4,8 @@ import type { LoaderFunctionArgs } from "@remix-run/node";
 import { getUser } from "~/utils/auth.server";
 import { useState, useEffect } from "react";
 import { recordEvent } from "~/services/stats.server";
+import { fetchWithAuth } from "~/utils/auth.server";
+import { API_URL } from "~/utils/auth.server";
 
 // Tipos para los filtros y resultados
 type SearchFilter = {
@@ -25,16 +27,18 @@ type SearchLotResult = {
     isFavorite: boolean;
 };
 
+type SavedCriteria = {
+    id: number;
+    name: string;
+    area: string;
+    zone: string;
+    budget: string;
+    treatment: string;
+};
+
 type LoaderData = {
     searchResults: SearchLotResult[];
-    savedCriteria: {
-        id: number;
-        name: string;
-        area: string;
-        zone: string;
-        budget: string;
-        treatment: string;
-    }[];
+    savedCriteria: SavedCriteria[];
     filterOptions: {
         zones: string[];
         treatments: string[];
@@ -56,6 +60,14 @@ export async function loader({ request }: LoaderFunctionArgs) {
     const criteriaId = url.searchParams.get("criteria");
     const query = url.searchParams.get("q") || "";
 
+    // Parámetros de filtro
+    const minArea = url.searchParams.get("minArea");
+    const maxArea = url.searchParams.get("maxArea");
+    const minPrice = url.searchParams.get("minPrice");
+    const maxPrice = url.searchParams.get("maxPrice");
+    const zones = url.searchParams.getAll("zone");
+    const treatments = url.searchParams.getAll("treatment");
+
     try {
         // Registrar evento de búsqueda
         await recordEvent(request, {
@@ -64,97 +76,132 @@ export async function loader({ request }: LoaderFunctionArgs) {
             value: {
                 user_id: user.id,
                 criteria_id: criteriaId,
-                query
+                query,
+                filters: {
+                    area: { min: minArea, max: maxArea },
+                    price: { min: minPrice, max: maxPrice },
+                    zones,
+                    treatments
+                }
             }
         });
 
-        // Obtener criterios de búsqueda guardados para mostrar en el filtro
-        const savedCriteria = [
-            { id: 1, name: "Criterio residencial", area: "300-500", zone: "Norte", budget: "200M-400M", treatment: "Residencial" },
-            { id: 2, name: "Criterio comercial", area: "400-800", zone: "Centro", budget: "500M-800M", treatment: "Comercial" }
-        ];
+        // Obtener criterios de búsqueda guardados del usuario
+        const { res: criteriaResponse } = await fetchWithAuth(
+            request,
+            `${API_URL}/api/developer/search-criteria/`
+        );
 
-        // Simular resultados de búsqueda
-        const searchResults: SearchLotResult[] = [
-            {
-                id: 1,
-                name: "Lote Residencial Norte",
-                address: "Calle 123 #45-67, Comuna 2",
-                area: 350,
-                price: 320000000,
-                zone: "Norte",
-                treatment: "Residencial",
-                potentialValue: 400000000,
-                isFavorite: true
-            },
-            {
-                id: 2,
-                name: "Lote Comercial Centro",
-                address: "Carrera 7 #25-30, Comuna 10",
-                area: 520,
-                price: 650000000,
-                zone: "Centro",
-                treatment: "Comercial",
-                potentialValue: 800000000,
-                isFavorite: false
-            },
-            {
-                id: 3,
-                name: "Lote Mixto Oeste",
-                address: "Avenida 80 #65-43, Comuna 12",
-                area: 420,
-                price: 480000000,
-                zone: "Oeste",
-                treatment: "Mixto",
-                potentialValue: 600000000,
-                isFavorite: true
-            },
-            {
-                id: 4,
-                name: "Lote Industrial Sur",
-                address: "Calle 10 #23-45, Comuna 15",
-                area: 1200,
-                price: 950000000,
-                zone: "Sur",
-                treatment: "Industrial",
-                potentialValue: 1200000000,
-                isFavorite: false
-            }
-        ];
+        let savedCriteria = [];
+        if (criteriaResponse.ok) {
+            const criteriaData = await criteriaResponse.json();
+            savedCriteria = criteriaData.results || [];
+        } else {
+            console.error("Error obteniendo criterios guardados:", criteriaResponse.statusText);
+            // Usar criterios por defecto si falla
+            savedCriteria = [
+                { id: 1, name: "Criterio residencial", area: "300-500", zone: "Norte", budget: "200M-400M", treatment: "Residencial" },
+                { id: 2, name: "Criterio comercial", area: "400-800", zone: "Centro", budget: "500M-800M", treatment: "Comercial" }
+            ];
+        }
 
-        // Filtrar por criterio seleccionado
-        let filteredResults = searchResults;
+        // Construir URL de búsqueda con filtros
+        let searchUrl = `${API_URL}/api/lotes/?`;
+        const searchParams = new URLSearchParams();
+
+        if (query) searchParams.append("search", query);
+        if (minArea) searchParams.append("min_area", minArea);
+        if (maxArea) searchParams.append("max_area", maxArea);
+        if (minPrice) searchParams.append("min_price", minPrice);
+        if (maxPrice) searchParams.append("max_price", maxPrice);
+
+        // Añadir zonas y tratamientos como filtros múltiples
+        zones.forEach(zone => searchParams.append("zone", zone));
+        treatments.forEach(treatment => searchParams.append("treatment", treatment));
+
+        // Si hay un criterio seleccionado, añadir sus filtros
         if (criteriaId) {
-            const selectedCriteria = savedCriteria.find(c => c.id.toString() === criteriaId);
+            const selectedCriteria = savedCriteria.find((c: SavedCriteria) => c.id.toString() === criteriaId);
             if (selectedCriteria) {
-                // Aplicar filtro básico basado en el criterio
-                filteredResults = searchResults.filter(lot =>
-                    lot.zone === selectedCriteria.zone ||
-                    lot.treatment === selectedCriteria.treatment
-                );
+                // Añadir filtros del criterio seleccionado
+                if (selectedCriteria.zone) searchParams.append("zone", selectedCriteria.zone);
+                if (selectedCriteria.treatment) searchParams.append("treatment", selectedCriteria.treatment);
+
+                // Procesar área (formato: "300-500")
+                if (selectedCriteria.area) {
+                    const [minCriteriaArea, maxCriteriaArea] = selectedCriteria.area.split("-");
+                    if (minCriteriaArea && !minArea) searchParams.append("min_area", minCriteriaArea);
+                    if (maxCriteriaArea && !maxArea) searchParams.append("max_area", maxCriteriaArea);
+                }
+
+                // Procesar presupuesto (formato: "200M-400M")
+                if (selectedCriteria.budget) {
+                    const [minBudget, maxBudget] = selectedCriteria.budget.split("-");
+                    const minValue = minBudget?.replace("M", "000000");
+                    const maxValue = maxBudget?.replace("M", "000000");
+
+                    if (minValue && !minPrice) searchParams.append("min_price", minValue);
+                    if (maxValue && !maxPrice) searchParams.append("max_price", maxValue);
+                }
             }
         }
 
-        // Filtrar por búsqueda de texto
-        if (query) {
-            filteredResults = filteredResults.filter(lot =>
-                lot.name.toLowerCase().includes(query.toLowerCase()) ||
-                lot.address.toLowerCase().includes(query.toLowerCase())
-            );
+        searchUrl += searchParams.toString();
+
+        // Realizar búsqueda de lotes
+        const { res: lotesResponse } = await fetchWithAuth(request, searchUrl);
+
+        let searchResults: SearchLotResult[] = [];
+        if (lotesResponse.ok) {
+            const lotesData = await lotesResponse.json();
+
+            // Transformar los datos al formato esperado
+            searchResults = (lotesData.results || []).map((lote: any) => ({
+                id: lote.id,
+                name: lote.nombre || `Lote ${lote.cbml}`,
+                address: lote.direccion || "Dirección no disponible",
+                area: lote.area || 0,
+                price: lote.price || lote.valor_estimado || 0,
+                zone: lote.barrio || lote.zona || "No especificado",
+                treatment: lote.tratamiento_pot || "No especificado",
+                potentialValue: lote.valor_potencial || lote.price * 1.25 || 0, // Estimación si no hay valor potencial
+                isFavorite: lote.favorito || false
+            }));
+        } else {
+            console.error("Error en búsqueda de lotes:", lotesResponse.statusText);
         }
 
-        // Datos para los filtros
-        const filterOptions = {
+        // Obtener opciones para filtros (zonas, tratamientos, rangos)
+        const { res: filtersResponse } = await fetchWithAuth(
+            request,
+            `${API_URL}/api/lotes/filter-options/`
+        );
+
+        let filterOptions = {
             zones: ["Norte", "Sur", "Este", "Oeste", "Centro"],
             treatments: ["Residencial", "Comercial", "Industrial", "Mixto"],
             minArea: 200,
             maxArea: 2000,
-            minPrice: 100000000,  // 100 millones
-            maxPrice: 2000000000  // 2000 millones
+            minPrice: 100000000,
+            maxPrice: 2000000000
         };
 
+        if (filtersResponse.ok) {
+            const filtersData = await filtersResponse.json();
+            filterOptions = {
+                zones: filtersData.zones || filterOptions.zones,
+                treatments: filtersData.treatments || filterOptions.treatments,
+                minArea: filtersData.area_range?.min || filterOptions.minArea,
+                maxArea: filtersData.area_range?.max || filterOptions.maxArea,
+                minPrice: filtersData.price_range?.min || filterOptions.minPrice,
+                maxPrice: filtersData.price_range?.max || filterOptions.maxPrice
+            };
+        } else {
+            console.error("Error obteniendo opciones de filtro:", filtersResponse.statusText);
+        }
+
         return json<LoaderData>({
-            searchResults: filteredResults,
+            searchResults,
             savedCriteria,
             filterOptions,
             selectedCriteria: criteriaId ? parseInt(criteriaId) : null,
@@ -215,7 +262,7 @@ export default function DeveloperSearch() {
     // Cargar filtro inicial si hay un criterio seleccionado
     useEffect(() => {
         if (selectedCriteria) {
-            const criteria = savedCriteria.find(c => c.id === selectedCriteria);
+            const criteria = savedCriteria.find((c: SavedCriteria) => c.id === selectedCriteria);
             if (criteria) {
                 // Convertir criterios guardados a formato de filtro activo
                 setActiveFilters({
@@ -267,9 +314,39 @@ export default function DeveloperSearch() {
     };
 
     // Función para alternar el estado de favorito
-    const toggleFavorite = (lotId: number) => {
-        // Aquí iría la lógica para marcar/desmarcar favorito
-        console.log(`Toggling favorite for lot ${lotId}`);
+    const toggleFavorite = async (lotId: number) => {
+        try {
+            // Realizar petición al backend usando el endpoint correcto para alternar favorito
+            const response = await fetch(`${API_URL}/api/lotes/favorites/toggle/`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${document.cookie.split('=')[1]}` // Obtener token de cookie
+                },
+                body: JSON.stringify({ lote_id: lotId }),
+            });
+
+            if (!response.ok) {
+                throw new Error('Error al actualizar favorito');
+            }
+            
+            // Actualizar UI optimísticamente invirtiendo el estado del favorito localmente
+            const updatedResults = searchResults.map(lot => 
+                lot.id === lotId ? { ...lot, isFavorite: !lot.isFavorite } : lot
+            );
+            
+            // Forzar recarga de datos
+            setSearchParams(prev => {
+                const newParams = new URLSearchParams(prev);
+                newParams.set('_t', Date.now().toString());
+                return newParams;
+            });
+
+            console.log(`Toggled favorite status for lot ${lotId}`);
+        } catch (error) {
+            console.error('Error toggling favorite:', error);
+            // Aquí se podría mostrar una notificación de error
+        }
     };
 
     return (

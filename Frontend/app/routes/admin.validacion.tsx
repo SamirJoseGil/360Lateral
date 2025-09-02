@@ -2,6 +2,7 @@ import { json, redirect } from "@remix-run/node";
 import type { LoaderFunctionArgs } from "@remix-run/node";
 import { Form, useLoaderData } from "@remix-run/react";
 import { useState } from "react";
+import { usePageView, recordAction } from "~/hooks/useStats";
 import { getUser } from "~/utils/auth.server";
 import { recordEvent, getStatsOverTime } from "~/services/stats.server";
 
@@ -21,12 +22,14 @@ export async function loader({ request }: LoaderFunctionArgs) {
     }
 
     try {
-        // Registrar evento de vista de la página de validación
+        // Registrar evento de vista de la página de validación según documentación
         await recordEvent(request, {
             type: "view",
             name: "admin_validation_page",
             value: {
-                user_id: user.id
+                user_id: user.id,
+                role: user.role,
+                section: "validacion"
             }
         });
 
@@ -169,7 +172,18 @@ export default function AdminValidacion() {
     const { validacionData, realData, error } = useLoaderData<typeof loader>();
     const [expandedDocuments, setExpandedDocuments] = useState<string[]>([]);
 
-    // Función para expandir/colapsar documentos
+    // Registrar vista de página de validación
+    usePageView('admin_validation_page', {
+        documents_count: validacionData.pendientes.length
+    }, [validacionData.pendientes.length]);
+
+    // Función para registrar eventos de validación (usando nuestro hook personalizado)
+    const trackValidationAction = (action: string, docId: string, docName: string) => {
+        recordAction(`document_${action}`, {
+            document_id: docId,
+            document_name: docName
+        });
+    };    // Función para expandir/colapsar documentos
     const toggleExpand = (id: string) => {
         setExpandedDocuments(prev =>
             prev.includes(id)
@@ -278,8 +292,30 @@ export default function AdminValidacion() {
                                         <a href="#" className="text-blue-600 hover:text-blue-900 mr-3">Ver</a>
                                         {doc.estado === 'pendiente' && (
                                             <>
-                                                <a href="#" className="text-green-600 hover:text-green-900 mr-3">Validar</a>
-                                                <a href="#" className="text-red-600 hover:text-red-900">Rechazar</a>
+                                                <a
+                                                    href="#"
+                                                    className="text-green-600 hover:text-green-900 mr-3"
+                                                    onClick={(e) => {
+                                                        e.preventDefault();
+                                                        trackValidationAction('validate', doc.id, doc.nombre);
+                                                        // Aquí iría la lógica real de validación
+                                                        alert(`Documento ${doc.nombre} validado`);
+                                                    }}
+                                                >
+                                                    Validar
+                                                </a>
+                                                <a
+                                                    href="#"
+                                                    className="text-red-600 hover:text-red-900"
+                                                    onClick={(e) => {
+                                                        e.preventDefault();
+                                                        trackValidationAction('reject', doc.id, doc.nombre);
+                                                        // Aquí iría la lógica real de rechazo
+                                                        alert(`Documento ${doc.nombre} rechazado`);
+                                                    }}
+                                                >
+                                                    Rechazar
+                                                </a>
                                             </>
                                         )}
                                     </td>

@@ -1,8 +1,10 @@
 import { json, redirect } from "@remix-run/node";
 import type { LoaderFunctionArgs } from "@remix-run/node";
 import { useLoaderData } from "@remix-run/react";
+import { useState } from "react";
 import { getUser } from "~/utils/auth.server";
 import { getStatsOverTime, getLatestSummary, recordEvent } from "~/services/stats.server";
+import { usePageView, recordAction } from "~/hooks/useStats";
 
 export async function loader({ request }: LoaderFunctionArgs) {
     console.log("Admin analisis loader - processing request");
@@ -20,12 +22,14 @@ export async function loader({ request }: LoaderFunctionArgs) {
     }
 
     try {
-        // Registrar evento de vista de la página de análisis
+        // Registrar evento de vista de la página de análisis según documentación
         await recordEvent(request, {
             type: "view",
             name: "admin_analysis_page",
             value: {
-                user_id: user.id
+                user_id: user.id,
+                role: user.role,
+                section: "analisis"
             }
         });
 
@@ -218,6 +222,11 @@ export async function loader({ request }: LoaderFunctionArgs) {
 export default function AdminAnalisis() {
     const { analisisData, realData, error } = useLoaderData<typeof loader>();
 
+    // Registrar vista de página en el cliente
+    usePageView('admin_analysis_client', {
+        section: 'dashboard'
+    });
+
     return (
         <div className="p-6">
             {/* Mensajes de error o advertencia */}
@@ -320,6 +329,10 @@ export default function AdminAnalisis() {
                                 <div
                                     className="w-full bg-blue-500 rounded-t"
                                     style={{ height: `${(item.documentos / 100) * 200}px` }}
+                                    onClick={() => recordAction('chart_bar_click', {
+                                        mes: item.mes,
+                                        documentos: item.documentos
+                                    })}
                                 ></div>
                                 <div className="text-xs mt-2">{item.mes}</div>
                                 <div className="text-xs font-medium">{item.documentos}</div>
@@ -342,6 +355,11 @@ export default function AdminAnalisis() {
                                     <div
                                         className="bg-blue-600 h-2.5 rounded-full"
                                         style={{ width: `${item.porcentaje}%` }}
+                                        onClick={() => recordAction('distribution_bar_click', {
+                                            tipo: item.tipo,
+                                            cantidad: item.cantidad,
+                                            porcentaje: item.porcentaje
+                                        })}
                                     ></div>
                                 </div>
                             </div>
@@ -387,7 +405,19 @@ export default function AdminAnalisis() {
                                     </td>
                                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{lote.ultimaActualizacion}</td>
                                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                                        <a href="#" className="text-blue-600 hover:text-blue-900">Ver Detalles</a>
+                                        <a
+                                            href="#"
+                                            className="text-blue-600 hover:text-blue-900"
+                                            onClick={(e) => {
+                                                e.preventDefault();
+                                                recordAction('view_details_click', {
+                                                    id: lote.id,
+                                                    nombre: lote.nombre
+                                                });
+                                            }}
+                                        >
+                                            Ver Detalles
+                                        </a>
                                     </td>
                                 </tr>
                             ))}
@@ -396,7 +426,16 @@ export default function AdminAnalisis() {
                 </div>
 
                 <div className="px-6 py-4 bg-gray-50 border-t">
-                    <a href="#" className="text-blue-600 hover:text-blue-900 text-sm font-medium">
+                    <a
+                        href="#"
+                        className="text-blue-600 hover:text-blue-900 text-sm font-medium"
+                        onClick={(e) => {
+                            e.preventDefault();
+                            recordAction('view_all_events_click', {
+                                timestamp: new Date().toISOString()
+                            });
+                        }}
+                    >
                         Ver todos los eventos &rarr;
                     </a>
                 </div>

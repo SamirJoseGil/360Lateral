@@ -1,3 +1,5 @@
+# This file makes the views directory a Python package
+
 """
 Inicialización del módulo de vistas para la aplicación de lotes
 """

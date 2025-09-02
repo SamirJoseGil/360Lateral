@@ -1,4 +1,4 @@
-// app/utils/auth.server.ts
+// filepath: c:\Users\samir\Documents\GitHub\360Lateral\Frontend\app\utils\auth.server.ts
 import { createCookie, json, redirect, createCookieSessionStorage } from "@remix-run/node";
 import type { HeadersFunction } from "@remix-run/node";
 import { ENV, isProd } from "~/env.server";
@@ -498,4 +498,43 @@ export function getTokenDirectlyFromCookies(request: Request): string | null {
   // Simplemente devolver el token sin intentar decodificarlo
   // El token JWT ya está en un formato que se puede usar directamente
   return accessToken;
+}
+
+/**
+ * Verifica que el usuario está autenticado como administrador
+ * Si no lo está, redirige al login
+ */
+export async function authenticateAdmin(request: Request): Promise<any> {
+  // Obtenemos el token de acceso
+  const token = await getAccessTokenFromCookies(request);
+  
+  if (!token) {
+    throw redirect('/login?message=Debes iniciar sesión para acceder');
+  }
+  
+  // Obtener datos del usuario desde la API
+  try {
+    const apiUrl = process.env.API_URL || "http://localhost:8000";
+    const response = await fetch(`${apiUrl}/api/auth/me/`, {
+      headers: {
+        Authorization: `Bearer ${token}`
+      }
+    });
+    
+    if (!response.ok) {
+      throw redirect('/login?message=Sesión expirada. Por favor inicia sesión nuevamente.');
+    }
+    
+    const user = await response.json();
+    
+    // Verificar que el usuario es administrador
+    if (!user || user.role !== 'admin') {
+      throw redirect('/login?message=No tienes permisos para acceder a esta sección');
+    }
+    
+    return user;
+  } catch (error) {
+    console.error("Error autenticando administrador:", error);
+    throw redirect('/login?message=Error de autenticación');
+  }
 }

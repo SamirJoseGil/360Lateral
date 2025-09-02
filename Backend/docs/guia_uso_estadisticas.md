@@ -13,7 +13,8 @@ El módulo de Estadísticas de 360Lateral permite registrar, analizar y visualiz
 5. [Estadísticas a lo Largo del Tiempo](#estadísticas-a-lo-largo-del-tiempo)
 6. [Actividad de Usuario](#actividad-de-usuario)
 7. [Dashboard de Administración](#dashboard-de-administración)
-8. [Anexos y Referencias](#anexos-y-referencias)
+8. [Estadísticas del Sistema](#estadísticas-del-sistema)
+9. [Anexos y Referencias](#anexos-y-referencias)
 
 ## Requisitos Previos
 
@@ -402,6 +403,95 @@ curl -X GET \
       }
     }
   ]
+}
+```
+
+## Estadísticas del Sistema
+
+Endpoints especializados que proporcionan estadísticas sobre usuarios, lotes y documentos en el sistema.
+
+### Estadísticas Generales del Dashboard
+
+```
+GET /api/stats/dashboard/
+```
+
+### Estadísticas de Usuarios
+
+```
+GET /api/stats/dashboard/users/
+```
+
+Este endpoint requiere permisos de administrador y devuelve:
+
+```json
+{
+  "total": 125
+}
+```
+
+### Estadísticas de Lotes
+
+```
+GET /api/stats/dashboard/lotes/
+```
+
+```json
+{
+  "total": 500,
+  "activos": 450,
+  "inactivos": 50
+}
+```
+
+### Estadísticas de Documentos
+
+```
+GET /api/stats/dashboard/documentos/
+```
+
+```json
+{
+  "total": 1200,
+  "pendientes": 50,
+  "aceptados": 1100,
+  "rechazados": 50
+}
+```
+
+### Actividad Reciente
+
+```
+GET /api/stats/dashboard/recent-activity/?days=7
+```
+
+```json
+{
+  "recent_events": [
+    {
+      "id": 3201,
+      "type": "view",
+      "name": "lote_detail",
+      "timestamp": "2023-11-16T15:30:00Z",
+      "user_id": 1
+    },
+    {
+      "id": 3200,
+      "type": "search",
+      "name": "search_lotes",
+      "timestamp": "2023-11-16T15:25:00Z",
+      "user_id": 1
+    }
+  ],
+  "active_users": 25,
+  "activity_by_type": {
+    "view": 320,
+    "search": 145,
+    "action": 80,
+    "api": 35,
+    "error": 12,
+    "other": 5
+  }
 }
 ```
 

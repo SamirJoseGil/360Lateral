@@ -118,7 +118,7 @@ export default function MisLotes() {
     }, [loaderData]);
 
     return (
-        <div className="p-6">
+        <div className="py-32 p-8">
             <div className="flex justify-between items-center mb-6">
                 <h1 className="text-2xl font-bold">Mis Lotes</h1>
                 <Link
@@ -131,20 +131,6 @@ export default function MisLotes() {
                     Registrar Nuevo Lote
                 </Link>
             </div>
-
-            {/* Quitar información de depuración en producción */}
-            {process.env.NODE_ENV === 'development' && (
-                <div className="mb-6 p-4 bg-gray-100 border border-gray-200 rounded text-sm">
-                    <h3 className="font-bold mb-2">Información de depuración:</h3>
-                    <ul className="space-y-1 font-mono">
-                        <li>hasResults: {loaderData.hasResults ? 'true' : 'false'}</li>
-                        <li>count: {'count' in loaderData ? loaderData.count : 0}</li>
-                        <li>lotes array length: {lotes.length}</li>
-                        <li>lotes data estructura: {JSON.stringify(lotes[0] || {})?.substring(0, 100)}...</li>
-                    </ul>
-                </div>
-            )}
-
             {'error' in loaderData && loaderData.error && (
                 <div className="bg-red-50 border-l-4 border-red-400 p-4 mb-6">
                     <div className="flex">

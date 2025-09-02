@@ -1,46 +1,66 @@
-import { ActionFunction, json } from "@remix-run/node";
-import { getUser } from "~/utils/auth.server";
-import { recordEvent } from "~/services/stats.server";
+import { json } from "@remix-run/node";
+import type { ActionFunctionArgs } from "@remix-run/node";
+import { getAccessTokenFromCookies } from "~/utils/auth.server";
 
-export const action: ActionFunction = async ({ request }) => {
+/**
+ * API simplificada para conectar con los endpoints de estadísticas del backend
+ */
+export async function action({ request }: ActionFunctionArgs) {
+  if (request.method !== "POST") {
+    return json({ error: "Método no permitido" }, { status: 405 });
+  }
+
   try {
-    // Obtener el usuario actual si está autenticado
-    const user = await getUser(request);
+    // Extraer datos del request
+    const data = await request.json();
     
-    // Obtener los datos del evento desde el cuerpo de la solicitud
-    const eventData = await request.json();
-    
-    // Validar datos mínimos requeridos
-    if (!eventData.type || !eventData.name) {
-      return json({ error: "Tipo y nombre del evento son requeridos" }, { status: 400 });
+    // Validar datos mínimos
+    if (!data.type || !data.name) {
+      return json({ 
+        success: false, 
+        error: "Campos requeridos faltantes (type, name)" 
+      }, { status: 400 });
     }
     
-    // Registrar el evento en el servidor
-    const result = await recordEvent(request, {
-      type: eventData.type,
-      name: eventData.name,
-      value: {
-        ...eventData.value,
-        url: eventData.url,
-        // Agregar información del usuario si está autenticado
-        user_info: user ? { 
-          id: user.id,
-          role: user.role
-        } : undefined
+    // Obtener token de autenticación
+    const token = await getAccessTokenFromCookies(request);
+    const authHeader = token ? `Bearer ${token}` : null;
+    
+    // Enviar al backend
+    const apiUrl = process.env.API_URL || "http://localhost:8000";
+    const response = await fetch(`${apiUrl}/api/stats/events/record/`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(authHeader ? { Authorization: authHeader } : {})
       },
-      session_id: eventData.session_id
+      body: JSON.stringify(data)
     });
+
+    // Log para depuración
+    console.log(`[API Stats] Enviando a ${apiUrl}/api/stats/events/record/`);
+    console.log(`[API Stats] Datos: ${JSON.stringify(data)}`);
+    console.log(`[API Stats] Respuesta: ${response.status}`);
     
-    return json({ success: true, id: result.event?.id }, { 
-      status: 201,
-      headers: result.headers
-    });
-    
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      console.error(`[API Stats] Error: ${JSON.stringify(errorData)}`);
+      return json({ 
+        success: false, 
+        error: `Error del servidor: ${response.status}`,
+        details: errorData
+      }, { status: 502 });
+    }
+
+    const result = await response.json();
+    return json({ success: true, ...result }, { status: 201 });
   } catch (error) {
-    console.error("Error al registrar evento estadístico:", error);
-    return json({ 
-      error: "Error al registrar evento estadístico", 
-      details: error instanceof Error ? error.message : undefined 
-    }, { status: 500 });
+    console.error("[API Stats] Error inesperado:", error);
+    return json({ success: false, error: "Error interno" }, { status: 500 });
   }
-};
+}
+
+// Rechazar cualquier método GET
+export async function loader() {
+  return json({ error: "Método no permitido" }, { status: 405 });
+}
