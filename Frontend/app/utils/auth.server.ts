@@ -66,73 +66,57 @@ export async function commitAuthCookies({
 
 export async function clearAuthCookies() {
   const headers = new Headers();
-  // Eliminar cookie de acceso
-  headers.append("Set-Cookie", await accessTokenCookie.serialize("", { 
-    maxAge: 0,
-    expires: new Date(0),
-    path: "/"
-  }));
   
-  // Eliminar cookie de refresh
-  headers.append("Set-Cookie", await refreshTokenCookie.serialize("", { 
-    maxAge: 0,
-    expires: new Date(0),
-    path: "/"
-  }));
+  // Usar el formato específico para garantizar que las cookies se eliminan
+  // Nota: especificar path="/" es crucial para eliminar las cookies correctamente
   
-  // También eliminar la cookie de sesión si existe
-  try {
-    const sessionCookie = createCookie("l360_session", {
-      httpOnly: true,
-      secure: isProd,
-      sameSite: "lax",
-      path: "/",
-    });
-    
-    headers.append("Set-Cookie", await sessionCookie.serialize("", {
-      maxAge: 0,
-      expires: new Date(0),
-      path: "/"
-    }));
-  } catch (error) {
-    console.error("Error al limpiar cookie de sesión:", error);
-  }
+  // Limpiar l360_access
+  headers.append("Set-Cookie", 
+    "l360_access=; Max-Age=0; Path=/; HttpOnly; SameSite=Lax; Expires=Thu, 01 Jan 1970 00:00:00 GMT");
   
-  console.log("Cookies cleared with headers:", headers);
+  // Limpiar l360_refresh
+  headers.append("Set-Cookie", 
+    "l360_refresh=; Max-Age=0; Path=/; HttpOnly; SameSite=Lax; Expires=Thu, 01 Jan 1970 00:00:00 GMT");
+  
+  // Limpiar l360_session
+  headers.append("Set-Cookie", 
+    "l360_session=; Max-Age=0; Path=/; HttpOnly; SameSite=Lax; Expires=Thu, 01 Jan 1970 00:00:00 GMT");
+  
+  // Limpiar __360lateral (cookie de sesión)
+  headers.append("Set-Cookie", 
+    "__360lateral=; Max-Age=0; Path=/; HttpOnly; SameSite=Lax; Expires=Thu, 01 Jan 1970 00:00:00 GMT");
+  
+  console.log("All auth cookies cleared with explicit headers");
   return headers;
 }
 
 export async function logoutAction(request: Request) {
-  // intenta cerrar en backend, pero igual limpia local
   try {
-    const cookieHeader = request.headers.get("Cookie");
-    const access = await accessTokenCookie.parse(cookieHeader);
-    if (access) {
-      await fetch(`${API_URL}/api/auth/logout/`, {
-        method: "POST",
-        headers: { Authorization: `Bearer ${access}` },
-      }).catch((error) => {
-        console.log("Error al cerrar sesión en el backend:", error);
-      });
+    // Limpiar cookies manualmente
+    const headers = await clearAuthCookies();
+    
+    // Verificar si es una solicitud de API o una navegación normal
+    const acceptHeader = request.headers.get("Accept") || "";
+    const isApiRequest = acceptHeader.includes("application/json");
+    
+    if (isApiRequest) {
+      // Para solicitudes API, devolver JSON con instrucción de redirección
+      return json({ 
+        success: true, 
+        message: "Sesión cerrada correctamente",
+        redirectTo: "/",
+        forceRefresh: true
+      }, { headers });
     }
+    
+    // Para solicitudes normales, hacer redirección directa
+    return redirect("/", { headers });
   } catch (error) {
-    console.log("Error al procesar el cierre de sesión:", error);
+    console.error("Error en logoutAction:", error);
+    return redirect("/", {
+      headers: await clearAuthCookies()
+    });
   }
-  
-  // Limpiar las cookies en todos los casos
-  const headers = await clearAuthCookies();
-  
-  // Verificar si es una solicitud de API o una navegación normal
-  const acceptHeader = request.headers.get("Accept") || "";
-  const isApiRequest = acceptHeader.includes("application/json");
-  
-  if (isApiRequest) {
-    // Para solicitudes API, devolver JSON
-    return json({ success: true, redirectTo: "/" }, { headers });
-  }
-  
-  // Para solicitudes normales, redirigir a la página principal
-  return redirect("/", { headers });
 }
 
 /**

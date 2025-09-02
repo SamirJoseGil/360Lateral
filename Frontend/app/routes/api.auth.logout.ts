@@ -24,12 +24,14 @@ export async function action({ request }: ActionFunctionArgs) {
         .map(([, value]) => value)
     );
 
-    // Siempre devolver JSON con success para que el fetcher pueda procesarlo
+    // Asegurar que la respuesta incluya todas las cookies necesarias para eliminar
+    // y un campo explícito indicando que se debe recargar
     return json(
       {
         success: true,
         message: "Sesión cerrada correctamente",
-        shouldRefresh: true,
+        redirectTo: "/",
+        forceRefresh: true,
       },
       { headers }
     );
