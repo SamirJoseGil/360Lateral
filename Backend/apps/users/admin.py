@@ -4,7 +4,7 @@ Configuración del admin para usuarios
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
 from django.utils.translation import gettext_lazy as _
-from .models import User, UserProfile
+from .models import User, UserProfile, UserRequest
 
 
 @admin.register(User)
@@ -68,5 +68,27 @@ class UserProfileAdmin(admin.ModelAdmin):
         ('Fechas', {
             'fields': ('created_at', 'updated_at'),
             'classes': ('collapse',)
+        }),
+    )
+
+
+@admin.register(UserRequest)
+class UserRequestAdmin(admin.ModelAdmin):
+    """Admin para las solicitudes de usuario"""
+    
+    list_display = ('id', 'request_type', 'title', 'user', 'status', 'created_at', 'updated_at')
+    list_filter = ('request_type', 'status', 'created_at')
+    search_fields = ('title', 'description', 'user__username', 'user__email')
+    readonly_fields = ('created_at', 'updated_at')
+    
+    fieldsets = (
+        (None, {
+            'fields': ('user', 'request_type', 'title', 'description', 'status')
+        }),
+        ('Review Information', {
+            'fields': ('reviewer', 'review_notes')
+        }),
+        ('Additional Information', {
+            'fields': ('reference_id', 'metadata', 'created_at', 'updated_at')
         }),
     )

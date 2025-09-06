@@ -5,7 +5,7 @@ import { getUser } from "~/utils/auth.server";
 import { useState, useEffect } from "react";
 import { recordEvent } from "~/services/stats.server";
 import { fetchWithAuth } from "~/utils/auth.server";
-import { API_URL } from "~/utils/auth.server";
+import { API_URL } from "~/utils/api.server";
 
 // Tipos para los filtros y resultados
 type SearchFilter = {
@@ -329,12 +329,12 @@ export default function DeveloperSearch() {
             if (!response.ok) {
                 throw new Error('Error al actualizar favorito');
             }
-            
+
             // Actualizar UI optimísticamente invirtiendo el estado del favorito localmente
-            const updatedResults = searchResults.map(lot => 
+            const updatedResults = searchResults.map(lot =>
                 lot.id === lotId ? { ...lot, isFavorite: !lot.isFavorite } : lot
             );
-            
+
             // Forzar recarga de datos
             setSearchParams(prev => {
                 const newParams = new URLSearchParams(prev);

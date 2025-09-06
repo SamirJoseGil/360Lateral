@@ -1,16 +1,17 @@
 """
 Vistas para la API de usuarios
 """
-from rest_framework import generics, status, permissions, viewsets
+from rest_framework import generics, status, permissions, viewsets, filters
 from rest_framework.decorators import api_view, permission_classes, action
 from rest_framework.permissions import AllowAny, IsAuthenticated, IsAdminUser
 from rest_framework.response import Response
 from django.contrib.auth import get_user_model
 import logging
 
-from .models import User, UserProfile
-from .serializers import UserSerializer, UserProfileSerializer
+from .models import User, UserProfile, UserRequest
+from .serializers import UserSerializer, UserProfileSerializer, UserRequestSerializer, UserRequestDetailSerializer, UserRequestCreateSerializer, UserRequestUpdateSerializer, RequestStatusSummarySerializer
 from .permissions import CanManageUsers, IsOwnerOrAdmin
+from .services.request_status_service import RequestStatusService
 
 # Importar utilidades si existen
 try:
@@ -183,3 +184,114 @@ def users_health_check(request):
             'module': 'users',
             'error': str(e)
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+class IsRequestOwnerOrStaff(permissions.BasePermission):
+    """
+    Permission to only allow owners of a request or staff to view or edit it.
+    """
+    
+    def has_object_permission(self, request, view, obj):
+        # Staff can always access
+        if request.user.is_staff:
+            return True
+        
+        # Owner can access
+        return obj.user == request.user
+
+
+class UserRequestViewSet(viewsets.ModelViewSet):
+    """
+    ViewSet for managing user requests.
+    """
+    queryset = UserRequest.objects.all()
+    permission_classes = [permissions.IsAuthenticated, IsRequestOwnerOrStaff]
+    filter_backends = [filters.SearchFilter, filters.OrderingFilter]
+    search_fields = ['title', 'description', 'status', 'request_type']
+    ordering_fields = ['created_at', 'updated_at', 'status', 'request_type']
+    ordering = ['-updated_at']
+    
+    def get_serializer_class(self):
+        if self.action == 'create':
+            return UserRequestCreateSerializer
+        elif self.action in ['update', 'partial_update']:
+            return UserRequestUpdateSerializer
+        elif self.action in ['retrieve', 'status_history']:
+            return UserRequestDetailSerializer
+        return UserRequestSerializer
+    
+    def get_queryset(self):
+        """
+        Filter requests to return only those belonging to the current user,
+        unless the user is staff.
+        """
+        user = self.request.user
+        
+        # Staff can see all requests
+        if user.is_staff:
+            return UserRequest.objects.all()
+        
+        # Regular users can only see their own
+        return UserRequest.objects.filter(user=user)
+    
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(
+            data=request.data, 
+            context={'request': request}
+        )
+        serializer.is_valid(raise_exception=True)
+        self.perform_create(serializer)
+        headers = self.get_success_headers(serializer.data)
+        return Response(
+            serializer.data, 
+            status=status.HTTP_201_CREATED, 
+            headers=headers
+        )
+    
+    @action(detail=False, methods=['get'])
+    def my_requests(self, request):
+        """
+        Get all requests for the current user.
+        """
+        request_type = request.query_params.get('type')
+        request_status = request.query_params.get('status')
+        
+        requests = RequestStatusService.get_user_requests(
+            user=request.user,
+            request_type=request_type,
+            status=request_status
+        )
+        
+        page = self.paginate_queryset(requests)
+        if page is not None:
+            serializer = UserRequestSerializer(page, many=True)
+            return self.get_paginated_response(serializer.data)
+        
+        serializer = UserRequestSerializer(requests, many=True)
+        return Response(serializer.data)
+    
+    @action(detail=False, methods=['get'])
+    def summary(self, request):
+        """
+        Get a summary of request statuses for the current user.
+        """
+        summary = RequestStatusService.get_request_status_summary(request.user)
+        serializer = RequestStatusSummarySerializer(summary)
+        return Response(serializer.data)
+    
+    @action(detail=False, methods=['get'])
+    def recent_updates(self, request):
+        """
+        Get recent status updates for the current user's requests.
+        """
+        days = int(request.query_params.get('days', 30))
+        limit = int(request.query_params.get('limit', 10))
+        
+        updates = RequestStatusService.get_recent_status_updates(
+            user=request.user,
+            days=days,
+            limit=limit
+        )
+        
+        serializer = UserRequestSerializer(updates, many=True)
+        return Response(serializer.data)

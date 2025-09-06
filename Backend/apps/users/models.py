@@ -123,3 +123,62 @@ class UserProfile(models.Model):
     
     def __str__(self):
         return f"Perfil de {self.user.get_full_name()}"
+    
+
+class UserRequest(models.Model):
+    """
+    Model to track user requests and their statuses.
+    This can be used for various types of requests including 
+    access requests, feature requests, etc.
+    """
+    STATUS_CHOICES = [
+        ('pending', 'Pending'),
+        ('in_review', 'In Review'),
+        ('approved', 'Approved'),
+        ('rejected', 'Rejected'),
+        ('completed', 'Completed')
+    ]
+    
+    REQUEST_TYPE_CHOICES = [
+        ('access', 'Access Request'),
+        ('feature', 'Feature Request'),
+        ('support', 'Support Request'),
+        ('developer', 'Developer Application'),
+        ('project', 'Project Request'),
+        ('other', 'Other')
+    ]
+    
+    id = models.AutoField(primary_key=True)
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='requests')
+    request_type = models.CharField(
+        max_length=50, 
+        choices=REQUEST_TYPE_CHOICES,
+        default='other'
+    )
+    title = models.CharField(max_length=255)
+    description = models.TextField()
+    status = models.CharField(
+        max_length=20, 
+        choices=STATUS_CHOICES, 
+        default='pending'
+    )
+    reference_id = models.CharField(max_length=100, blank=True, null=True)
+    metadata = models.JSONField(default=dict, blank=True)
+    reviewer = models.ForeignKey(
+        User,
+        null=True, 
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name='reviewed_requests'
+    )
+    review_notes = models.TextField(blank=True, null=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    def __str__(self):
+        return f"{self.get_request_type_display()} - {self.title} ({self.get_status_display()})"
+    
+    class Meta:
+        ordering = ['-updated_at']
+        verbose_name = 'User Request'
+        verbose_name_plural = 'User Requests'

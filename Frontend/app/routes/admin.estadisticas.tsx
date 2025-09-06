@@ -5,11 +5,16 @@ import { useLoaderData } from "@remix-run/react";
 import { useState, useEffect } from "react";
 import { getUser } from "~/utils/auth.server";
 import {
-    getStatsOverTime,
-    getLatestSummary,
     recordEvent,
     getUserActivity,
-    getRecentActivity
+    getRecentActivity,
+    getAllChartData,
+    getDocumentsByMonth,
+    getEventDistribution,
+    getEventsDashboard,
+    getEventsCounts,
+    getDailyEvents,
+    getEventTypes
 } from "~/services/stats.server";
 import { PageViewTracker, useEventTracker } from "~/components/StatsTracker";
 
@@ -51,42 +56,61 @@ export async function loader({ request }: LoaderFunctionArgs) {
         const oneYearAgo = new Date(now);
         oneYearAgo.setFullYear(now.getFullYear() - 1);
 
-        // Obtener todos los datos necesarios en paralelo
+        // Obtener todos los datos necesarios en paralelo usando los nuevos endpoints
         const [
-            dailyStatsResponse,
-            monthlyStatsResponse,
-            summaryResponse,
+            allChartDataResponse,
+            documentsByMonthResponse,
+            eventDistributionResponse,
             userActivityResponse,
-            recentActivityResponse
+            recentActivityResponse,
+            // Nuevos endpoints específicos para eventos
+            eventsDashboardResponse,
+            eventsCountsResponse,
+            dailyEventsResponse,
+            eventTypesResponse
         ] = await Promise.all([
-            // Estadísticas diarias de los últimos 30 días
-            getStatsOverTime(request, {
-                start_date: thirtyDaysAgo.toISOString().split('T')[0],
-                end_date: now.toISOString().split('T')[0],
-                interval: 'day'
-            }),
-            // Estadísticas mensuales del último año
-            getStatsOverTime(request, {
-                start_date: oneYearAgo.toISOString().split('T')[0],
-                end_date: now.toISOString().split('T')[0],
-                interval: 'month'
-            }),
-            // Resumen más reciente
-            getLatestSummary(request),
+            // Datos de gráficos generales
+            getAllChartData(request),
+            // Documentos por mes (tendencias mensuales)
+            getDocumentsByMonth(request),
+            // Distribución de eventos por tipo (endpoint anterior)
+            getEventDistribution(request),
             // Actividad del usuario actual
             getUserActivity(request),
             // Actividad reciente del sistema
-            getRecentActivity(request)
+            getRecentActivity(request),
+            // Nuevos endpoints específicos para eventos
+            getEventsDashboard(request),
+            getEventsCounts(request),
+            getDailyEvents(request),
+            getEventTypes(request)
         ]);
+
+        // Extraer datos relevantes de las respuestas
+        const { chartData } = allChartDataResponse;
+        const { documentsByMonth } = documentsByMonthResponse;
+        const { eventDistribution } = eventDistributionResponse;
+        const { activity: userActivity } = userActivityResponse;
+        const { recentActivity } = recentActivityResponse;
+
+        // Extraer datos de los nuevos endpoints con la estructura correcta
+        const eventsDashboard = eventsDashboardResponse.eventsDashboard || {};
+        const eventsCounts = eventsCountsResponse.eventsCounts || {};
+        const dailyEvents = dailyEventsResponse.dailyEvents || [];
+        const eventTypes = eventTypesResponse.eventTypes || [];
 
         // Combinar headers de todas las respuestas
         const headers = new Headers();
         [
-            dailyStatsResponse.headers,
-            monthlyStatsResponse.headers,
-            summaryResponse.headers,
+            allChartDataResponse.headers,
+            documentsByMonthResponse.headers,
+            eventDistributionResponse.headers,
             userActivityResponse.headers,
-            recentActivityResponse.headers
+            recentActivityResponse.headers,
+            eventsDashboardResponse.headers,
+            eventsCountsResponse.headers,
+            dailyEventsResponse.headers,
+            eventTypesResponse.headers
         ].forEach(h => {
             if (h) {
                 for (const [key, value] of h.entries()) {
@@ -95,14 +119,31 @@ export async function loader({ request }: LoaderFunctionArgs) {
             }
         });
 
+        // Procesamos los datos para adaptarlos al formato que espera el componente
+        const dailyStats = chartData?.daily_events?.map((item: any) => ({
+            period: item.date,
+            count: item.count
+        })) || [];
+
+        const monthlyStats = documentsByMonth?.monthly_data?.map((item: any) => ({
+            period: item.month,
+            count: item.count
+        })) || [];
+
         return json({
             user,
             stats: {
-                dailyStats: dailyStatsResponse.timeSeriesData || [],
-                monthlyStats: monthlyStatsResponse.timeSeriesData || [],
-                summary: summaryResponse.summary || {},
-                userActivity: userActivityResponse.activity || {},
-                recentActivity: recentActivityResponse.recentActivity || {}
+                dailyStats: dailyStats,
+                monthlyStats: monthlyStats,
+                summary: chartData?.summary || {},
+                userActivity: userActivity || {},
+                recentActivity: recentActivity || {},
+                eventDistribution: eventDistribution?.distribution || {},
+                // Nuevos datos específicos de eventos
+                eventsDashboard: eventsDashboard || {},
+                eventsCounts: eventsCounts || {},
+                dailyEvents: dailyEvents || {},
+                eventTypes: eventTypes || {}
             },
             error: null
         }, { headers });
@@ -117,7 +158,12 @@ export async function loader({ request }: LoaderFunctionArgs) {
                 monthlyStats: [],
                 summary: {},
                 userActivity: {},
-                recentActivity: {}
+                recentActivity: {},
+                eventDistribution: {},
+                eventsDashboard: {},
+                eventsCounts: {},
+                dailyEvents: {},
+                eventTypes: {}
             },
             error: "Error al cargar los datos de estadísticas. Por favor, inténtelo de nuevo más tarde."
         });
@@ -140,8 +186,8 @@ export default function AdminEstadisticas() {
         eventos: point.count
     }));
 
-    // Distribución por tipo de evento
-    const eventTypesDistribution = stats.summary?.metrics?.events_by_type || {
+    // Distribución por tipo de evento - ahora viene directamente de stats.eventDistribution
+    const eventTypesDistribution = stats.eventDistribution || stats.summary?.metrics?.events_by_type || {
         view: 0,
         search: 0,
         action: 0,
@@ -453,9 +499,82 @@ export default function AdminEstadisticas() {
 
             {activeTab === 'eventos' && (
                 <div className="space-y-6">
+                    {/* Resumen de eventos usando datos del endpoint específico */}
+                    <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+                        <div className="bg-white p-6 rounded-lg shadow">
+                            <h3 className="text-sm font-medium text-gray-500">Total Eventos</h3>
+                            <p className="text-3xl font-bold text-gray-900">{stats.eventsDashboard?.total_events || stats.eventsCounts?.total_events || 0}</p>
+                            <p className="text-sm text-gray-500 mt-2">Últimos 30 días</p>
+                        </div>
+                        <div className="bg-white p-6 rounded-lg shadow">
+                            <h3 className="text-sm font-medium text-gray-500">Usuarios Únicos</h3>
+                            <p className="text-3xl font-bold text-blue-600">{stats.eventsDashboard?.unique_users || stats.eventsCounts?.unique_users || 0}</p>
+                            <p className="text-sm text-gray-500 mt-2">Últimos 30 días</p>
+                        </div>
+                        <div className="bg-white p-6 rounded-lg shadow">
+                            <h3 className="text-sm font-medium text-gray-500">Sesiones</h3>
+                            <p className="text-3xl font-bold text-green-600">{stats.eventsDashboard?.sessions || stats.eventsCounts?.sessions || 0}</p>
+                            <p className="text-sm text-gray-500 mt-2">Últimos 30 días</p>
+                        </div>
+                        <div className="bg-white p-6 rounded-lg shadow">
+                            <h3 className="text-sm font-medium text-gray-500">Errores</h3>
+                            <p className="text-3xl font-bold text-red-600">{stats.eventsDashboard?.errors || stats.eventsCounts?.errors || 0}</p>
+                            <p className="text-sm text-gray-500 mt-2">Últimos 30 días</p>
+                        </div>
+                    </div>
+
+                    {/* Distribución de tipos de eventos del endpoint específico */}
+                    <div className="bg-white p-6 rounded-lg shadow">
+                        <h3 className="text-lg font-medium mb-4">Distribución por Tipo de Evento</h3>
+                        <div className="space-y-4">
+                            {/* Usar los datos del endpoint específico de tipos de eventos que vienen como array */}
+                            {(stats.eventsDashboard?.event_types || stats.eventTypes || []).map((event: any, index: number) => (
+                                <div key={index}>
+                                    <div className="flex justify-between items-center mb-1">
+                                        <span className="text-sm font-medium">{eventTypesTranslations[event.type] || event.type}</span>
+                                        <span className="text-sm text-gray-500">
+                                            {event.count} ({event.percentage.toFixed(1)}%)
+                                        </span>
+                                    </div>
+                                    <div className="w-full bg-gray-200 rounded-full h-2.5">
+                                        <div
+                                            className="bg-blue-600 h-2.5 rounded-full"
+                                            style={{ width: `${event.percentage}%` }}
+                                        ></div>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+
+                    {/* Eventos diarios usando datos del endpoint específico */}
+                    <div className="bg-white p-6 rounded-lg shadow">
+                        <h3 className="text-lg font-medium mb-4">Eventos Diarios</h3>
+                        <div className="h-64 flex items-end space-x-1">
+                            {(stats.eventsDashboard?.daily_events || stats.dailyEvents || []).map((day: any, index: number) => {
+                                const dailyEventsData = stats.eventsDashboard?.daily_events || stats.dailyEvents || [];
+                                const maxCount = Math.max(...dailyEventsData.map((d: any) => d.count || 0), 1);
+                                const heightPercentage = (day.count / maxCount) * 180;
+
+                                return (
+                                    <div key={index} className="flex flex-col items-center flex-1">
+                                        <div
+                                            className="w-full bg-blue-500 rounded-t"
+                                            style={{
+                                                height: `${heightPercentage}px`
+                                            }}
+                                        ></div>
+                                        <div className="text-xs mt-2 transform -rotate-45 origin-top-left">
+                                            {index % 3 === 0 ? new Date(day.date).toLocaleDateString() : ''}
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    </div>                    {/* Tabla de eventos recientes del dashboard de eventos */}
                     <div className="bg-white p-6 rounded-lg shadow">
                         <h3 className="text-lg font-medium mb-4">Eventos Recientes</h3>
-                        {stats.recentActivity?.recent_events?.length ? (
+                        {(stats.eventsDashboard?.recent_events?.length || stats.recentActivity?.recent_events?.length) ? (
                             <div className="overflow-x-auto">
                                 <table className="w-full">
                                     <thead className="bg-gray-50">
@@ -468,7 +587,7 @@ export default function AdminEstadisticas() {
                                         </tr>
                                     </thead>
                                     <tbody className="bg-white divide-y divide-gray-200">
-                                        {stats.recentActivity.recent_events.map((event: any, index: number) => (
+                                        {(stats.eventsDashboard?.recent_events || stats.recentActivity?.recent_events || []).map((event: any, index: number) => (
                                             <tr key={index}>
                                                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{event.id}</td>
                                                 <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{event.name}</td>
@@ -482,7 +601,7 @@ export default function AdminEstadisticas() {
                                                     </span>
                                                 </td>
                                                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                                                    {event.user_id || 'Anónimo'}
+                                                    {event.user_name || event.user_id || 'Anónimo'}
                                                 </td>
                                                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                                                     {new Date(event.timestamp).toLocaleString()}

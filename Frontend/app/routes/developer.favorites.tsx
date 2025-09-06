@@ -2,7 +2,6 @@ import { json } from "@remix-run/node";
 import { Link, useLoaderData, useFetcher } from "@remix-run/react";
 import type { LoaderFunctionArgs } from "@remix-run/node";
 import { getUser } from "~/utils/auth.server";
-import { fetchWithAuth, API_URL } from "~/utils/auth.server";
 import { useState } from "react";
 import { recordEvent } from "~/services/stats.server";
 
@@ -167,8 +166,8 @@ export default function DeveloperFavorites() {
                     <button
                         onClick={() => setFilterTag(null)}
                         className={`px-3 py-1 rounded-full text-xs font-medium ${filterTag === null
-                                ? 'bg-indigo-100 text-indigo-800'
-                                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                            ? 'bg-indigo-100 text-indigo-800'
+                            : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
                             }`}
                     >
                         Todos
@@ -179,8 +178,8 @@ export default function DeveloperFavorites() {
                             key={tag}
                             onClick={() => setFilterTag(tag === filterTag ? null : tag)}
                             className={`px-3 py-1 rounded-full text-xs font-medium ${tag === filterTag
-                                    ? 'bg-indigo-100 text-indigo-800'
-                                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                                ? 'bg-indigo-100 text-indigo-800'
+                                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
                                 }`}
                         >
                             {tag}

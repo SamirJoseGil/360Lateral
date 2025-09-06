@@ -1,5 +1,6 @@
-import { API_URL, fetchWithAuth, getAccessTokenFromCookies } from "~/utils/auth.server";
+import { fetchWithAuth, getAccessTokenFromCookies } from "~/utils/auth.server";
 import { v4 as uuid } from "uuid";
+import { API_URL } from "~/utils/api.server";
 
 // Constante para la URL base de la API de estadísticas
 const STATS_API_URL = `${API_URL}/api/stats`;
@@ -284,7 +285,7 @@ export async function getUserActivity(request: Request, days?: number) {
     }
     
     const apiUrl = process.env.API_URL || "http://localhost:8000";
-    const response = await fetch(`${apiUrl}/api/stats/user-activity/?days=${days || 30}`, {
+    const response = await fetch(`${apiUrl}/api/stats/user/?days=${days || 30}`, {
       headers: { 
         Authorization: `Bearer ${token}`,
         "Content-Type": "application/json"
@@ -597,6 +598,296 @@ export async function getRecentActivity(request: Request, days: number = 7) {
       }, 
       headers: new Headers() 
     };
+  }
+}
+
+// Nueva función para obtener el resumen del dashboard
+export async function getDashboardSummary(request: Request) {
+  try {
+    const endpoint = `${API_URL}/api/stats/dashboard/summary/`;
+    const { res: response, setCookieHeaders } = await fetchWithAuth(request, endpoint);
+    
+    if (!response.ok) {
+      console.error(`Error obteniendo resumen del dashboard: ${response.status} ${response.statusText}`);
+      throw new Error(`Error en la solicitud: ${response.status} ${response.statusText}`);
+    }
+    
+    const summary = await response.json();
+    return { 
+      summary, 
+      headers: setCookieHeaders 
+    };
+  } catch (error) {
+    console.error('Error obteniendo resumen del dashboard:', error);
+    throw error;
+  }
+}
+
+/**
+ * Obtiene los eventos recientes para mostrar en formato de tabla en el dashboard
+ */
+export async function getDashboardEventsTable(request: Request, limit: number = 10) {
+  try {
+    const endpoint = `${API_URL}/api/stats/dashboard/events/table/?limit=${limit}`;
+    const { res: response, setCookieHeaders } = await fetchWithAuth(request, endpoint);
+    
+    if (!response.ok) {
+      console.error(`Error obteniendo tabla de eventos: ${response.status} ${response.statusText}`);
+      throw new Error(`Error en la solicitud: ${response.status} ${response.statusText}`);
+    }
+    
+    const eventsTableData = await response.json();
+    return { 
+      eventsTableData, 
+      headers: setCookieHeaders 
+    };
+  } catch (error) {
+    console.error('Error obteniendo tabla de eventos:', error);
+    throw error;
+  }
+}
+
+/**
+ * Obtiene la distribución de eventos por tipo para mostrar en el gráfico del dashboard
+ */
+export async function getDashboardEventsDistribution(request: Request) {
+  try {
+    const endpoint = `${API_URL}/api/stats/dashboard/events/distribution/`;
+    const { res: response, setCookieHeaders } = await fetchWithAuth(request, endpoint);
+    
+    if (!response.ok) {
+      console.error(`Error obteniendo distribución de eventos: ${response.status} ${response.statusText}`);
+      throw new Error(`Error en la solicitud: ${response.status} ${response.statusText}`);
+    }
+    
+    const eventsDistribution = await response.json();
+    return { 
+      eventsDistribution, 
+      headers: setCookieHeaders 
+    };
+  } catch (error) {
+    console.error('Error obteniendo distribución de eventos:', error);
+    throw error;
+  }
+}
+
+/**
+ * Obtiene todos los datos de gráficos en una sola solicitud
+ */
+export async function getAllChartData(request: Request) {
+  try {
+    const endpoint = `${API_URL}/api/stats/charts/`;
+    const { res: response, setCookieHeaders } = await fetchWithAuth(request, endpoint);
+    
+    if (!response.ok) {
+      console.error(`Error obteniendo datos de gráficos: ${response.status} ${response.statusText}`);
+      throw new Error(`Error en la solicitud: ${response.status} ${response.statusText}`);
+    }
+    
+    const chartData = await response.json();
+    return { 
+      chartData, 
+      headers: setCookieHeaders 
+    };
+  } catch (error) {
+    console.error('Error obteniendo datos de gráficos:', error);
+    throw error;
+  }
+}
+
+/**
+ * Obtiene el resumen de estadísticas de lotes
+ */
+export async function getLotesSummary(request: Request) {
+  try {
+    const endpoint = `${API_URL}/api/stats/charts/lotes-summary/`;
+    const { res: response, setCookieHeaders } = await fetchWithAuth(request, endpoint);
+    
+    if (!response.ok) {
+      console.error(`Error obteniendo resumen de lotes: ${response.status} ${response.statusText}`);
+      throw new Error(`Error en la solicitud: ${response.status} ${response.statusText}`);
+    }
+    
+    const lotesSummary = await response.json();
+    return { 
+      lotesSummary, 
+      headers: setCookieHeaders 
+    };
+  } catch (error) {
+    console.error('Error obteniendo resumen de lotes:', error);
+    throw error;
+  }
+}
+
+/**
+ * Obtiene el recuento total de documentos
+ */
+export async function getDocumentsCount(request: Request) {
+  try {
+    const endpoint = `${API_URL}/api/stats/charts/documents-count/`;
+    const { res: response, setCookieHeaders } = await fetchWithAuth(request, endpoint);
+    
+    if (!response.ok) {
+      console.error(`Error obteniendo recuento de documentos: ${response.status} ${response.statusText}`);
+      throw new Error(`Error en la solicitud: ${response.status} ${response.statusText}`);
+    }
+    
+    const documentsCount = await response.json();
+    return { 
+      documentsCount, 
+      headers: setCookieHeaders 
+    };
+  } catch (error) {
+    console.error('Error obteniendo recuento de documentos:', error);
+    throw error;
+  }
+}
+
+/**
+ * Obtiene el recuento de documentos por mes
+ */
+export async function getDocumentsByMonth(request: Request) {
+  try {
+    const endpoint = `${API_URL}/api/stats/charts/documents-by-month/`;
+    const { res: response, setCookieHeaders } = await fetchWithAuth(request, endpoint);
+    
+    if (!response.ok) {
+      console.error(`Error obteniendo documentos por mes: ${response.status} ${response.statusText}`);
+      throw new Error(`Error en la solicitud: ${response.status} ${response.statusText}`);
+    }
+    
+    const documentsByMonth = await response.json();
+    return { 
+      documentsByMonth, 
+      headers: setCookieHeaders 
+    };
+  } catch (error) {
+    console.error('Error obteniendo documentos por mes:', error);
+    throw error;
+  }
+}
+
+/**
+ * Obtiene la distribución de eventos por tipo
+ */
+export async function getEventDistribution(request: Request) {
+  try {
+    const endpoint = `${API_URL}/api/stats/charts/event-distribution/`;
+    const { res: response, setCookieHeaders } = await fetchWithAuth(request, endpoint);
+    
+    if (!response.ok) {
+      console.error(`Error obteniendo distribución de eventos: ${response.status} ${response.statusText}`);
+      throw new Error(`Error en la solicitud: ${response.status} ${response.statusText}`);
+    }
+    
+    const eventDistribution = await response.json();
+    return { 
+      eventDistribution, 
+      headers: setCookieHeaders 
+    };
+  } catch (error) {
+    console.error('Error obteniendo distribución de eventos:', error);
+    throw error;
+  }
+}
+
+/**
+ * Obtiene datos completos del dashboard de eventos
+ */
+export async function getEventsDashboard(request: Request, days: number = 30) {
+  try {
+    const endpoint = `${API_URL}/api/stats/events/dashboard/?days=${days}`;
+    const { res: response, setCookieHeaders } = await fetchWithAuth(request, endpoint);
+    
+    if (!response.ok) {
+      console.error(`Error obteniendo dashboard de eventos: ${response.status} ${response.statusText}`);
+      throw new Error(`Error en la solicitud: ${response.status} ${response.statusText}`);
+    }
+    
+    // Esta respuesta incluye directamente total_events, unique_users, sessions, errors, etc.
+    const eventsDashboard = await response.json();
+    return { 
+      eventsDashboard, 
+      headers: setCookieHeaders 
+    };
+  } catch (error) {
+    console.error('Error obteniendo dashboard de eventos:', error);
+    throw error;
+  }
+}
+
+/**
+ * Obtiene métricas de conteo de eventos
+ */
+export async function getEventsCounts(request: Request, days: number = 30) {
+  try {
+    const endpoint = `${API_URL}/api/stats/events/counts/?days=${days}`;
+    const { res: response, setCookieHeaders } = await fetchWithAuth(request, endpoint);
+    
+    if (!response.ok) {
+      console.error(`Error obteniendo conteos de eventos: ${response.status} ${response.statusText}`);
+      throw new Error(`Error en la solicitud: ${response.status} ${response.statusText}`);
+    }
+    
+    // Esta respuesta incluye directamente total_events, unique_users, sessions, errors
+    const eventsCounts = await response.json();
+    return { 
+      eventsCounts, 
+      headers: setCookieHeaders 
+    };
+  } catch (error) {
+    console.error('Error obteniendo conteos de eventos:', error);
+    throw error;
+  }
+}
+
+/**
+ * Obtiene conteos diarios de eventos
+ */
+export async function getDailyEvents(request: Request, days: number = 30) {
+  try {
+    const endpoint = `${API_URL}/api/stats/events/daily/?days=${days}`;
+    const { res: response, setCookieHeaders } = await fetchWithAuth(request, endpoint);
+    
+    if (!response.ok) {
+      console.error(`Error obteniendo eventos diarios: ${response.status} ${response.statusText}`);
+      throw new Error(`Error en la solicitud: ${response.status} ${response.statusText}`);
+    }
+    
+    // Esta respuesta es un array directo de objetos {date, count}
+    const dailyEvents = await response.json();
+    return { 
+      dailyEvents, 
+      headers: setCookieHeaders 
+    };
+  } catch (error) {
+    console.error('Error obteniendo eventos diarios:', error);
+    throw error;
+  }
+}
+
+/**
+ * Obtiene distribución de tipos de eventos
+ */
+export async function getEventTypes(request: Request, days: number = 30) {
+  try {
+    const endpoint = `${API_URL}/api/stats/events/types/?days=${days}`;
+    const { res: response, setCookieHeaders } = await fetchWithAuth(request, endpoint);
+    
+    if (!response.ok) {
+      console.error(`Error obteniendo tipos de eventos: ${response.status} ${response.statusText}`);
+      throw new Error(`Error en la solicitud: ${response.status} ${response.statusText}`);
+    }
+    
+    // Esta respuesta es un array directo de objetos {type, count, percentage}
+    const eventTypes = await response.json();
+    return { 
+      eventTypes, 
+      headers: setCookieHeaders 
+    };
+  } catch (error) {
+    console.error('Error obteniendo tipos de eventos:', error);
+    throw error;
   }
 }
 

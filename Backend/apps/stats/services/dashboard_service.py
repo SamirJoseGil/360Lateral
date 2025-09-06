@@ -75,6 +75,19 @@ class DashboardService:
         }
     
     @staticmethod
+    def get_recent_activity_count(days=1):
+        """
+        Obtiene el conteo de eventos recientes en el sistema.
+        Por defecto, muestra los eventos del último día.
+        """
+        from apps.stats.models import Stat
+        
+        start_date = timezone.now() - timedelta(days=days)
+        
+        # Contar eventos recientes
+        return Stat.objects.filter(timestamp__gte=start_date).count()
+    
+    @staticmethod
     def get_recent_activity(days=7):
         """
         Obtiene la actividad reciente en el sistema.
@@ -114,6 +127,76 @@ class DashboardService:
                 item['type']: item['count'] for item in activity_by_type
             }
         }
+    
+    @staticmethod
+    def get_recent_events_table(limit=10):
+        """
+        Obtiene los eventos más recientes en formato tabular para mostrar en el dashboard.
+        
+        Args:
+            limit: Número máximo de eventos a retornar
+            
+        Returns:
+            Una lista de eventos con los campos: evento, tipo, usuario, fecha
+        """
+        from apps.stats.models import Stat
+        from django.contrib.auth import get_user_model
+        
+        User = get_user_model()
+        
+        # Obtener eventos recientes
+        recent_events = Stat.objects.order_by('-timestamp')[:limit]
+        
+        result = []
+        for event in recent_events:
+            # Intentar obtener el nombre de usuario
+            username = "Usuario Anónimo"
+            if event.user_id:
+                try:
+                    user = User.objects.filter(id=event.user_id).first()
+                    if user:
+                        username = user.username or user.email or f"Usuario {user.id}"
+                except:
+                    username = f"Usuario {event.user_id}"
+            
+            result.append({
+                'evento': event.name,
+                'tipo': event.type,
+                'usuario': username,
+                'fecha': event.timestamp.strftime('%d/%m/%Y, %H:%M:%S')
+            })
+        
+        return result
+    
+    @staticmethod
+    def get_events_distribution():
+        """
+        Obtiene la distribución de eventos por tipo para mostrar en el dashboard.
+        
+        Returns:
+            Una lista de diccionarios con el tipo de evento, conteo y porcentaje
+        """
+        from apps.stats.models import Stat
+        
+        # Obtener el conteo total de eventos
+        total_events = Stat.objects.count()
+        if total_events == 0:
+            return []
+        
+        # Obtener conteo por tipo
+        events_by_type = Stat.objects.values('type').annotate(count=Count('id')).order_by('-count')
+        
+        # Calcular porcentajes
+        result = []
+        for item in events_by_type:
+            percentage = (item['count'] / total_events) * 100
+            result.append({
+                'type': item['type'],
+                'count': item['count'],
+                'percentage': round(percentage, 1)
+            })
+            
+        return result
     
     @staticmethod
     def get_dashboard_stats(days=30):

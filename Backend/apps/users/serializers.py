@@ -5,7 +5,7 @@ from rest_framework import serializers
 from django.contrib.auth import authenticate
 from django.contrib.auth.password_validation import validate_password
 from drf_yasg.utils import swagger_serializer_method
-from .models import User, UserProfile
+from .models import User, UserProfile, UserRequest
 
 
 class UserBasicSerializer(serializers.ModelSerializer):
@@ -177,3 +177,94 @@ class UserProfileSerializer(serializers.ModelSerializer):
             'email_notifications', 'sms_notifications',
             'language', 'timezone'
         ]
+
+
+class UserRequestSerializer(serializers.ModelSerializer):
+    """
+    Serializer for UserRequest model with basic information.
+    """
+    status_display = serializers.CharField(source='get_status_display', read_only=True)
+    request_type_display = serializers.CharField(source='get_request_type_display', read_only=True)
+    user_name = serializers.SerializerMethodField()
+    
+    class Meta:
+        model = UserRequest
+        fields = [
+            'id', 'user', 'user_name', 'request_type', 'request_type_display', 
+            'title', 'status', 'status_display', 'created_at', 'updated_at'
+        ]
+        read_only_fields = ['id', 'created_at', 'updated_at']
+        
+    def get_user_name(self, obj):
+        if obj.user:
+            return obj.user.username
+        return None
+
+
+class UserRequestDetailSerializer(serializers.ModelSerializer):
+    """
+    Detailed serializer for UserRequest with all information.
+    """
+    status_display = serializers.CharField(source='get_status_display', read_only=True)
+    request_type_display = serializers.CharField(source='get_request_type_display', read_only=True)
+    user_name = serializers.SerializerMethodField()
+    reviewer_name = serializers.SerializerMethodField()
+    
+    class Meta:
+        model = UserRequest
+        fields = [
+            'id', 'user', 'user_name', 'request_type', 'request_type_display', 
+            'title', 'description', 'status', 'status_display', 'reference_id',
+            'metadata', 'reviewer', 'reviewer_name', 'review_notes', 
+            'created_at', 'updated_at'
+        ]
+        read_only_fields = ['id', 'created_at', 'updated_at']
+    
+    def get_user_name(self, obj):
+        if obj.user:
+            return obj.user.username
+        return None
+        
+    def get_reviewer_name(self, obj):
+        if obj.reviewer:
+            return obj.reviewer.username
+        return None
+
+
+class UserRequestCreateSerializer(serializers.ModelSerializer):
+    """
+    Serializer for creating new user requests.
+    """
+    class Meta:
+        model = UserRequest
+        fields = [
+            'request_type', 'title', 'description', 'reference_id', 'metadata'
+        ]
+        
+    def create(self, validated_data):
+        # Get the current user from the context
+        user = self.context['request'].user
+        validated_data['user'] = user
+        
+        # Create the request
+        return UserRequest.objects.create(**validated_data)
+
+
+class UserRequestUpdateSerializer(serializers.ModelSerializer):
+    """
+    Serializer for updating existing user requests.
+    """
+    class Meta:
+        model = UserRequest
+        fields = ['description', 'metadata']
+
+
+class RequestStatusSummarySerializer(serializers.Serializer):
+    """
+    Serializer for request status summary data.
+    """
+    total = serializers.IntegerField()
+    pending = serializers.IntegerField()
+    approved = serializers.IntegerField()
+    rejected = serializers.IntegerField()
+    by_type = serializers.DictField(child=serializers.IntegerField())

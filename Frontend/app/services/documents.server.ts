@@ -1,4 +1,6 @@
-import { API_URL, fetchWithAuth } from "~/utils/auth.server";
+import { API_URL } from "~/utils/api.server";
+import { fetchWithAuth } from "~/utils/auth.server";
+
 
 export interface Document {
   id: number;
@@ -159,6 +161,170 @@ export async function archiveDocument(request: Request, documentId: string) {
     return { message: data.message, headers: setCookieHeaders };
   } catch (error) {
     console.error("[Documents] Error in archiveDocument:", error);
+    throw error;
+  }
+}
+
+/**
+ * Obtiene un resumen de documentos por estado de validación
+ */
+export async function getValidationSummary(request: Request) {
+  try {
+    const endpoint = `${API_URL}/api/documents/validation/summary/`;
+    const { res: response, setCookieHeaders } = await fetchWithAuth(request, endpoint);
+    
+    if (!response.ok) {
+      console.error(`Error obteniendo resumen de validación: ${response.status} ${response.statusText}`);
+      throw new Error(`Error en la solicitud: ${response.status} ${response.statusText}`);
+    }
+    
+    const data = await response.json();
+    return { 
+      validationSummary: data, 
+      headers: setCookieHeaders 
+    };
+  } catch (error) {
+    console.error('Error obteniendo resumen de validación:', error);
+    throw error;
+  }
+}
+
+/**
+ * Obtiene la lista de documentos para validación con filtros opcionales
+ */
+export async function getValidationDocuments(request: Request, filters?: {
+  estado?: string;
+  tipo?: string;
+  fecha_desde?: string;
+  fecha_hasta?: string;
+  page?: number;
+  page_size?: number;
+}) {
+  try {
+    let endpoint = `${API_URL}/api/documents/validation/list/`;
+    
+    // Añadir filtros a la URL si están presentes
+    if (filters) {
+      const params = new URLSearchParams();
+      
+      if (filters.estado) params.append('estado', filters.estado);
+      if (filters.tipo) params.append('tipo', filters.tipo);
+      if (filters.fecha_desde) params.append('fecha_desde', filters.fecha_desde);
+      if (filters.fecha_hasta) params.append('fecha_hasta', filters.fecha_hasta);
+      if (filters.page) params.append('page', filters.page.toString());
+      if (filters.page_size) params.append('page_size', filters.page_size.toString());
+      
+      const queryString = params.toString();
+      if (queryString) {
+        endpoint += `?${queryString}`;
+      }
+    }
+    
+    const { res: response, setCookieHeaders } = await fetchWithAuth(request, endpoint);
+    
+    if (!response.ok) {
+      console.error(`Error obteniendo documentos para validación: ${response.status} ${response.statusText}`);
+      throw new Error(`Error en la solicitud: ${response.status} ${response.statusText}`);
+    }
+    
+    const data = await response.json();
+    return { 
+      documents: data.results || [],
+      pagination: {
+        count: data.count,
+        next: data.next,
+        previous: data.previous,
+      },
+      headers: setCookieHeaders 
+    };
+  } catch (error) {
+    console.error('Error obteniendo documentos para validación:', error);
+    throw error;
+  }
+}
+
+/**
+ * Obtiene documentos recientes que requieren validación
+ */
+export async function getRecentDocumentsForValidation(request: Request, limit: number = 10) {
+  try {
+    const endpoint = `${API_URL}/api/documents/validation/recent/?limit=${limit}`;
+    const { res: response, setCookieHeaders } = await fetchWithAuth(request, endpoint);
+    
+    if (!response.ok) {
+      console.error(`Error obteniendo documentos recientes para validación: ${response.status} ${response.statusText}`);
+      throw new Error(`Error en la solicitud: ${response.status} ${response.statusText}`);
+    }
+    
+    const data = await response.json();
+    return { 
+      recentDocuments: data.results || [], 
+      headers: setCookieHeaders 
+    };
+  } catch (error) {
+    console.error('Error obteniendo documentos recientes para validación:', error);
+    throw error;
+  }
+}
+
+/**
+ * Obtiene detalles de un documento específico
+ */
+export async function getDocumentDetails(request: Request, documentId: string) {
+  try {
+    const endpoint = `${API_URL}/api/documents/validation/${documentId}/`;
+    const { res: response, setCookieHeaders } = await fetchWithAuth(request, endpoint);
+    
+    if (!response.ok) {
+      console.error(`Error obteniendo detalles del documento: ${response.status} ${response.statusText}`);
+      throw new Error(`Error en la solicitud: ${response.status} ${response.statusText}`);
+    }
+    
+    const documentDetails = await response.json();
+    return { 
+      documentDetails, 
+      headers: setCookieHeaders 
+    };
+  } catch (error) {
+    console.error(`Error obteniendo detalles del documento ${documentId}:`, error);
+    throw error;
+  }
+}
+
+/**
+ * Realiza una acción de validación o rechazo sobre un documento
+ */
+export async function performDocumentAction(
+  request: Request,
+  documentId: string,
+  action: 'validar' | 'rechazar',
+  comentarios?: string
+) {
+  try {
+    const endpoint = `${API_URL}/api/documents/validation/${documentId}/action/`;
+    const { res: response, setCookieHeaders } = await fetchWithAuth(request, endpoint, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        action,
+        comentarios: comentarios || ''
+      }),
+    });
+    
+    if (!response.ok) {
+      console.error(`Error realizando acción de documento: ${response.status} ${response.statusText}`);
+      throw new Error(`Error en la solicitud: ${response.status} ${response.statusText}`);
+    }
+    
+    const result = await response.json();
+    return { 
+      result, 
+      headers: setCookieHeaders 
+    };
+  } catch (error) {
+    console.error(`Error realizando acción ${action} en el documento ${documentId}:`, error);
     throw error;
   }
 }

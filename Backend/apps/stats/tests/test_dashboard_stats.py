@@ -96,3 +96,56 @@ class DashboardStatsTests(TestCase):
         url = reverse('stats-dashboard')
         response = self.client.get(url)
         self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+    
+    def test_dashboard_summary(self):
+        """Prueba el endpoint de resumen del dashboard"""
+        self.client.force_authenticate(user=self.user)
+        url = reverse('stats-dashboard-summary')
+        response = self.client.get(url)
+        
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIn('total_usuarios', response.data)
+        self.assertIn('proyectos_activos', response.data)
+        self.assertIn('pendientes_validacion', response.data)
+        self.assertIn('eventos_recientes', response.data)
+        
+        # Verificar la estructura de cada tarjeta
+        for key in ['total_usuarios', 'proyectos_activos', 'pendientes_validacion', 'eventos_recientes']:
+            self.assertIn('count', response.data[key])
+            self.assertIn('label', response.data[key])
+            self.assertIn('link', response.data[key])
+    
+    def test_events_table_endpoint(self):
+        """Prueba el endpoint de tabla de eventos recientes"""
+        self.client.force_authenticate(user=self.user)
+        url = reverse('stats-events-table')
+        response = self.client.get(url)
+        
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        # Verificar que devuelve una lista
+        self.assertIsInstance(response.data, list)
+        
+        # Si hay eventos, verificar la estructura
+        if response.data:
+            event = response.data[0]
+            self.assertIn('evento', event)
+            self.assertIn('tipo', event)
+            self.assertIn('usuario', event)
+            self.assertIn('fecha', event)
+    
+    def test_events_distribution_endpoint(self):
+        """Prueba el endpoint de distribución de eventos por tipo"""
+        self.client.force_authenticate(user=self.user)
+        url = reverse('stats-events-distribution')
+        response = self.client.get(url)
+        
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        # Verificar que devuelve una lista
+        self.assertIsInstance(response.data, list)
+        
+        # Si hay datos, verificar la estructura
+        if response.data:
+            item = response.data[0]
+            self.assertIn('type', item)
+            self.assertIn('count', item)
+            self.assertIn('percentage', item)

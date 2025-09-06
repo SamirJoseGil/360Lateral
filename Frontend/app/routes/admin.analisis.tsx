@@ -3,7 +3,14 @@ import type { LoaderFunctionArgs } from "@remix-run/node";
 import { useLoaderData } from "@remix-run/react";
 import { useState } from "react";
 import { getUser } from "~/utils/auth.server";
-import { getStatsOverTime, getLatestSummary, recordEvent } from "~/services/stats.server";
+import {
+    recordEvent,
+    getAllChartData,
+    getLotesSummary,
+    getDocumentsCount,
+    getDocumentsByMonth,
+    getEventDistribution
+} from "~/services/stats.server";
 import { usePageView, recordAction } from "~/hooks/useStats";
 
 export async function loader({ request }: LoaderFunctionArgs) {
@@ -33,110 +40,68 @@ export async function loader({ request }: LoaderFunctionArgs) {
             }
         });
 
-        // Obtener datos de estadísticas a lo largo del tiempo (últimos 8 meses)
-        const now = new Date();
-        const eightMonthsAgo = new Date();
-        eightMonthsAgo.setMonth(now.getMonth() - 8);
-
-        const [timeSeriesResponse, summaryResponse] = await Promise.all([
-            getStatsOverTime(request, {
-                start_date: eightMonthsAgo.toISOString().split('T')[0],
-                end_date: now.toISOString().split('T')[0],
-                interval: 'month',
-                type: 'view'
-            }),
-            getLatestSummary(request)
+        // Obtener todos los datos de gráficos y estadísticas usando los nuevos endpoints
+        const [
+            allChartResponse,
+            lotesSummaryResponse,
+            documentsCountResponse,
+            documentsByMonthResponse,
+            eventDistributionResponse
+        ] = await Promise.all([
+            getAllChartData(request),
+            getLotesSummary(request),
+            getDocumentsCount(request),
+            getDocumentsByMonth(request),
+            getEventDistribution(request)
         ]);
+
+        // Extraer datos de los diferentes endpoints
+        const { chartData } = allChartResponse;
+        const { lotesSummary } = lotesSummaryResponse;
+        const { documentsCount } = documentsCountResponse;
+        const { documentsByMonth } = documentsByMonthResponse;
+        const { eventDistribution } = eventDistributionResponse;
 
         // Transformar datos para gráfico mensual
         const months = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"];
-        const graficoMensual = timeSeriesResponse.timeSeriesData.map((point: any) => {
-            const date = new Date(point.period);
-            return {
-                mes: months[date.getMonth()],
-                documentos: point.count
-            };
-        });
+        const graficoMensual = Array.isArray(documentsByMonth?.monthly_data)
+            ? documentsByMonth.monthly_data.map((point: any) => {
+                const date = new Date(point.month);
+                return {
+                    mes: months[date.getMonth()],
+                    documentos: point.count
+                };
+            })
+            : [];
 
-        // Construir datos para el dashboard a partir de la respuesta de la API
-        const latestSummary = summaryResponse.summary;
-
-        // Datos reales para el análisis
+        // Datos reales para el análisis usando los nuevos endpoints
         const analisisData = {
             estadisticas: {
-                totalLotes: latestSummary.metrics.unique_users || 256,
-                lotesActivos: latestSummary.metrics.unique_sessions || 187,
-                lotesInactivos: (latestSummary.metrics.unique_users || 256) - (latestSummary.metrics.unique_sessions || 187),
-                documentosAnalizados: latestSummary.metrics.total_events || 423
+                totalLotes: lotesSummary.total || 0,
+                lotesActivos: lotesSummary.activos || 0,
+                lotesInactivos: lotesSummary.inactivos || 0,
+                documentosAnalizados: documentsCount.total || 0
             },
             graficoMensual: graficoMensual.length ? graficoMensual : [
-                { mes: "Ene", documentos: 42 },
-                { mes: "Feb", documentos: 38 },
-                { mes: "Mar", documentos: 45 },
-                { mes: "Abr", documentos: 32 },
-                { mes: "May", documentos: 48 },
-                { mes: "Jun", documentos: 56 },
-                { mes: "Jul", documentos: 67 },
-                { mes: "Ago", documentos: 95 }
+                { mes: "Ene", documentos: 0 },
+                { mes: "Feb", documentos: 0 },
+                { mes: "Mar", documentos: 0 }
             ],
-            distribucionTipo: [
-                {
-                    tipo: "Vistas",
-                    cantidad: latestSummary.metrics.events_by_type?.view || 156,
-                    porcentaje: ((latestSummary.metrics.events_by_type?.view || 156) / (latestSummary.metrics.total_events || 423)) * 100
-                },
-                {
-                    tipo: "Búsquedas",
-                    cantidad: latestSummary.metrics.events_by_type?.search || 124,
-                    porcentaje: ((latestSummary.metrics.events_by_type?.search || 124) / (latestSummary.metrics.total_events || 423)) * 100
-                },
-                {
-                    tipo: "Acciones",
-                    cantidad: latestSummary.metrics.events_by_type?.action || 87,
-                    porcentaje: ((latestSummary.metrics.events_by_type?.action || 87) / (latestSummary.metrics.total_events || 423)) * 100
-                },
-                {
-                    tipo: "Errores",
-                    cantidad: latestSummary.metrics.events_by_type?.error || 56,
-                    porcentaje: ((latestSummary.metrics.events_by_type?.error || 56) / (latestSummary.metrics.total_events || 423)) * 100
-                }
-            ],
-            recientes: latestSummary.metrics.top_events?.map((event: any, index: number) => ({
-                id: `event-${index}`,
+            distribucionTipo: Object.entries(eventDistribution.distribution || {}).map(([tipo, cantidad]) => {
+                const totalEventos = Object.values(eventDistribution.distribution || {}).reduce((acc: number, val: any) => acc + Number(val), 0);
+                return {
+                    tipo: tipo.charAt(0).toUpperCase() + tipo.slice(1),
+                    cantidad: Number(cantidad),
+                    porcentaje: totalEventos > 0 ? (Number(cantidad) / totalEventos) * 100 : 0
+                };
+            }),
+            recientes: chartData?.recent_events?.map((event: any, index: number) => ({
+                id: event.id || `event-${index}`,
                 nombre: event.name,
                 documentos: event.count,
-                estado: event.count > 10 ? "completo" : "pendiente",
-                ultimaActualizacion: new Date().toISOString().split('T')[0]
-            })) || [
-                    {
-                        id: "lote-123",
-                        nombre: "Lote 123 - Sector Norte",
-                        documentos: 12,
-                        estado: "completo",
-                        ultimaActualizacion: "2025-08-21"
-                    },
-                    {
-                        id: "lote-456",
-                        nombre: "Lote 456 - Sector Oeste",
-                        documentos: 8,
-                        estado: "pendiente",
-                        ultimaActualizacion: "2025-08-20"
-                    },
-                    {
-                        id: "lote-789",
-                        nombre: "Lote 789 - Sector Este",
-                        documentos: 15,
-                        estado: "completo",
-                        ultimaActualizacion: "2025-08-19"
-                    },
-                    {
-                        id: "lote-321",
-                        nombre: "Lote 321 - Sector Sur",
-                        documentos: 5,
-                        estado: "pendiente",
-                        ultimaActualizacion: "2025-08-22"
-                    }
-                ]
+                estado: event.status || (event.count > 10 ? "completo" : "pendiente"),
+                ultimaActualizacion: event.timestamp ? new Date(event.timestamp).toISOString().split('T')[0] : new Date().toISOString().split('T')[0]
+            })) || []
         };
 
         return json({
@@ -146,8 +111,11 @@ export async function loader({ request }: LoaderFunctionArgs) {
             error: null
         }, {
             headers: {
-                ...timeSeriesResponse.headers,
-                ...summaryResponse.headers
+                ...allChartResponse.headers,
+                ...lotesSummaryResponse.headers,
+                ...documentsCountResponse.headers,
+                ...documentsByMonthResponse.headers,
+                ...eventDistributionResponse.headers
             }
         });
 
@@ -255,7 +223,7 @@ export default function AdminAnalisis() {
 
             {/* Encabezado */}
             <div className="mb-8">
-                <h1 className="text-3xl font-bold">Análisis y Estadísticas</h1>
+                <h1 className="text-3xl font-bold">Análisis y Estadísticas de lotes</h1>
                 <p className="text-gray-600 mt-2">Dashboard de análisis de documentos y lotes</p>
             </div>
 

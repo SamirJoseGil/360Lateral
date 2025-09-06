@@ -8,7 +8,10 @@ import {
     getUsersStats,
     getLotesStats,
     getDocumentosStats,
-    getRecentActivity
+    getRecentActivity,
+    getDashboardSummary,
+    getDashboardEventsTable,
+    getDashboardEventsDistribution
 } from "~/services/stats.server";
 import { useState } from "react";
 import { usePageView } from "~/hooks/useStats"; export async function loader({ request }: LoaderFunctionArgs) {
@@ -27,7 +30,22 @@ import { usePageView } from "~/hooks/useStats"; export async function loader({ r
             console.error("Error al registrar evento de estadísticas:", error);
         }
 
-        // Obtener todos los datos del dashboard usando los endpoints específicos
+        // Obtener el resumen del dashboard y datos específicos de eventos desde los nuevos endpoints
+        const [
+            dashboardSummaryResponse,
+            eventsTableResponse,
+            eventsDistributionResponse
+        ] = await Promise.all([
+            getDashboardSummary(request),
+            getDashboardEventsTable(request, 10), // Limitado a 10 eventos recientes
+            getDashboardEventsDistribution(request)
+        ]);
+
+        const { summary } = dashboardSummaryResponse;
+        const { eventsTableData } = eventsTableResponse;
+        const { eventsDistribution } = eventsDistributionResponse;
+
+        // Obtener datos detallados para otras secciones del dashboard
         const [
             dashboardResponse,
             usersResponse,
@@ -39,10 +57,8 @@ import { usePageView } from "~/hooks/useStats"; export async function loader({ r
             getUsersStats(request),
             getLotesStats(request),
             getDocumentosStats(request),
-            getRecentActivity(request, 7) // últimos 7 días
-        ]);
-
-        const { dashboardStats } = dashboardResponse;
+            getRecentActivity(request, 7) // últimos 7 días para retrocompatibilidad
+        ]); const { dashboardStats } = dashboardResponse;
         const { usersStats } = usersResponse;
         const { lotesStats } = lotesResponse;
         const { documentosStats } = documentosResponse;
@@ -51,6 +67,9 @@ import { usePageView } from "~/hooks/useStats"; export async function loader({ r
         // Combinar todos los headers para mantener cookies
         const headers = new Headers();
         [
+            dashboardSummaryResponse.headers,
+            eventsTableResponse.headers,
+            eventsDistributionResponse.headers,
             dashboardResponse.headers,
             usersResponse.headers,
             lotesResponse.headers,
@@ -67,10 +86,10 @@ import { usePageView } from "~/hooks/useStats"; export async function loader({ r
         return json({
             user,
             stats: {
-                users: usersStats.total || dashboardStats.unique_users || 0,
-                activeProjects: lotesStats.activos || dashboardStats.daily_data?.[dashboardStats.daily_data.length - 1]?.metrics?.total_events || 0,
-                pendingValidations: documentosStats.pendientes || dashboardStats.daily_data?.[0]?.metrics?.events_by_type?.error || 12,
-                recentActivity: recentActivity.recent_events?.length || dashboardStats.total_events || 0
+                users: summary.total_usuarios?.count || 0,
+                activeProjects: summary.proyectos_activos?.count || 0,
+                pendingValidations: summary.pendientes_validacion?.count || 0,
+                recentActivity: summary.eventos_recientes?.count || 0
             },
             rawStats: dashboardStats,
             detailedStats: {
@@ -79,19 +98,23 @@ import { usePageView } from "~/hooks/useStats"; export async function loader({ r
                 documentos: documentosStats,
                 recentActivity: recentActivity
             },
+            eventsData: {
+                table: eventsTableData?.events || [],
+                distribution: eventsDistribution?.distribution || {}
+            },
             error: null
         }, { headers });
     } catch (error) {
         console.error("Error cargando estadísticas:", error);
 
-        // Datos de respaldo en caso de error
+        // Datos vacíos en caso de error
         return json({
             user,
             stats: {
-                users: 128,
-                activeProjects: 45,
-                pendingValidations: 12,
-                recentActivity: 37
+                users: 0,
+                activeProjects: 0,
+                pendingValidations: 0,
+                recentActivity: 0
             },
             rawStats: {},
             detailedStats: {
@@ -100,16 +123,20 @@ import { usePageView } from "~/hooks/useStats"; export async function loader({ r
                 documentos: {},
                 recentActivity: {}
             },
-            error: "No se pudieron cargar los datos en tiempo real. Mostrando datos de respaldo."
+            eventsData: {
+                table: [],
+                distribution: {}
+            },
+            error: "No se pudieron cargar los datos en tiempo real. Por favor, intente nuevamente más tarde."
         });
     }
 }
 
 export default function AdminDashboard() {
-    const { user, stats, error, detailedStats } = useLoaderData<typeof loader>();
+    const { user, stats, error, detailedStats, eventsData } = useLoaderData<typeof loader>();
 
     // Estado para mostrar/ocultar secciones del dashboard
-    const [activeTab, setActiveTab] = useState<'resumen' | 'actividad' | 'documentos'>('resumen');
+    const [activeTab, setActiveTab] = useState<'resumen' | 'actividad'>('resumen');
 
     // Registrar vista de página en el cliente
     usePageView('admin_dashboard_client_view', {
@@ -155,15 +182,6 @@ export default function AdminDashboard() {
                     >
                         Actividad Reciente
                     </button>
-                    <button
-                        onClick={() => setActiveTab('documentos')}
-                        className={`py-4 px-1 border-b-2 font-medium text-sm ${activeTab === 'documentos'
-                            ? 'border-blue-500 text-blue-600'
-                            : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                            }`}
-                    >
-                        Documentos
-                    </button>
                 </nav>
             </div>
 
@@ -189,11 +207,11 @@ export default function AdminDashboard() {
                     </div>
                 </div>
 
-                {/* Tarjeta de estadísticas: Proyectos Activos */}
+                {/* Tarjeta de estadísticas: Lotes Activos */}
                 <div className="bg-white rounded-lg shadow p-6">
                     <div className="flex items-center justify-between">
                         <div>
-                            <p className="text-sm font-medium text-gray-500">Proyectos Activos</p>
+                            <p className="text-sm font-medium text-gray-500">Lotes Activos</p>
                             <p className="text-3xl font-bold text-gray-900">{stats.activeProjects}</p>
                         </div>
                         <div className="bg-green-100 p-3 rounded-full">
@@ -314,14 +332,9 @@ export default function AdminDashboard() {
                                     </tr>
                                 </thead>
                                 <tbody className="bg-white divide-y divide-gray-200">
-                                    {/* Eventos simulados si no tenemos datos reales */}
-                                    {(detailedStats?.recentActivity?.recent_events || [
-                                        { name: 'lote_detail', type: 'view', timestamp: new Date().toISOString(), user_id: 1 },
-                                        { name: 'search_lotes', type: 'search', timestamp: new Date(Date.now() - 5 * 60 * 1000).toISOString(), user_id: 2 },
-                                        { name: 'document_upload', type: 'action', timestamp: new Date(Date.now() - 15 * 60 * 1000).toISOString(), user_id: 3 },
-                                        { name: 'api_error', type: 'error', timestamp: new Date(Date.now() - 35 * 60 * 1000).toISOString(), user_id: 4 }
-                                    ]).slice(0, 10).map((event: { name: string; type: string; timestamp: string; user_id: number }, index: number) => (
-                                        <tr key={index}>
+                                    {/* Eventos desde el nuevo endpoint de tabla de eventos */}
+                                    {(eventsData?.table || []).map((event: { id: number; name: string; type: string; timestamp: string; user_id: number; user_name: string }, index: number) => (
+                                        <tr key={event.id || index}>
                                             <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{event.name}</td>
                                             <td className="px-6 py-4 whitespace-nowrap text-sm">
                                                 <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium
@@ -332,7 +345,9 @@ export default function AdminDashboard() {
                                                     {event.type}
                                                 </span>
                                             </td>
-                                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">Usuario {event.user_id}</td>
+                                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                                {event.user_name || `Usuario ${event.user_id}`}
+                                            </td>
                                             <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                                                 {new Date(event.timestamp).toLocaleString()}
                                             </td>
@@ -351,19 +366,9 @@ export default function AdminDashboard() {
                     <div className="bg-white rounded-lg shadow p-6">
                         <h2 className="text-lg font-semibold mb-4">Distribución por Tipo de Evento</h2>
                         <div className="space-y-4">
-                            {Object.entries(detailedStats?.recentActivity?.activity_by_type || {
-                                view: 320,
-                                search: 145,
-                                action: 80,
-                                error: 12
-                            }).map(([type, count], index) => {
+                            {Object.entries(eventsData?.distribution || {}).map(([type, count], index) => {
                                 const countNumber = Number(count);
-                                const total = Object.values(detailedStats?.recentActivity?.activity_by_type || {
-                                    view: 320,
-                                    search: 145,
-                                    action: 80,
-                                    error: 12
-                                }).reduce((a: number, b: any) => a + Number(b), 0);
+                                const total = Object.values(eventsData?.distribution || {}).reduce((a: number, b: any) => a + Number(b), 0);
                                 const percentage = (countNumber / total) * 100;
 
                                 return (
@@ -383,66 +388,6 @@ export default function AdminDashboard() {
                                     </div>
                                 );
                             })}
-                        </div>
-                    </div>
-                </div>
-            )}
-
-            {activeTab === 'documentos' && (
-                <div className="mt-8 space-y-6">
-                    <div className="bg-white rounded-lg shadow p-6">
-                        <h2 className="text-lg font-semibold mb-4">Estadísticas de Documentos</h2>
-
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-                            <div className="bg-gray-50 p-4 rounded-lg">
-                                <h3 className="text-sm font-medium text-gray-500">Total Documentos</h3>
-                                <p className="text-2xl font-bold">
-                                    {detailedStats?.documentos?.total || 0}
-                                </p>
-                            </div>
-                            <div className="bg-gray-50 p-4 rounded-lg">
-                                <h3 className="text-sm font-medium text-gray-500">Documentos Pendientes</h3>
-                                <p className="text-2xl font-bold text-amber-600">
-                                    {detailedStats?.documentos?.pendientes || 0}
-                                </p>
-                            </div>
-                            <div className="bg-gray-50 p-4 rounded-lg">
-                                <h3 className="text-sm font-medium text-gray-500">Documentos Rechazados</h3>
-                                <p className="text-2xl font-bold text-red-600">
-                                    {detailedStats?.documentos?.rechazados || 0}
-                                </p>
-                            </div>
-                        </div>
-
-                        <div className="flex justify-end">
-                            <a href="/admin/validacion" className="text-sm font-medium text-blue-600 hover:text-blue-500">
-                                Ir a validación de documentos
-                            </a>
-                        </div>
-                    </div>
-
-                    <div className="bg-white rounded-lg shadow p-6">
-                        <h2 className="text-lg font-semibold mb-4">Estadísticas de Lotes</h2>
-
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-                            <div className="bg-gray-50 p-4 rounded-lg">
-                                <h3 className="text-sm font-medium text-gray-500">Total Lotes</h3>
-                                <p className="text-2xl font-bold">
-                                    {detailedStats?.lotes?.total || 0}
-                                </p>
-                            </div>
-                            <div className="bg-gray-50 p-4 rounded-lg">
-                                <h3 className="text-sm font-medium text-gray-500">Lotes Activos</h3>
-                                <p className="text-2xl font-bold text-green-600">
-                                    {detailedStats?.lotes?.activos || 0}
-                                </p>
-                            </div>
-                            <div className="bg-gray-50 p-4 rounded-lg">
-                                <h3 className="text-sm font-medium text-gray-500">Lotes Inactivos</h3>
-                                <p className="text-2xl font-bold text-gray-600">
-                                    {detailedStats?.lotes?.inactivos || 0}
-                                </p>
-                            </div>
                         </div>
                     </div>
                 </div>

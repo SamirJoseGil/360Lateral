@@ -54,10 +54,10 @@ export default function AdminLayout() {
     // Opciones del sidebar para el administrador
     const sidebarOptions = [
         { to: "/admin", label: "Dashboard", icon: "dashboard" },
-        { to: "/admin/usuarios", label: "Usuarios", icon: "users" },
-        { to: "/admin/validacion", label: "Validación", icon: "check-circle" },
-        { to: "/admin/analisis", label: "Análisis", icon: "chart-bar" },
-        { to: "/admin/estadisticas", label: "Estadísticas", icon: "chart-line" },
+        { to: "/admin/usuarios", label: "Informacion de usuarios", icon: "users" },
+        { to: "/admin/validacion", label: "Validación de documentos", icon: "check-circle" },
+        { to: "/admin/analisis", label: "Análisis de lotes", icon: "chart-bar" },
+        { to: "/admin/estadisticas", label: "Estadísticas generales", icon: "chart-line" },
     ];
 
     // Registrar vista de página cuando el componente se monta

@@ -1,10 +1,16 @@
 import { json, redirect } from "@remix-run/node";
-import type { LoaderFunctionArgs } from "@remix-run/node";
-import { Form, useLoaderData } from "@remix-run/react";
+import type { LoaderFunctionArgs, ActionFunctionArgs } from "@remix-run/node";
+import { Form, useLoaderData, useActionData, useNavigation } from "@remix-run/react";
 import { useState } from "react";
 import { usePageView, recordAction } from "~/hooks/useStats";
 import { getUser } from "~/utils/auth.server";
-import { recordEvent, getStatsOverTime } from "~/services/stats.server";
+import { recordEvent } from "~/services/stats.server";
+import {
+    getValidationSummary,
+    getRecentDocumentsForValidation,
+    getValidationDocuments,
+    performDocumentAction
+} from "~/services/documents.server";
 
 export async function loader({ request }: LoaderFunctionArgs) {
     console.log("Admin validacion loader - processing request");
@@ -33,73 +39,38 @@ export async function loader({ request }: LoaderFunctionArgs) {
             }
         });
 
-        // Obtener datos de errores y validaciones pendientes
-        const now = new Date();
-        const thirtyDaysAgo = new Date();
-        thirtyDaysAgo.setDate(now.getDate() - 30);
+        // Obtener resumen de validación
+        const validationSummaryResponse = await getValidationSummary(request);
 
-        // Obtener estadísticas de errores (que representan validaciones pendientes)
-        const errorStatsResponse = await getStatsOverTime(request, {
-            start_date: thirtyDaysAgo.toISOString().split('T')[0],
-            end_date: now.toISOString().split('T')[0],
-            type: 'error'
+        // Obtener documentos recientes que necesitan validación
+        const recentDocumentsResponse = await getRecentDocumentsForValidation(request, 10);
+
+        // Obtener lista de documentos con paginación (primera página)
+        const documentsResponse = await getValidationDocuments(request, {
+            page: 1,
+            page_size: 10
         });
 
-        // Contar errores totales para saber cuántas validaciones pendientes hay
-        const pendingCount = errorStatsResponse.timeSeriesData.reduce(
-            (sum: number, point: any) => sum + point.count, 0);
+        // Extraer datos del resumen de validación
+        const summary = validationSummaryResponse.validationSummary;
 
-        // Obtener estadísticas de acciones (que representan validaciones completadas)
-        const actionStatsResponse = await getStatsOverTime(request, {
-            start_date: thirtyDaysAgo.toISOString().split('T')[0],
-            end_date: now.toISOString().split('T')[0],
-            type: 'action'
-        });
+        // Convertir los documentos recientes al formato esperado por el componente
+        const documentos = recentDocumentsResponse.recentDocuments.map((doc: any) => ({
+            id: doc.id.toString(),
+            nombre: doc.nombre || doc.titulo || `Documento ${doc.id}`,
+            tipo: doc.tipo_documento || "Otro",
+            estado: doc.estado_validacion || "pendiente",
+            fechaSubida: doc.fecha_subida || doc.created_at || new Date().toISOString().split('T')[0],
+            solicitante: doc.usuario_nombre || `Usuario ${doc.usuario_id || "desconocido"}`
+        }));
 
-        // Contar acciones totales para saber cuántas validaciones completadas hay
-        const completedCount = actionStatsResponse.timeSeriesData.reduce(
-            (sum: number, point: any) => sum + point.count, 0);
-
-        // Obtener datos de eventos recientes para simular documentos
-        // Simulamos documentos a partir de los eventos de error, que representarían validaciones pendientes
-        // Los nombres reales vendrían de una API específica de validación de documentos
-        const documentTypes = ["Escritura", "Plano", "Certificado", "Contrato", "Licencia"];
-        const ownerNames = ["Juan Pérez", "María Gómez", "Carlos Ruiz", "Ana Martínez", "Roberto López"];
-
-        const documentos = errorStatsResponse.timeSeriesData.slice(0, 3).map((point: any, index: number) => {
-            const date = new Date(point.period);
-            const formattedDate = date.toISOString().split('T')[0];
-
-            return {
-                id: `doc-${index + 1}`,
-                nombre: `${documentTypes[index % documentTypes.length]} Lote ${100 + index}`,
-                tipo: documentTypes[index % documentTypes.length],
-                estado: index === 1 ? "completado" : "pendiente",
-                fechaSubida: formattedDate,
-                solicitante: ownerNames[index % ownerNames.length]
-            };
-        });
-
-        // Si no hay datos suficientes, agregamos algunos ejemplos
-        if (documentos.length < 3) {
-            for (let i = documentos.length; i < 3; i++) {
-                documentos.push({
-                    id: `doc-${i + 1}`,
-                    nombre: `${documentTypes[i % documentTypes.length]} Lote ${100 + i}`,
-                    tipo: documentTypes[i % documentTypes.length],
-                    estado: i === 1 ? "completado" : "pendiente",
-                    fechaSubida: new Date().toISOString().split('T')[0],
-                    solicitante: ownerNames[i % ownerNames.length]
-                });
-            }
-        }
-
-        // Datos de validación basados en estadísticas reales
+        // Datos de validación desde la API
         const validacionData = {
-            pendientes: pendingCount || 15,
-            completadas: completedCount || 78,
-            rechazadas: Math.round(pendingCount * 0.2) || 7,  // Estimamos rechazos como 20% de pendientes
-            documentos
+            pendientes: summary.pendiente || 0,
+            completadas: summary.validado || 0,
+            rechazadas: summary.rechazado || 0,
+            documentos,
+            pagination: documentsResponse.pagination
         };
 
         return json({
@@ -109,8 +80,9 @@ export async function loader({ request }: LoaderFunctionArgs) {
             error: null
         }, {
             headers: {
-                ...errorStatsResponse.headers,
-                ...actionStatsResponse.headers
+                ...validationSummaryResponse.headers,
+                ...recentDocumentsResponse.headers,
+                ...documentsResponse.headers
             }
         });
 
@@ -159,6 +131,64 @@ export async function loader({ request }: LoaderFunctionArgs) {
     }
 }
 
+export async function action({ request }: ActionFunctionArgs) {
+    // Verificar que el usuario esté autenticado y sea admin
+    const user = await getUser(request);
+    if (!user || (user.role !== "admin" && user.role !== "owner")) {
+        return redirect("/");
+    }
+
+    // Procesar el formulario
+    const formData = await request.formData();
+    const action = formData.get("action") as string;
+    const documentId = formData.get("documentId") as string;
+    const comentarios = formData.get("comentarios") as string || '';
+
+    console.log(`Processing document action: ${action} for document ${documentId}`);
+
+    if (!action || !documentId) {
+        return json({
+            success: false,
+            message: "Datos de acción incompletos"
+        });
+    }
+
+    try {
+        // Registrar la acción como evento
+        await recordEvent(request, {
+            type: "action",
+            name: `document_${action}`,
+            value: {
+                user_id: user.id,
+                document_id: documentId,
+                comentarios
+            }
+        });
+
+        // Realizar la acción de validación o rechazo
+        const actionResult = await performDocumentAction(
+            request,
+            documentId,
+            action === "validar" ? "validar" : "rechazar",
+            comentarios
+        );
+
+        return json({
+            success: true,
+            message: action === "validar" ? "Documento validado correctamente" : "Documento rechazado correctamente",
+            result: actionResult.result
+        }, {
+            headers: actionResult.headers
+        });
+    } catch (error) {
+        console.error(`Error performing document action ${action} for ${documentId}:`, error);
+        return json({
+            success: false,
+            message: `Error al procesar la acción: ${(error as Error).message}`
+        });
+    }
+}
+
 type Documento = {
     id: string;
     nombre: string;
@@ -170,12 +200,19 @@ type Documento = {
 
 export default function AdminValidacion() {
     const { validacionData, realData, error } = useLoaderData<typeof loader>();
+    const actionData = useActionData<typeof action>();
+    const navigation = useNavigation();
+    const isSubmitting = navigation.state === "submitting";
     const [expandedDocuments, setExpandedDocuments] = useState<string[]>([]);
+    const [modalOpen, setModalOpen] = useState<boolean>(false);
+    const [currentDoc, setCurrentDoc] = useState<Documento | null>(null);
+    const [modalAction, setModalAction] = useState<'validar' | 'rechazar' | null>(null);
+    const [comentarios, setComentarios] = useState<string>('');
 
     // Registrar vista de página de validación
     usePageView('admin_validation_page', {
-        documents_count: validacionData.pendientes.length
-    }, [validacionData.pendientes.length]);
+        documents_count: validacionData.pendientes
+    }, [validacionData.pendientes]);
 
     // Función para registrar eventos de validación (usando nuestro hook personalizado)
     const trackValidationAction = (action: string, docId: string, docName: string) => {
@@ -183,7 +220,15 @@ export default function AdminValidacion() {
             document_id: docId,
             document_name: docName
         });
-    };    // Función para expandir/colapsar documentos
+    };
+
+    // Función para abrir el modal de acción
+    const openActionModal = (action: 'validar' | 'rechazar', doc: Documento) => {
+        setCurrentDoc(doc);
+        setModalAction(action);
+        setComentarios('');
+        setModalOpen(true);
+    };
     const toggleExpand = (id: string) => {
         setExpandedDocuments(prev =>
             prev.includes(id)
@@ -289,33 +334,29 @@ export default function AdminValidacion() {
                                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{doc.fechaSubida}</td>
                                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{doc.solicitante}</td>
                                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                                        <a href="#" className="text-blue-600 hover:text-blue-900 mr-3">Ver</a>
+                                        <a href={`/admin/documentos/${doc.id}`} className="text-blue-600 hover:text-blue-900 mr-3">Ver</a>
                                         {doc.estado === 'pendiente' && (
                                             <>
-                                                <a
-                                                    href="#"
+                                                <button
+                                                    type="button"
                                                     className="text-green-600 hover:text-green-900 mr-3"
-                                                    onClick={(e) => {
-                                                        e.preventDefault();
+                                                    onClick={() => {
                                                         trackValidationAction('validate', doc.id, doc.nombre);
-                                                        // Aquí iría la lógica real de validación
-                                                        alert(`Documento ${doc.nombre} validado`);
+                                                        openActionModal('validar', doc);
                                                     }}
                                                 >
                                                     Validar
-                                                </a>
-                                                <a
-                                                    href="#"
+                                                </button>
+                                                <button
+                                                    type="button"
                                                     className="text-red-600 hover:text-red-900"
-                                                    onClick={(e) => {
-                                                        e.preventDefault();
+                                                    onClick={() => {
                                                         trackValidationAction('reject', doc.id, doc.nombre);
-                                                        // Aquí iría la lógica real de rechazo
-                                                        alert(`Documento ${doc.nombre} rechazado`);
+                                                        openActionModal('rechazar', doc);
                                                     }}
                                                 >
                                                     Rechazar
-                                                </a>
+                                                </button>
                                             </>
                                         )}
                                     </td>
@@ -352,6 +393,74 @@ export default function AdminValidacion() {
                     </div>
                 </div>
             </div>
+
+            {/* Modal de acción */}
+            {modalOpen && currentDoc && modalAction && (
+                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+                    <div className="bg-white rounded-lg shadow-xl max-w-lg w-full">
+                        <div className="px-6 py-4 border-b">
+                            <h3 className="text-lg font-medium text-gray-900">
+                                {modalAction === 'validar' ? 'Validar' : 'Rechazar'} Documento
+                            </h3>
+                        </div>
+                        <Form method="post" className="p-6">
+                            <input type="hidden" name="documentId" value={currentDoc.id} />
+                            <input type="hidden" name="action" value={modalAction} />
+
+                            <div className="mb-4">
+                                <p className="text-gray-700">
+                                    {modalAction === 'validar'
+                                        ? `¿Está seguro de validar el documento "${currentDoc.nombre}"?`
+                                        : `¿Está seguro de rechazar el documento "${currentDoc.nombre}"?`}
+                                </p>
+                            </div>
+
+                            <div className="mb-4">
+                                <label htmlFor="comentarios" className="block text-sm font-medium text-gray-700 mb-1">
+                                    {modalAction === 'validar' ? 'Comentarios adicionales (opcional)' : 'Motivo del rechazo'}
+                                </label>
+                                <textarea
+                                    id="comentarios"
+                                    name="comentarios"
+                                    rows={4}
+                                    className="w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50"
+                                    placeholder={modalAction === 'validar' ? "Comentarios adicionales..." : "Indique el motivo del rechazo..."}
+                                    required={modalAction === 'rechazar'}
+                                    value={comentarios}
+                                    onChange={(e) => setComentarios(e.target.value)}
+                                ></textarea>
+                            </div>
+
+                            {actionData?.message && (
+                                <div className={`mb-4 p-2 rounded ${actionData.success ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
+                                    {actionData.message}
+                                </div>
+                            )}
+
+                            <div className="flex justify-end space-x-3">
+                                <button
+                                    type="button"
+                                    className="px-4 py-2 bg-white border border-gray-300 rounded-md font-medium text-gray-700 hover:bg-gray-50"
+                                    onClick={() => setModalOpen(false)}
+                                    disabled={isSubmitting}
+                                >
+                                    Cancelar
+                                </button>
+                                <button
+                                    type="submit"
+                                    className={`px-4 py-2 rounded-md font-medium text-white ${modalAction === 'validar'
+                                            ? 'bg-green-600 hover:bg-green-700'
+                                            : 'bg-red-600 hover:bg-red-700'
+                                        } ${isSubmitting ? 'opacity-70 cursor-not-allowed' : ''}`}
+                                    disabled={isSubmitting}
+                                >
+                                    {isSubmitting ? 'Procesando...' : modalAction === 'validar' ? 'Validar' : 'Rechazar'}
+                                </button>
+                            </div>
+                        </Form>
+                    </div>
+                </div>
+            )}
         </div >
     );
 }

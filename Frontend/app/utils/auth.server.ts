@@ -4,11 +4,11 @@ import type { HeadersFunction } from "@remix-run/node";
 import { ENV, isProd } from "~/env.server";
 import { isExpired } from "./jwt.server";
 import { getSession, commitSession, getUserFromSession } from "./session.server";
+import { API_URL } from "./api.server";
 
 export type Role = "admin" | "owner" | "developer";
 
-// Variable de entorno definida aca
-export const API_URL = 'http://localhost:8000';
+// Usar la variable de API_URL desde env.server
 
 export type ApiUser = {
   id: string;
@@ -538,3 +538,4 @@ export async function authenticateAdmin(request: Request): Promise<any> {
     throw redirect('/login?message=Error de autenticación');
   }
 }
+

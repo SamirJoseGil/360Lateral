@@ -75,3 +75,98 @@ class DocumentUploadSerializer(serializers.ModelSerializer):
         
         # Crear el documento
         return Document.objects.create(**validated_data)
+
+class DocumentValidationSerializer(serializers.ModelSerializer):
+    """
+    Serializer for document validation operations.
+    """
+    lote_nombre = serializers.SerializerMethodField()
+    solicitante_nombre = serializers.SerializerMethodField()
+    tipo_documento = serializers.CharField(source='document_type', read_only=True)
+    estado_validacion = serializers.SerializerMethodField()
+    validacion_fecha = serializers.SerializerMethodField()
+    validacion_comentarios = serializers.SerializerMethodField()
+    
+    class Meta:
+        model = Document
+        fields = [
+            'id', 'title', 'file', 'document_type', 'tipo_documento', 
+            'created_at', 'estado_validacion', 'validacion_fecha',
+            'validacion_comentarios', 'lote', 'lote_nombre', 
+            'user', 'solicitante_nombre', 'metadata'
+        ]
+        read_only_fields = [
+            'id', 'title', 'file', 'document_type', 'created_at',
+            'lote', 'user', 'metadata'
+        ]
+        
+    def get_estado_validacion(self, obj):
+        if obj.metadata and 'validation_status' in obj.metadata:
+            return obj.metadata['validation_status']
+        return 'pendiente'
+        
+    def get_validacion_fecha(self, obj):
+        if obj.metadata and 'validation_date' in obj.metadata:
+            return obj.metadata['validation_date']
+        return None
+        
+    def get_validacion_comentarios(self, obj):
+        if obj.metadata and 'validation_comments' in obj.metadata:
+            return obj.metadata['validation_comments']
+        return None
+    
+    def get_lote_nombre(self, obj):
+        if hasattr(obj, 'lote') and obj.lote:
+            return f"Lote {obj.lote.id}"
+        return None
+    
+    def get_solicitante_nombre(self, obj):
+        if hasattr(obj, 'user') and obj.user:
+            if hasattr(obj.user, 'get_full_name'):
+                full_name = obj.user.get_full_name()
+                if full_name:
+                    return full_name
+            return obj.user.username or f"Usuario {obj.user.id}"
+        return "Usuario Desconocido"
+
+
+class DocumentValidateActionSerializer(serializers.Serializer):
+    """
+    Serializer for document validation action.
+    """
+    action = serializers.ChoiceField(choices=['validar', 'rechazar'])
+    comments = serializers.CharField(required=False, allow_blank=True)
+    
+    def validate_action(self, value):
+        if value not in ['validar', 'rechazar']:
+            raise serializers.ValidationError("Acción no válida. Debe ser 'validar' o 'rechazar'.")
+        return value
+
+
+class DocumentListSerializer(serializers.ModelSerializer):
+    """
+    Simplified serializer for document listings.
+    """
+    tipo = serializers.CharField(source='document_type')
+    estado = serializers.SerializerMethodField()
+    fecha_subida = serializers.DateTimeField(source='created_at')
+    solicitante = serializers.SerializerMethodField()
+    nombre = serializers.CharField(source='title')
+    
+    class Meta:
+        model = Document
+        fields = ['id', 'nombre', 'tipo', 'estado', 'fecha_subida', 'solicitante']
+        
+    def get_estado(self, obj):
+        if obj.metadata and 'validation_status' in obj.metadata:
+            return obj.metadata['validation_status']
+        return 'pendiente'
+    
+    def get_solicitante(self, obj):
+        if hasattr(obj, 'user') and obj.user:
+            if hasattr(obj.user, 'get_full_name'):
+                full_name = obj.user.get_full_name()
+                if full_name:
+                    return full_name
+            return obj.user.username or f"Usuario {obj.user.id}"
+        return "Usuario Desconocido"
