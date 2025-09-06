@@ -53,7 +53,7 @@ export default function DeveloperLayout() {
         { to: "/developer", label: "Dashboard", icon: "dashboard" },
         { to: "/developer/search", label: "Buscar Lotes", icon: "search" },
         { to: "/developer/favorites", label: "Favoritos", icon: "heart" },
-        { to: "/developer/analysis", label: "Análisis Urbanístico", icon: "chart-bar" },
+        // { to: "/developer/analysis", label: "Análisis Urbanístico", icon: "chart-bar" }, // commented out option
         { to: "/developer/investment", label: "Criterios de Inversión", icon: "document-text" },
     ];
 

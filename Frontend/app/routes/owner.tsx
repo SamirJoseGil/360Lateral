@@ -69,6 +69,7 @@ export default function OwnerLayout() {
                                 Documentos
                             </Link>
                         </li>
+                        {/*
                         <li>
                             <Link
                                 to="/owner/solicitudes"
@@ -77,6 +78,7 @@ export default function OwnerLayout() {
                                 Solicitudes
                             </Link>
                         </li>
+                        */}
                         <li>
                             <Link
                                 to="/owner/analisis/solicitar"
