@@ -85,21 +85,21 @@ export default function Navbar({ user }: NavbarProps) {
                     { to: "/owner", label: "Dashboard" },
                     { to: "/owner/mis-lotes", label: "Mis Lotes" },
                     { to: "/owner/documentos", label: "Documentos" },
-                    { to: "/owner/ofertas", label: "Ofertas" },
+                    {/*{ to: "/owner/ofertas", label: "Ofertas" }, */ }
                 ];
             case "developer":
                 return [
                     { to: "/developer", label: "Dashboard" },
                     { to: "/developer/search", label: "Búsqueda" },
                     { to: "/developer/favorites", label: "Favoritos" },
-                    { to: "/developer/analysis", label: "Análisis" },
+                    {/* { to: "/developer/analysis", label: "Análisis" }, */ }
                 ];
             default:
                 return [];
         }
     };
 
-    const navLinks = getNavLinks();
+    const navLinks = getNavLinks().filter((link) => typeof link.to === "string");
 
     return (
         <nav className={`navbar-lateral w-full fixed top-0 z-50 transition-all duration-300 ${isScrolled ? 'shadow-lateral py-2' : 'py-4'}`}>
@@ -233,14 +233,14 @@ export default function Navbar({ user }: NavbarProps) {
                                         >
                                             Mi Perfil
                                         </Link>
-                                        <Link
+                                        {/* <Link
                                             to="/settings"
                                             className="block px-4 py-2 text-sm text-gris-700 hover:bg-gris-50 hover:text-lateral-500"
                                             role="menuitem"
                                             onClick={() => setIsProfileOpen(false)}
                                         >
                                             Ajustes
-                                        </Link>
+                                        </Link> */}
                                         <logoutFetcher.Form method="post" action="/api/auth/logout">
                                             <button
                                                 type="submit"
