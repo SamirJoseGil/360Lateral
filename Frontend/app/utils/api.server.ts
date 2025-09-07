@@ -5,7 +5,7 @@
 import { getSession } from "./session.server";
 
 // URL base de la API
-export const API_URL = process.env.API_URL || "https://api.360lateral.com";
+export const API_URL = process.env.API_URL || "http://localhost:8000";
 
 interface FetchOptions extends RequestInit {
   headers?: HeadersInit;

@@ -12,7 +12,6 @@ from django.template.loader import render_to_string
 logger = logging.getLogger(__name__)
 User = get_user_model()
 
-
 class PasswordResetService:
     """Servicio para gestionar restablecimiento de contraseñas"""
     

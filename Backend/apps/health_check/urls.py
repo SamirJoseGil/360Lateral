@@ -1,12 +1,21 @@
 """
-URLs para health check
+Health Check URLs
+
+This module contains URL patterns for health checking of the application and its components.
 """
+
 from django.urls import path
 from . import views
 
 app_name = 'health_check'
 
 urlpatterns = [
-    path('', views.simple_health_check, name='simple_health_check_root'),
-    path('detailed/', views.health_check, name='health_check'),
+    # Basic health check endpoint
+    path('', views.health_check, name='basic'),
+    
+    # Database connection health check endpoint
+    path('database/', views.database_health_check, name='database'),
+    
+    # External dependencies health check endpoint
+    path('dependencies/', views.dependencies_health_check, name='dependencies'),
 ]

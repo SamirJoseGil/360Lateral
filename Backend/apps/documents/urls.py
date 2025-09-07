@@ -4,13 +4,6 @@ URLs para la aplicación de documentos
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 from . import views
-from .validation_views import (
-    DocumentValidationSummaryView,
-    DocumentValidationListView,
-    RecentDocumentsView,
-    DocumentValidationDetailView,
-    DocumentValidateActionView
-)
 
 # Configurar el router para el ViewSet
 router = DefaultRouter()
@@ -27,11 +20,11 @@ urlpatterns = [
 
 # Document validation URLs
 validation_urlpatterns = [
-    path('validation/summary/', DocumentValidationSummaryView.as_view(), name='document-validation-summary'),
-    path('validation/list/', DocumentValidationListView.as_view(), name='document-validation-list'),
-    path('validation/recent/', RecentDocumentsView.as_view(), name='recent-documents'),
-    path('validation/<int:pk>/', DocumentValidationDetailView.as_view(), name='document-validation-detail'),
-    path('validation/<int:document_id>/action/', DocumentValidateActionView.as_view(), name='document-validation-action'),
+    path('validation/summary/', views.DocumentValidationSummaryView.as_view(), name='document-validation-summary'),
+    path('validation/list/', views.DocumentValidationListView.as_view(), name='document-validation-list'),
+    path('validation/recent/', views.RecentDocumentsView.as_view(), name='recent-documents'),
+    path('validation/<int:pk>/', views.DocumentValidationDetailView.as_view(), name='document-validation-detail'),
+    path('validation/<int:document_id>/action/', views.DocumentValidateActionView.as_view(), name='document-validation-action'),
 ]
 
 urlpatterns += validation_urlpatterns

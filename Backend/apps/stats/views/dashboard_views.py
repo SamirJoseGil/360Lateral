@@ -4,7 +4,7 @@ from rest_framework import status
 from rest_framework.permissions import IsAuthenticated, IsAdminUser
 from django.utils.decorators import method_decorator
 from django.views.decorators.cache import cache_page
-from .services.dashboard_service import DashboardService
+from ..services.dashboard_service import DashboardService
 
 
 class DashboardStatsView(APIView):

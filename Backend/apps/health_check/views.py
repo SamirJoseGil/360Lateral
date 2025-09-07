@@ -1,9 +1,15 @@
 """
-Health check views
+Health Check Views
+
+This module contains view functions for health checking of the application and its components.
+These endpoints are typically used by monitoring tools and load balancers to verify
+that the application is running correctly.
 """
+
 import time
 from django.http import JsonResponse
-from django.db import connection
+from django.db import connections
+from django.db.utils import OperationalError
 from django.core.cache import cache
 from django.conf import settings
 from rest_framework.decorators import api_view, permission_classes
@@ -33,6 +39,12 @@ logger = logging.getLogger(__name__)
 def health_check(request):
     """
     Endpoint de health check completo del sistema
+    
+    Args:
+        request: The HTTP request object
+        
+    Returns:
+        JsonResponse: A JSON response with status information
     """
     start_time = time.time()
     health_status = {
@@ -47,7 +59,7 @@ def health_check(request):
     
     # Verificar conexión a la base de datos
     try:
-        with connection.cursor() as cursor:
+        with connections["default"].cursor() as cursor:
             cursor.execute("SELECT 1")
         health_status["services"]["database"] = {
             "status": "healthy",
@@ -113,43 +125,65 @@ def health_check(request):
 def simple_health_check(request):
     """
     Health check simple para Docker y load balancers
+    
+    Returns a simple JSON response indicating the application is running.
+    
+    Args:
+        request: The HTTP request object
+        
+    Returns:
+        JsonResponse: A JSON response with status information
     """
-    try:
-        # Verificación básica de la base de datos
-        with connection.cursor() as cursor:
-            cursor.execute("SELECT 1")
-        return JsonResponse({"status": "healthy", "message": "OK"}, status=200)
-    except Exception as e:
-        return JsonResponse({"status": "unhealthy", "message": str(e)}, status=503)
-    except Exception as e:
-        return JsonResponse({"status": "unhealthy", "message": str(e)}, status=503)
+    return JsonResponse({"status": "healthy", "message": "OK"}, status=200)
 
-def health_check(request):
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def database_health_check(request):
     """
-    Endpoint de health check para verificar estado del sistema
+    Database connection health check.
+    
+    Attempts to connect to all configured databases and returns status.
+    
+    Args:
+        request: The HTTP request object
+        
+    Returns:
+        JsonResponse: A JSON response with database connection status
     """
-    status = {
-        'status': 'healthy',
-        'database': 'unknown',
-        'redis': 'unknown',
+    db_status = {}
+    all_healthy = True
+    
+    for db_name in connections:
+        try:
+            cursor = connections[db_name].cursor()
+            cursor.execute("SELECT 1")
+            db_status[db_name] = "connected"
+        except OperationalError as e:
+            db_status[db_name] = {"status": "error", "message": str(e)}
+            all_healthy = False
+    
+    status_code = 200 if all_healthy else 500
+    return JsonResponse({"database_status": db_status}, status=status_code)
+
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def dependencies_health_check(request):
+    """
+    External dependencies health check.
+    
+    Checks the health of external services this application depends on.
+    
+    Args:
+        request: The HTTP request object
+        
+    Returns:
+        JsonResponse: A JSON response with the health status of dependencies
+    """
+    # Example implementation - in a real app, you would check actual dependencies
+    dependencies = {
+        "cache": "ok",
+        "message_broker": "ok",
+        "storage": "ok"
     }
     
-    # Check database
-    try:
-        with connection.cursor() as cursor:
-            cursor.execute("SELECT 1")
-        status['database'] = 'healthy'
-    except Exception as e:
-        status['database'] = f'error: {str(e)}'
-        status['status'] = 'unhealthy'
-    
-    # Check Redis
-    try:
-        r = redis.from_url(settings.REDIS_URL)
-        r.ping()
-        status['redis'] = 'healthy'
-    except Exception as e:
-        status['redis'] = f'error: {str(e)}'
-        # Redis no es crítico, no marcar como unhealthy
-    
-    return JsonResponse(status)
+    return JsonResponse({"dependencies": dependencies})

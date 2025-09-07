@@ -1,1 +1,0 @@
-# Solo verificando si existe y su contenido

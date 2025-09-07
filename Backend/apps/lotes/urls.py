@@ -5,6 +5,7 @@ from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 
 from apps.lotes.views.lote_views import lote_create_from_mapgis, lote_search
+from apps.lotes.views.user_lotes import UserLotesView, my_lotes, user_lote_stats
 from .views.favorites_views import FavoriteViewSet
 
 # Importamos todas las vistas desde el módulo principal
@@ -38,7 +39,7 @@ from .views.tratamiento_views import (
 )
 
 # Importar vistas de lotes por usuario
-from .api.user_lotes import UserLotesView, my_lotes, user_lote_stats
+
 
 app_name = 'lotes'
 
@@ -51,7 +52,7 @@ urlpatterns = [
     path('mis-lotes/', my_lotes, name='my-lotes'),
     path('usuario/<int:user_id>/', UserLotesView.as_view(), name='user-lotes'),
     path('usuario/<int:user_id>/stats/', user_lote_stats, name='user-lote-stats'),
-    
+
     # Rutas para CRUD básico de lotes
     path('', lote_list, name='lote-list'),
     path('<int:pk>/', lote_detail, name='lote-detail'),

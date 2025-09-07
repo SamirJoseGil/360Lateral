@@ -1,5 +1,5 @@
+import { API_URL } from "~/utils/api.server";
 import { fetchWithAuth } from "~/utils/auth.server";
-import { API_URL } from "~/utils/auth.server";
 
 export type User = {
   id: string;

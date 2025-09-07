@@ -7,7 +7,7 @@ from rest_framework import permissions, status
 from django.utils.decorators import method_decorator
 from django.views.decorators.cache import cache_page
 
-from .services.event_stats_service import EventStatsService
+from ..services.event_stats_service import EventStatsService
 
 
 class EventDashboardView(APIView):

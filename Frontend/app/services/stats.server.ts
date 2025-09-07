@@ -2,6 +2,7 @@ import { fetchWithAuth, getAccessTokenFromCookies } from "~/utils/auth.server";
 import { v4 as uuid } from "uuid";
 import { API_URL } from "~/utils/api.server";
 
+
 // Constante para la URL base de la API de estadísticas
 const STATS_API_URL = `${API_URL}/api/stats`;
 

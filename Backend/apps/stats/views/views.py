@@ -9,14 +9,12 @@ from rest_framework import viewsets, permissions, status
 from rest_framework.decorators import api_view, permission_classes, action
 from rest_framework.response import Response
 from rest_framework.permissions import IsAdminUser, IsAuthenticated
-import uuid  # Añadir esta importación
+import uuid
 
-from .models import Stat, DailySummary
-from .serializers import (
-    StatSerializer, StatCreateSerializer, DailySummarySerializer,
-    StatsOverTimeSerializer, UserActivitySerializer, StatsSummarySerializer
-)
-from .services.stats_service import StatsService
+from apps.stats.models import DailySummary, Stat
+from apps.stats.serializers import DailySummarySerializer, StatCreateSerializer, StatSerializer, StatsOverTimeSerializer
+from apps.stats.services.stats_service import StatsService
+
 
 logger = logging.getLogger(__name__)
 

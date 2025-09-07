@@ -51,7 +51,7 @@ urlpatterns = [
     path('api/schema/', schema_view.without_ui(cache_timeout=0), name='schema-json'), # type: ignore
     
     # API routes - Rutas corregidas
-    path('api/auth/', include('apps.authentication.urls')),  # Usar apps.authentication.urls para rutas de auth
+    path('api/auth/', include('apps.authentication.urls')),
     path('api/users/', include('apps.users.urls')),
     path('api/lotes/', include('apps.lotes.urls')),
     path('api/stats/', include('apps.stats.urls')),

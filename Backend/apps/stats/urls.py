@@ -3,7 +3,8 @@ URLs para la aplicación de estadísticas.
 """
 from django.urls import path, include
 from rest_framework import routers
-from apps.stats.dashboard_views import (
+from apps.stats.views import StatViewSet
+from apps.stats.views.dashboard_views import (
     DashboardStatsView, 
     DashboardSummaryView,
     UsersStatsView, 
@@ -13,9 +14,8 @@ from apps.stats.dashboard_views import (
     EventsTableView,
     EventsDistributionView
 )
-from apps.stats.event_stats_views import DailyEventsView, EventCountsView, EventDashboardView, EventTypeDistributionView
-from apps.stats.views import StatViewSet
-from apps.stats.charts_views import (
+from apps.stats.views.event_stats_views import DailyEventsView, EventCountsView, EventDashboardView, EventTypeDistributionView
+from apps.stats.views.charts_views import (
     DashboardChartsView,
     LotesSummaryView,
     DocumentsCountView,
