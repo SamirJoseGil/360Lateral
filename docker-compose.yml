@@ -1,22 +1,25 @@
+version: '3.8'
+
 services:
   # Base de datos PostgreSQL
   db:
     image: postgres:14-alpine
     container_name: lateral360_db
     restart: unless-stopped
-    environment:
-      POSTGRES_DB: ${DB_NAME:-lateral360}
-      POSTGRES_USER: ${DB_USER:-postgres}
-      POSTGRES_PASSWORD: ${DB_PASSWORD:-postgres123}
-      PGDATA: /var/lib/postgresql/data/pgdata
     volumes:
-      - postgres_data:/var/lib/postgresql/data/pgdata
+      - postgres_data:/var/lib/postgresql/data/
+    env_file:
+      - .env
+    environment:
+      - POSTGRES_PASSWORD=${DB_PASSWORD:-postgres}
+      - POSTGRES_USER=${DB_USER:-postgres}
+      - POSTGRES_DB=${DB_NAME:-lateral360}
     ports:
       - "5432:5432"
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-postgres} -d ${DB_NAME:-lateral360}"]
-      interval: 30s
-      timeout: 10s
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
       retries: 5
     networks:
       - lateral360_network
@@ -26,15 +29,14 @@ services:
     image: redis:7-alpine
     container_name: lateral360_redis
     restart: unless-stopped
-    command: redis-server --appendonly yes --maxmemory 512mb --maxmemory-policy allkeys-lru
-    volumes:
-      - redis_data:/data
     ports:
       - "6379:6379"
+    volumes:
+      - redis_data:/data
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
-      interval: 30s
-      timeout: 10s
+      interval: 10s
+      timeout: 5s
       retries: 5
     networks:
       - lateral360_network
@@ -46,23 +48,26 @@ services:
       dockerfile: Dockerfile
     container_name: lateral360_backend
     restart: unless-stopped
-    environment:
-      - DEBUG=${DEBUG:-True}
-      - SECRET_KEY=${SECRET_KEY:-django-insecure-change-me-in-production}
-      - DB_NAME=${DB_NAME:-lateral360}
-      - DB_USER=${DB_USER:-postgres}
-      - DB_PASSWORD=${DB_PASSWORD:-postgres123}
-      - DB_HOST=db
-      - DB_PORT=5432
-      - REDIS_URL=redis://redis:6379/0
-      - DJANGO_SETTINGS_MODULE=config.settings.development
-      - PYTHONPATH=/app
     volumes:
-      - media_files:/app/media
-      - static_files:/app/static
-      - ./Backend/logs:/app/logs
+      - ./Backend:/app
+      - static_volume:/app/static
+      - media_volume:/app/media
     ports:
       - "8000:8000"
+    env_file:
+      - .env
+    environment:
+      - DB_HOST=db
+      - REDIS_HOST=redis
+      - DJANGO_SETTINGS_MODULE=config.settings.development
+      - DEBUG=1
+      - ALLOWED_HOSTS=localhost,127.0.0.1,0.0.0.0,backend
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
     depends_on:
       db:
         condition: service_healthy
@@ -82,21 +87,20 @@ services:
       - "3000:3000"  # Remix directamente en puerto 3000
     depends_on:
       - backend
+    env_file:
+      - .env
     environment:
-      - NODE_ENV=production
+      - VITE_API_URL=http://localhost:8000/api
+      - NODE_ENV=development
     networks:
       - lateral360_network
 
 # Volúmenes persistentes
 volumes:
   postgres_data:
-    driver: local
   redis_data:
-    driver: local
-  media_files:
-    driver: local
-  static_files:
-    driver: local
+  static_volume:
+  media_volume:
 
 # Red personalizada
 networks:

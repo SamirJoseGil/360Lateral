@@ -4,7 +4,8 @@ import { Form, useActionData, useLoaderData, useNavigation, Link, useSearchParam
 import { useState, useEffect } from "react";
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "@remix-run/node";
 import { getUser } from "~/utils/auth.server";
-import { getMisLotes, solicitarAnalisis } from "~/services/lotes.server";
+import { getMisLotes } from "~/services/lotes.server";
+// import { solicitarAnalisis } from "~/services/lotes.server";
 
 export async function loader({ request }: LoaderFunctionArgs) {
     // Verificar que el usuario esté autenticado y sea propietario
@@ -74,11 +75,11 @@ export async function action({ request }: ActionFunctionArgs) {
         const incluirVIS = formData.get("incluirVIS") === "true";
 
         // Solicitar el análisis
-        const resultado = await solicitarAnalisis(request, loteId, tipoAnalisis, incluirVIS);
+        // const resultado = await solicitarAnalisis(request, loteId, tipoAnalisis, incluirVIS);
 
         // Redirigir a la página del lote con un mensaje de éxito
         return redirect(`/owner/lote/${loteId}?analisis=solicitado`, {
-            headers: resultado.headers
+            // headers: resultado.headers
         });
     } catch (error) {
         console.error("Error solicitando análisis:", error);
@@ -147,7 +148,7 @@ export default function SolicitarAnalisis() {
                                 required
                             >
                                 <option value="">Seleccionar un lote</option>
-                                {lotes.map((lote) =>
+                                {lotes.map((lote: { id: string; nombre: string; direccion: string; area: number }) =>
                                     lote ? (
                                         <option key={lote.id} value={lote.id}>
                                             {lote.nombre} - {lote.direccion} ({lote.area} m²)
