@@ -45,7 +45,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
         const [lotesResponse, statsResponse, userStatsResponse] = await Promise.all([
             getMisLotes(request),
             getUserLotesStats(request),
-            getUserActivity(request, 30).catch(err => {
+            getUserActivity(request).catch(err => {
                 console.error("Error obteniendo actividad del usuario:", err);
                 return { activity: null, headers: new Headers() };
             })
@@ -449,7 +449,7 @@ export default function OwnerDashboard() {
                 </div>
                 <div className="bg-gray-50 px-6 py-3 border-t border-gray-200 text-right">
                     <Link
-                        to="/owner/mis-lotes"
+                        to="/owner/lotes"
                         className="text-sm font-medium text-indigo-600 hover:text-indigo-900"
                     >
                         Ver todos los lotes →

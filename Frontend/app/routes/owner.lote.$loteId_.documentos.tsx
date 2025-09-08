@@ -92,7 +92,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
 
     // Para subir documento (acción por defecto)
     try {
-        const { document, headers } = await uploadDocument(request);
+        const { document, headers } = await uploadDocument(request, formData);
 
         return json({
             success: true,
@@ -205,7 +205,7 @@ export default function LoteDocumentos() {
                 </Link>
             </div>
 
-            <div className="mb-6 flex items-center justify-between">
+            <div className="mb-6 flex items-center justify-between py-16">
                 <h1 className="text-2xl font-bold">
                     Documentos {'lote' in loaderData && loaderData.lote?.nombre && `- ${loaderData.lote.nombre}`}
                 </h1>

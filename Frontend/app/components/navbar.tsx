@@ -83,7 +83,7 @@ export default function Navbar({ user }: NavbarProps) {
             case "owner":
                 return [
                     { to: "/owner", label: "Dashboard" },
-                    { to: "/owner/mis-lotes", label: "Mis Lotes" },
+                    { to: "/owner/lotes", label: "Mis Lotes" },
                     { to: "/owner/documentos", label: "Documentos" },
                     {/*{ to: "/owner/ofertas", label: "Ofertas" }, */ }
                 ];

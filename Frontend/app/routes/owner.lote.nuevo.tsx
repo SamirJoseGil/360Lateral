@@ -6,6 +6,7 @@ import type { ActionFunctionArgs, LoaderFunctionArgs } from "@remix-run/node";
 import { getUser } from "~/utils/auth.server";
 import { createLote, getTratamientosPOT, getLotePotData } from "~/services/lotes.server";
 import StatusModal from "~/components/StatusModal";
+import { useNavigate } from "@remix-run/react";
 import { consultarPorCBML, consultarPorMatricula, consultarPorDireccion } from "~/services/mapgis.server";
 import LoteSearchSection from "~/components/LoteSearchSection";
 import LoteFormFields from "~/components/LoteFormFields";
@@ -26,7 +27,7 @@ type NuevoLoteData = {
     estrato?: number;
     latitud?: number;
     longitud?: number;
-    tratamiento_pot?: string;
+    // Eliminamos el campo tratamiento_pot
     uso_suelo?: string;
     clasificacion_suelo?: string;
     metadatos?: Record<string, any>;
@@ -150,32 +151,24 @@ export async function action({ request }: ActionFunctionArgs) {
         const formData = await request.formData();
 
         // Obtener los campos adicionales para crear la descripción detallada
+        // Eliminamos las referencias a los campos de tratamiento POT
         const clasificacionSuelo = formData.get("clasificacion_suelo")?.toString();
         const restriccionRiesgo = formData.get("restriccion_ambiental_riesgo")?.toString();
         const restriccionRetiros = formData.get("restriccion_ambiental_retiros")?.toString();
-        const tratamientoPot = formData.get("tratamiento_pot")?.toString();
-        const densidadHabitacional = formData.get("densidad_habitacional")?.toString();
-        const alturaNormativa = formData.get("altura_normativa")?.toString();
         const usoSuelo = formData.get("uso_suelo")?.toString();
 
         // Descripción original
         let descripcion = formData.get("descripcion")?.toString() || "";
 
         // Si existe información normativa pero no hay descripción personalizada, 
-        // generar una descripción automática con la información normativa
-        if (!descripcion && (clasificacionSuelo || restriccionRiesgo || restriccionRetiros || tratamientoPot || densidadHabitacional || alturaNormativa)) {
+        // generar una descripción automática con la información normativa (sin campos POT)
+        if (!descripcion && (clasificacionSuelo || restriccionRiesgo || restriccionRetiros)) {
             descripcion = `Información normativa del lote:\n\n`;
             if (clasificacionSuelo) descripcion += `Clasificación de suelo: ${clasificacionSuelo}\n\n`;
             if (restriccionRiesgo || restriccionRetiros) {
                 descripcion += `Restricciones ambientales:\n`;
                 if (restriccionRiesgo) descripcion += `- ${restriccionRiesgo}\n`;
                 if (restriccionRetiros) descripcion += `- ${restriccionRetiros}\n\n`;
-            }
-            if (tratamientoPot || densidadHabitacional || alturaNormativa) {
-                descripcion += `Aprovechamiento urbano:\n`;
-                if (tratamientoPot) descripcion += `- Tratamiento: ${tratamientoPot}\n`;
-                if (densidadHabitacional) descripcion += `- Densidad habitacional máxima: ${densidadHabitacional}\n`;
-                if (alturaNormativa) descripcion += `- Altura normativa: ${alturaNormativa}\n`;
             }
             if (usoSuelo) descripcion += `\nUso de suelo: ${usoSuelo}`;
         }
@@ -189,7 +182,7 @@ export async function action({ request }: ActionFunctionArgs) {
             matricula: formData.get("matricula")?.toString(),
             cbml: formData.get("cbml")?.toString(),
             estrato: parseInt(formData.get("estrato")?.toString() || "0") || undefined,
-            tratamiento_pot: tratamientoPot,
+            // Eliminamos el campo tratamiento_pot
             uso_suelo: usoSuelo,
             latitud: parseFloat(formData.get("latitud")?.toString() || "0") || undefined,
             longitud: parseFloat(formData.get("longitud")?.toString() || "0") || undefined,
@@ -225,14 +218,11 @@ export async function action({ request }: ActionFunctionArgs) {
         // Crear un objeto con los metadatos adicionales
         const metadatos: Record<string, any> = {};
 
-        // Guardar información de POT y campos normativos en metadatos
+        // Guardar información de POT y campos normativos en metadatos (sin campos de tratamiento)
         if (
             formData.get("clasificacion_suelo") ||
             formData.get("restriccion_ambiental_riesgo") ||
             formData.get("restriccion_ambiental_retiros") ||
-            formData.get("densidad_habitacional") ||
-            formData.get("altura_normativa") ||
-            formData.get("tratamiento_pot") ||
             formData.get("uso_suelo")
         ) {
             metadatos.pot = {
@@ -242,10 +232,8 @@ export async function action({ request }: ActionFunctionArgs) {
                     retiros_rios: formData.get("restriccion_ambiental_retiros")?.toString() || ''
                 },
                 aprovechamiento_urbano: {
-                    tratamiento: formData.get("tratamiento_pot")?.toString() || '',
-                    densidad_habitacional_max: formData.get("densidad_habitacional")?.toString() || '',
-                    altura_normativa: formData.get("altura_normativa")?.toString() || '',
                     uso_suelo: formData.get("uso_suelo")?.toString() || ''
+                    // Eliminamos los campos relacionados con tratamiento POT
                 }
             };
         }
@@ -259,7 +247,7 @@ export async function action({ request }: ActionFunctionArgs) {
             matricula: loteData.matricula,
             codigo_catastral: loteData.codigo_catastral,
             estrato: loteData.estrato,
-            tratamiento_pot: loteData.tratamiento_pot,
+            // Eliminamos el campo tratamiento_pot
             uso_suelo: loteData.uso_suelo,
             clasificacion_suelo: loteData.clasificacion_suelo,
             metadatos: Object.keys(metadatos).length > 0 ? metadatos : undefined,
@@ -286,9 +274,16 @@ export async function action({ request }: ActionFunctionArgs) {
             const resultado = await createLote(request, lotePayload);
             console.log("[Lotes] Lote creado con ID:", resultado.lote.id);
 
-            // Redirigir a la página del lote creado
+            // Preparar los datos para la redirección y el modal
+            console.log(`[Lotes] Lote creado con ID: ${resultado.lote.id}`);
+
+            // Redirigir a la página del lote creado, pero incluir información para el modal
             return redirect(`/owner/lote/${resultado.lote.id}`, {
-                headers: resultado.headers
+                headers: {
+                    ...resultado.headers,
+                    'X-Lote-Created': 'true',
+                    'X-Lote-Id': resultado.lote.id.toString()
+                }
             });
         } catch (error) {
             console.error("[Lotes] Error en la creación:", error);
@@ -311,6 +306,7 @@ export async function action({ request }: ActionFunctionArgs) {
 export default function NuevoLote() {
     const actionData = useActionData<typeof action>();
     const navigation = useNavigation();
+    const navigate = useNavigate();
     const isSubmitting = navigation.state === "submitting";
     const navigationFormMethod = navigation.formMethod;
     const navigationHasData = Object.keys(navigation).includes('formData');
@@ -364,19 +360,10 @@ export default function NuevoLote() {
         const clasificacionSuelo = mapGisData.clasificacion_suelo || '';
         const barrioValue = mapGisData.barrio || '';
 
-        let tratamiento = '';
-        let densidad = '';
-        let altura = '';
+        // ELIMINADO: No procesar datos de tratamiento POT temporalmente
         let usoSuelo = '';
         let restriccionRiesgo = '';
         let restriccionRetiros = '';
-
-        // Extraer información de aprovechamiento urbano
-        if (mapGisData.aprovechamiento_urbano && typeof mapGisData.aprovechamiento_urbano === 'object') {
-            tratamiento = mapGisData.aprovechamiento_urbano.tratamiento || '';
-            densidad = mapGisData.aprovechamiento_urbano.densidad_habitacional_max?.toString() || '';
-            altura = mapGisData.aprovechamiento_urbano.altura_normativa || '';
-        }
 
         // Extraer información de uso de suelo
         if (mapGisData.uso_suelo && typeof mapGisData.uso_suelo === 'object') {
@@ -395,7 +382,7 @@ export default function NuevoLote() {
             restriccionRetiros = mapGisData.restricciones_ambientales.retiros_rios || '';
         }
 
-        // Actualizar el formulario con todos los datos extraídos
+        // Actualizar el formulario con todos los datos extraídos (sin campos POT)
         setFormValues(prevValues => ({
             ...prevValues,
             direccion: mapGisData.direccion || prevValues.direccion,
@@ -404,13 +391,14 @@ export default function NuevoLote() {
             matricula: mapGisData.matricula || prevValues.matricula,
             codigo_catastral: mapGisData.codigo_catastral || prevValues.codigo_catastral,
             barrio: barrioValue || prevValues.barrio,
-            tratamiento_pot: tratamiento || prevValues.tratamiento_pot,
             uso_suelo: usoSuelo || prevValues.uso_suelo,
             clasificacion_suelo: clasificacionSuelo || prevValues.clasificacion_suelo,
             restriccion_ambiental_riesgo: restriccionRiesgo || prevValues.restriccion_ambiental_riesgo,
             restriccion_ambiental_retiros: restriccionRetiros || prevValues.restriccion_ambiental_retiros,
-            densidad_habitacional: densidad || prevValues.densidad_habitacional,
-            altura_normativa: altura || prevValues.altura_normativa,
+            // Eliminamos los campos de tratamientos POT
+            tratamiento_pot: '', // Valor vacío en lugar de usar tratamiento
+            densidad_habitacional: '', // Valor vacío en lugar de usar densidad
+            altura_normativa: '', // Valor vacío en lugar de usar altura
             latitud: mapGisData.latitud?.toString() || prevValues.latitud,
             longitud: mapGisData.longitud?.toString() || prevValues.longitud
         }));
@@ -420,13 +408,13 @@ export default function NuevoLote() {
             setUsarUbicacion(true);
         }
 
-        // Construir datos del POT para análisis
+        // Construir datos del POT para análisis (sin campos de tratamiento)
         const newPotData = {
             area: parseFloat(areaValue) || undefined,
             clasificacion: clasificacionSuelo,
             uso_suelo: usoSuelo,
-            tratamiento: tratamiento,
-            densidad: parseFloat(densidad) || undefined,
+            tratamiento: '', // Valor vacío en lugar de tratamiento
+            densidad: undefined, // No usar densidad
             restricciones: (restriccionRiesgo || restriccionRetiros) ?
                 (restriccionRiesgo && restriccionRetiros ? 2 : 1) : 0,
             detalles_restricciones: [
@@ -492,7 +480,11 @@ export default function NuevoLote() {
 
     // Manejar el estado de navegación para mostrar el modal de carga/éxito
     useEffect(() => {
-        // Mostrar modal de carga durante la submisión
+        console.log("Navigation state changed:", navigation.state);
+        console.log("Navigation location:", navigation.location?.pathname);
+        console.log("Current location:", window.location.pathname);
+
+        // Mostrar modal de carga cuando se inicia la submisión del formulario
         if (navigation.state === "submitting") {
             setStatusModalProps({
                 type: "loading",
@@ -503,35 +495,52 @@ export default function NuevoLote() {
             });
             setShowStatusModal(true);
         }
-        // Ocultar modal cuando se complete la submisión
-        else if (navigation.state === "idle" && showStatusModal) {
-            // Si hay datos de acción y un lote creado (redireccionamiento exitoso)
-            if (navigationFormMethod === "post" && !actionData?.errors) {
-                // Mostrar un mensaje de éxito con redirección
-                const loteId = window.location.pathname.split('/').pop();
-                // Si tiene ID del lote, mostrar opción para subir documentos
-                setStatusModalProps({
-                    type: "success",
-                    title: "¡Lote creado exitosamente!",
-                    message: `El lote ha sido registrado correctamente en el sistema${loteId ? ` con ID: ${loteId}` : ''}.`,
-                    redirectUrl: loteId ? `/owner/lote/${loteId}/documentos` : "/owner/mis-lotes",
-                    redirectText: loteId ? "Subir documentos" : "Ver mis lotes"
-                });
-            }
-            // Si hay errores, mostrar modal de error
-            else if (actionData?.errors) {
+        // Verificar cuando la navegación cambia a loading (redirección) o idle
+        else if (navigation.state === "loading" || navigation.state === "idle") {
+            // Si hay errores en los datos de acción
+            if (actionData?.errors) {
                 setStatusModalProps({
                     type: "error",
                     title: "Error al crear el lote",
                     message: actionData.errors.form || "Hubo un problema al crear el lote. Por favor revise los datos e intente nuevamente.",
                     redirectUrl: "",
-                    redirectText: ""
+                    redirectText: "Entendido"
                 });
+                // Mantener el modal visible
+                setShowStatusModal(true);
+            }
+            // Si estamos en la ruta de un lote específico después de un POST, probablemente fue creado
+            else if (navigationFormMethod === "post" && navigation.location &&
+                (navigation.location.pathname.includes('/lote/') || window.location.pathname.includes('/lote/'))) {
+
+                // Determinar el ID del lote de la navegación o de la ubicación actual
+                const locationPath = navigation.location?.pathname || window.location.pathname;
+                const pathParts = locationPath.split('/');
+                const loteId = pathParts[pathParts.length - 1];
+
+                if (loteId && loteId !== 'nuevo') {
+                    console.log("Lote creado con ID:", loteId);
+                    // Mostrar mensaje de éxito
+                    setStatusModalProps({
+                        type: "success",
+                        title: "¡Lote creado exitosamente!",
+                        message: `El lote ha sido registrado correctamente en el sistema con ID: ${loteId}.`,
+                        redirectUrl: `/owner/lote/${loteId}/documentos`,
+                        redirectText: "Subir documentos"
+                    });
+                    setShowStatusModal(true);
+
+                    // Si estamos en loading, significa que estamos siendo redirigidos
+                    // Asegurarnos que el modal se cierre después de un tiempo
+                    if (navigation.state === "loading") {
+                        setTimeout(() => {
+                            window.location.href = `/owner/lote/${loteId}/documentos`;
+                        }, 2000);
+                    }
+                }
             }
         }
-    }, [navigation.state, navigationFormMethod, actionData, showStatusModal]);
-
-    // Verificar si hay datos POT en la respuesta del loader
+    }, [navigation.state, navigation.location, navigationFormMethod, actionData]);    // Verificar si hay datos POT en la respuesta del loader
     useEffect(() => {
         if (navigation.location && navigation.location.search.includes('searchType=cbml')) {
             const state = navigation.state === 'loading' ? 'loading' :
@@ -581,7 +590,7 @@ export default function NuevoLote() {
             <div className="p-8 py-32">
                 <div className="mb-6 flex items-center">
                     <Link
-                        to="/owner/mis-lotes"
+                        to="/owner/lotes"
                         className="mr-4 text-indigo-600 hover:text-indigo-900"
                     >
                         ← Volver a mis lotes
@@ -620,61 +629,9 @@ export default function NuevoLote() {
                             setUsarUbicacion={setUsarUbicacion}
                             actionData={actionData}
                         />
-
-                        {/* Sección de análisis POT y vendibilidad */}
-                        {potData && (
-                            <div className="mt-8 border-t border-gray-200 pt-6">
-                                <h3 className="text-lg font-medium leading-6 text-gray-900 mb-4">
-                                    Análisis de Normativa y Vendibilidad
-                                </h3>
-                                <PotAnalysis potData={potData} />
-
-                                {/* Resumen de vendibilidad */}
-                                {sellabilityAnalysis && (
-                                    <div className={`mt-4 p-4 rounded-md ${sellabilityAnalysis.canSell
-                                            ? 'bg-green-50 border-green-200'
-                                            : 'bg-yellow-50 border-yellow-200'
-                                        } border`}
-                                    >
-                                        <div className="flex">
-                                            <div className={`flex-shrink-0 ${sellabilityAnalysis.canSell ? 'text-green-600' : 'text-yellow-600'
-                                                }`}>
-                                                {sellabilityAnalysis.canSell ? (
-                                                    <svg className="h-5 w-5" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
-                                                        <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.707a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
-                                                    </svg>
-                                                ) : (
-                                                    <svg className="h-5 w-5" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
-                                                        <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
-                                                    </svg>
-                                                )}
-                                            </div>
-                                            <div className="ml-3">
-                                                <h3 className={`text-sm font-medium ${sellabilityAnalysis.canSell ? 'text-green-800' : 'text-yellow-800'
-                                                    }`}>
-                                                    {sellabilityAnalysis.canSell
-                                                        ? 'Lote comercializable'
-                                                        : 'Lote con restricciones para venta'}
-                                                </h3>
-                                                <div className="mt-2 text-sm">
-                                                    <ul className="list-disc space-y-1 pl-5">
-                                                        {sellabilityAnalysis.recommendations.map((rec: string, idx: number) => (
-                                                            <li key={idx} className={sellabilityAnalysis.canSell ? 'text-green-700' : 'text-yellow-700'}>
-                                                                {rec}
-                                                            </li>
-                                                        ))}
-                                                    </ul>
-                                                </div>
-                                            </div>
-                                        </div>
-                                    </div>
-                                )}
-                            </div>
-                        )}
-
                         <div className="mt-6 flex items-center justify-end">
                             <Link
-                                to="/owner/mis-lotes"
+                                to="/owner/lotes"
                                 className="mr-4 px-4 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
                             >
                                 Cancelar
@@ -683,8 +640,29 @@ export default function NuevoLote() {
                                 type="submit"
                                 disabled={isSubmitting}
                                 className="inline-flex justify-center py-2 px-4 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+                                onClick={() => {
+                                    if (!isSubmitting) {
+                                        console.log("Submit button clicked");
+                                        setStatusModalProps({
+                                            type: "loading",
+                                            title: "Procesando",
+                                            message: "Creando el lote...",
+                                            redirectUrl: "",
+                                            redirectText: ""
+                                        });
+                                        setShowStatusModal(true);
+                                    }
+                                }}
                             >
-                                {isSubmitting ? "Guardando..." : "Registrar Lote"}
+                                {isSubmitting ? (
+                                    <>
+                                        <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                        </svg>
+                                        Guardando...
+                                    </>
+                                ) : "Registrar Lote"}
                             </button>
                         </div>
                     </Form>
@@ -700,6 +678,11 @@ export default function NuevoLote() {
                 message={statusModalProps.message}
                 redirectUrl={statusModalProps.redirectUrl}
                 redirectText={statusModalProps.redirectText}
+                onRedirect={(url) => {
+                    console.log("Redirigiendo a:", url);
+                    setShowStatusModal(false);
+                    navigate(url);
+                }}
             />
         </>
     );

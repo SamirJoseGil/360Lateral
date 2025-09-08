@@ -62,12 +62,10 @@ export default function DocumentUploadForm({
                                 IMPORTANTE: Documentos requeridos obligatorios
                             </p>
                             <p className="mt-1 text-sm text-yellow-700">
-                                Para activar tu lote, debes subir los siguientes documentos en un plazo de 12 horas o el lote será eliminado automáticamente:
+                                Para activar tu lote, debes subir los siguientes documentos:
                             </p>
                             <ul className="mt-1 text-sm text-yellow-700 list-disc list-inside">
-                                <li><strong>CTL (Certificado de Tradición y Libertad)</strong>: Selecciona tipo "Contrato" e incluye "CTL" en el título</li>
                                 <li><strong>Planos</strong>: Selecciona tipo "Plano"</li>
-                                <li><strong>Levantamiento topográfico</strong>: Selecciona tipo "Otro" e incluye "topografia" o "levantamiento" en el título</li>
                             </ul>
                         </div>
                     </div>

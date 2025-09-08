@@ -2,6 +2,7 @@
 Permisos personalizados para la API
 """
 from rest_framework import permissions
+from rest_framework.permissions import AllowAny
 
 class AllowPublicEndpoints(permissions.BasePermission):
     """

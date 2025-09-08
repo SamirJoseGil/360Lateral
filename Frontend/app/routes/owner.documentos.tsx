@@ -3,9 +3,10 @@ import { json } from "@remix-run/node";
 import { useLoaderData, useSearchParams, Link } from "@remix-run/react";
 import type { LoaderFunctionArgs } from "@remix-run/node";
 import { getUser } from "~/utils/auth.server";
-import { API_URL, fetchWithAuth } from "~/utils/auth.server";
+import { fetchWithAuth } from "~/utils/auth.server";
 import type { Document } from "~/services/documents.server";
 import DocumentDetailModal from "~/components/DocumentDetailModal";
+import { API_URL } from "~/utils/api.server";
 
 // Loader function to fetch user documents
 export async function loader({ request }: LoaderFunctionArgs) {

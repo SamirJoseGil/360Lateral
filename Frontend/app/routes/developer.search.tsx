@@ -5,7 +5,8 @@ import { getUser } from "~/utils/auth.server";
 import { useState, useEffect } from "react";
 import { recordEvent } from "~/services/stats.server";
 import { fetchWithAuth } from "~/utils/auth.server";
-import { API_URL } from "~/utils/api.server";
+// Importamos la versión segura para cliente de API_BASE_URL
+import { API_BASE_URL } from "~/utils/api.config";
 
 // Tipos para los filtros y resultados
 type SearchFilter = {
@@ -89,7 +90,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
         // Obtener criterios de búsqueda guardados del usuario
         const { res: criteriaResponse } = await fetchWithAuth(
             request,
-            `${API_URL}/api/developer/search-criteria/`
+            `${API_BASE_URL}/api/developer/search-criteria/`
         );
 
         let savedCriteria = [];
@@ -106,7 +107,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
         }
 
         // Construir URL de búsqueda con filtros
-        let searchUrl = `${API_URL}/api/lotes/?`;
+        let searchUrl = `${API_BASE_URL}/api/lotes/?`;
         const searchParams = new URLSearchParams();
 
         if (query) searchParams.append("search", query);
@@ -174,7 +175,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
         // Obtener opciones para filtros (zonas, tratamientos, rangos)
         const { res: filtersResponse } = await fetchWithAuth(
             request,
-            `${API_URL}/api/lotes/filter-options/`
+            `${API_BASE_URL}/api/lotes/filter-options/`
         );
 
         let filterOptions = {
@@ -317,7 +318,7 @@ export default function DeveloperSearch() {
     const toggleFavorite = async (lotId: number) => {
         try {
             // Realizar petición al backend usando el endpoint correcto para alternar favorito
-            const response = await fetch(`${API_URL}/api/lotes/favorites/toggle/`, {
+            const response = await fetch(`${API_BASE_URL}/api/lotes/favorites/toggle/`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',

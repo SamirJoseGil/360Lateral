@@ -1,15 +1,19 @@
-import React from "react";
+import React, { Fragment, useEffect } from "react";
+import { Dialog, Transition } from "@headlessui/react";
+import { Link, useNavigate } from "@remix-run/react";
+import { XMarkIcon, CheckCircleIcon, ExclamationCircleIcon } from "@heroicons/react/24/outline";
 
 export type StatusType = "loading" | "success" | "error";
 
-interface StatusModalProps {
+export interface StatusModalProps {
     isOpen: boolean;
-    onClose?: () => void;
+    onClose: () => void;
     type: StatusType;
     title: string;
     message: string;
     redirectUrl?: string;
     redirectText?: string;
+    onRedirect?: (url: string) => void; // Nueva propiedad para manejar redirección programática
 }
 
 export default function StatusModal({
@@ -19,67 +23,127 @@ export default function StatusModal({
     title,
     message,
     redirectUrl,
-    redirectText
+    redirectText,
+    onRedirect
 }: StatusModalProps) {
+    const navigate = useNavigate();
+
+    // Efecto para manejar redirección automática en caso de éxito después de 3 segundos
+    useEffect(() => {
+        let redirectTimer: NodeJS.Timeout | null = null;
+
+        if (isOpen && type === "success" && redirectUrl) {
+            redirectTimer = setTimeout(() => {
+                console.log("Redirigiendo automáticamente a:", redirectUrl);
+                if (onRedirect) {
+                    onRedirect(redirectUrl);
+                } else {
+                    navigate(redirectUrl);
+                }
+            }, 3000); // Redireccionar después de 3 segundos en caso de éxito
+        }
+
+        return () => {
+            if (redirectTimer) {
+                clearTimeout(redirectTimer);
+            }
+        };
+    }, [isOpen, type, redirectUrl, navigate, onRedirect]);
+
     if (!isOpen) return null;
 
     return (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-            <div className="bg-white p-8 rounded-lg shadow-lg max-w-md w-full">
-                <div className="flex items-center mb-4">
-                    {type === "loading" && (
-                        <div className="mr-4">
-                            <div className="animate-spin rounded-full h-10 w-10 border-t-2 border-b-2 border-blue-500"></div>
-                        </div>
-                    )}
+        <Transition appear show={isOpen} as={Fragment}>
+            <Dialog as="div" className="relative z-50" onClose={type === "loading" ? () => { } : onClose}>
+                <Transition.Child
+                    as={Fragment}
+                    enter="ease-out duration-300"
+                    enterFrom="opacity-0"
+                    enterTo="opacity-100"
+                    leave="ease-in duration-200"
+                    leaveFrom="opacity-100"
+                    leaveTo="opacity-0"
+                >
+                    <div className="fixed inset-0 bg-black bg-opacity-25" />
+                </Transition.Child>
 
-                    {type === "success" && (
-                        <div className="mr-4 rounded-full bg-green-100 p-2">
-                            <svg className="h-8 w-8 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                            </svg>
-                        </div>
-                    )}
+                <div className="fixed inset-0 overflow-y-auto">
+                    <div className="flex min-h-full items-center justify-center p-4 text-center">
+                        <Transition.Child
+                            as={Fragment}
+                            enter="ease-out duration-300"
+                            enterFrom="opacity-0 scale-95"
+                            enterTo="opacity-100 scale-100"
+                            leave="ease-in duration-200"
+                            leaveFrom="opacity-100 scale-100"
+                            leaveTo="opacity-0 scale-95"
+                        >
+                            <Dialog.Panel className="w-full max-w-md transform overflow-hidden rounded-2xl bg-white p-6 text-left align-middle shadow-xl transition-all">
+                                <div className="flex items-center justify-between">
+                                    <Dialog.Title as="h3" className="text-lg font-medium leading-6 text-gray-900">
+                                        {title}
+                                    </Dialog.Title>
+                                    {type !== "loading" && (
+                                        <button
+                                            type="button"
+                                            className="text-gray-400 hover:text-gray-500"
+                                            onClick={onClose}
+                                        >
+                                            <span className="sr-only">Cerrar</span>
+                                            <XMarkIcon className="h-6 w-6" aria-hidden="true" />
+                                        </button>
+                                    )}
+                                </div>
 
-                    {type === "error" && (
-                        <div className="mr-4 rounded-full bg-red-100 p-2">
-                            <svg className="h-8 w-8 text-red-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                            </svg>
-                        </div>
-                    )}
+                                <div className="mt-4">
+                                    <div className="flex items-center mb-4">
+                                        {type === "loading" && (
+                                            <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-indigo-500 mr-3"></div>
+                                        )}
+                                        {type === "success" && (
+                                            <CheckCircleIcon className="h-8 w-8 text-green-500 mr-3" aria-hidden="true" />
+                                        )}
+                                        {type === "error" && (
+                                            <ExclamationCircleIcon className="h-8 w-8 text-red-500 mr-3" aria-hidden="true" />
+                                        )}
+                                        <p className="text-sm text-gray-500">{message}</p>
+                                    </div>
 
-                    <h3 className="text-lg font-bold">{title}</h3>
+                                    {type === "success" && redirectUrl && redirectText && (
+                                        <div className="mt-4 flex justify-end">
+                                            <button
+                                                type="button"
+                                                className="inline-flex justify-center rounded-md border border-transparent bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2"
+                                                onClick={() => {
+                                                    if (onRedirect) {
+                                                        onRedirect(redirectUrl);
+                                                    } else {
+                                                        navigate(redirectUrl);
+                                                    }
+                                                }}
+                                            >
+                                                {redirectText}
+                                            </button>
+                                        </div>
+                                    )}
+
+                                    {type === "error" && (
+                                        <div className="mt-4 flex justify-end">
+                                            <button
+                                                type="button"
+                                                className="inline-flex justify-center rounded-md border border-transparent bg-red-100 px-4 py-2 text-sm font-medium text-red-900 hover:bg-red-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-500 focus-visible:ring-offset-2"
+                                                onClick={onClose}
+                                            >
+                                                {redirectText || "Entendido"}
+                                            </button>
+                                        </div>
+                                    )}
+                                </div>
+                            </Dialog.Panel>
+                        </Transition.Child>
+                    </div>
                 </div>
-
-                <p className="text-gray-600 mb-6">{message}</p>
-
-                <div className="flex justify-end">
-                    {type === "loading" ? (
-                        <p className="text-sm text-gray-500">Por favor espere...</p>
-                    ) : (
-                        <>
-                            {redirectUrl ? (
-                                <a
-                                    href={redirectUrl}
-                                    className={`px-4 py-2 rounded-md text-white ${type === "success" ? "bg-green-600 hover:bg-green-700" : "bg-blue-600 hover:bg-blue-700"
-                                        }`}
-                                >
-                                    {redirectText || "Continuar"}
-                                </a>
-                            ) : (
-                                <button
-                                    onClick={onClose}
-                                    className={`px-4 py-2 rounded-md text-white ${type === "success" ? "bg-green-600 hover:bg-green-700" : "bg-blue-600 hover:bg-blue-700"
-                                        }`}
-                                >
-                                    Cerrar
-                                </button>
-                            )}
-                        </>
-                    )}
-                </div>
-            </div>
-        </div>
+            </Dialog>
+        </Transition>
     );
 }

@@ -170,7 +170,7 @@ Endpoints para la gestión de usuarios y perfiles.
   - **Códigos**: `204 No Content`, `401 Unauthorized`, `403 Forbidden`, `404 Not Found`
 
 ### Lotes por Usuario
-- **`GET /api/lotes/mis-lotes/`** - Ver lotes del usuario actual
+- **`GET /api/lotes/lotes/`** - Ver lotes del usuario actual
   - **Requiere**: Autenticación
   - **Parámetros**: `page`, `page_size`, `ordering` (opcionales)
   - **Devuelve**: Lista paginada de lotes asociados al usuario actual
@@ -469,6 +469,12 @@ Endpoints para la gestión de usuarios y perfiles.
   - **Parámetros**: `period` ('day', 'week', 'month', 'year', opcional)
   - **Devuelve**: Datos agrupados de eventos por tipo, origen o usuario
   - **Códigos**: `200 OK`, `401 Unauthorized`, `403 Forbidden`
+  
+- **`GET /api/stats/dashboard/events/`** - Dashboard de eventos 
+  - **Requiere**: Autenticación con permisos administrativos
+  - **Parámetros**: `days` (cantidad de días a considerar, por defecto 30)
+  - **Devuelve**: Resumen de eventos para el dashboard que incluye conteo total, distribución por tipo y eventos diarios
+  - **Códigos**: `200 OK`, `401 Unauthorized`, `403 Forbidden`
 
 ### Gráficos
 - **`GET /api/stats/charts/`** - Gráficos del dashboard
@@ -525,8 +531,8 @@ Endpoints para la gestión de usuarios y perfiles.
 
 - **`GET /api/stats/events/daily/`** - Eventos diarios
   - **Requiere**: Autenticación con permisos administrativos
-  - **Parámetros**: `days` (cantidad de días, opcional), `type` (opcional)
-  - **Devuelve**: Serie temporal de eventos por día
+  - **Parámetros**: `days` (cantidad de días, opcional, por defecto 30), `type` (opcional)
+  - **Devuelve**: Serie temporal de eventos por día con conteos diarios
   - **Códigos**: `200 OK`, `401 Unauthorized`, `403 Forbidden`
 
 - **`GET /api/stats/events/types/`** - Distribución de tipos de eventos

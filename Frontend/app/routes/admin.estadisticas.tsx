@@ -57,93 +57,190 @@ export async function loader({ request }: LoaderFunctionArgs) {
         oneYearAgo.setFullYear(now.getFullYear() - 1);
 
         // Obtener todos los datos necesarios en paralelo usando los nuevos endpoints
-        const [
-            allChartDataResponse,
-            documentsByMonthResponse,
-            eventDistributionResponse,
-            userActivityResponse,
-            recentActivityResponse,
-            // Nuevos endpoints específicos para eventos
-            eventsDashboardResponse,
-            eventsCountsResponse,
-            dailyEventsResponse,
-            eventTypesResponse
-        ] = await Promise.all([
-            // Datos de gráficos generales
-            getAllChartData(request),
-            // Documentos por mes (tendencias mensuales)
-            getDocumentsByMonth(request),
-            // Distribución de eventos por tipo (endpoint anterior)
-            getEventDistribution(request),
-            // Actividad del usuario actual
-            getUserActivity(request),
-            // Actividad reciente del sistema
-            getRecentActivity(request),
-            // Nuevos endpoints específicos para eventos
-            getEventsDashboard(request),
-            getEventsCounts(request),
-            getDailyEvents(request),
-            getEventTypes(request)
-        ]);
+        // Obtenemos los datos y manejamos posibles errores
+        let chartData = {};
+        let documentsByMonth = {};
+        let eventDistribution = {};
+        let userActivity = {};
+        let recentActivity = {};
+        let eventsDashboard = {};
+        let eventsCounts = {};
+        let dailyEvents: any[] = [];
+        let eventTypes: any[] = [];
+        let combinedHeaders = new Headers();
 
-        // Extraer datos relevantes de las respuestas
-        const { chartData } = allChartDataResponse;
-        const { documentsByMonth } = documentsByMonthResponse;
-        const { eventDistribution } = eventDistributionResponse;
-        const { activity: userActivity } = userActivityResponse;
-        const { recentActivity } = recentActivityResponse;
-
-        // Extraer datos de los nuevos endpoints con la estructura correcta
-        const eventsDashboard = eventsDashboardResponse.eventsDashboard || {};
-        const eventsCounts = eventsCountsResponse.eventsCounts || {};
-        const dailyEvents = dailyEventsResponse.dailyEvents || [];
-        const eventTypes = eventTypesResponse.eventTypes || [];
-
-        // Combinar headers de todas las respuestas
-        const headers = new Headers();
-        [
-            allChartDataResponse.headers,
-            documentsByMonthResponse.headers,
-            eventDistributionResponse.headers,
-            userActivityResponse.headers,
-            recentActivityResponse.headers,
-            eventsDashboardResponse.headers,
-            eventsCountsResponse.headers,
-            dailyEventsResponse.headers,
-            eventTypesResponse.headers
-        ].forEach(h => {
-            if (h) {
-                for (const [key, value] of h.entries()) {
-                    headers.append(key, value);
+        try {
+            const allChartDataResponse = await getAllChartData(request);
+            chartData = allChartDataResponse.chartData || {};
+            if (allChartDataResponse.headers) {
+                for (const [key, value] of allChartDataResponse.headers.entries()) {
+                    combinedHeaders.append(key, value);
                 }
             }
-        });
+        } catch (error) {
+            console.error("Error al obtener datos de gráficos:", error);
+        }
+
+        try {
+            const documentsByMonthResponse = await getDocumentsByMonth(request);
+            documentsByMonth = documentsByMonthResponse.documentsByMonth || {};
+            if (documentsByMonthResponse.headers) {
+                for (const [key, value] of documentsByMonthResponse.headers.entries()) {
+                    combinedHeaders.append(key, value);
+                }
+            }
+        } catch (error) {
+            console.error("Error al obtener documentos por mes:", error);
+        }
+
+        try {
+            const eventDistributionResponse = await getEventDistribution(request);
+            eventDistribution = eventDistributionResponse.eventDistribution || {};
+            if (eventDistributionResponse.headers) {
+                for (const [key, value] of eventDistributionResponse.headers.entries()) {
+                    combinedHeaders.append(key, value);
+                }
+            }
+        } catch (error) {
+            console.error("Error al obtener distribución de eventos:", error);
+        }
+
+        try {
+            const userActivityResponse = await getUserActivity(request);
+            userActivity = userActivityResponse.activity || {};
+            if (userActivityResponse.headers) {
+                for (const [key, value] of userActivityResponse.headers.entries()) {
+                    combinedHeaders.append(key, value);
+                }
+            }
+        } catch (error) {
+            console.error("Error al obtener actividad de usuario:", error);
+        }
+
+        try {
+            const recentActivityResponse = await getRecentActivity(request);
+            recentActivity = recentActivityResponse.recentActivity || {};
+            if (recentActivityResponse.headers) {
+                for (const [key, value] of recentActivityResponse.headers.entries()) {
+                    combinedHeaders.append(key, value);
+                }
+            }
+        } catch (error) {
+            console.error("Error al obtener actividad reciente:", error);
+        }
+
+        try {
+            const response = await getEventsDashboard(request);
+            eventsDashboard = response.eventsDashboard || {};
+            if (response.headers) {
+                for (const [key, value] of response.headers.entries()) {
+                    combinedHeaders.append(key, value);
+                }
+            }
+        } catch (error) {
+            console.error("Error al obtener dashboard de eventos:", error);
+        }
+
+        try {
+            const response = await getEventsCounts(request);
+            eventsCounts = response.eventsCounts || {};
+            if (response.headers) {
+                for (const [key, value] of response.headers.entries()) {
+                    combinedHeaders.append(key, value);
+                }
+            }
+        } catch (error) {
+            console.error("Error al obtener conteo de eventos:", error);
+            // Si falla este endpoint, intentamos usar los datos del dashboard de eventos
+            eventsCounts = eventsDashboard;
+        }
+
+        try {
+            const response = await getDailyEvents(request);
+            dailyEvents = response.dailyEvents || [];
+            if (response.headers) {
+                for (const [key, value] of response.headers.entries()) {
+                    combinedHeaders.append(key, value);
+                }
+            }
+        } catch (error) {
+            console.error("Error al obtener eventos diarios:", error);
+        }
+
+        try {
+            const response = await getEventTypes(request);
+            eventTypes = response.eventTypes || [];
+            if (response.headers) {
+                for (const [key, value] of response.headers.entries()) {
+                    combinedHeaders.append(key, value);
+                }
+            }
+        } catch (error) {
+            console.error("Error al obtener tipos de eventos:", error);
+        }
+
+        const headers = combinedHeaders;
 
         // Procesamos los datos para adaptarlos al formato que espera el componente
-        const dailyStats = chartData?.daily_events?.map((item: any) => ({
-            period: item.date,
-            count: item.count
-        })) || [];
+        const dailyStats = Array.isArray((chartData as any)?.daily_events)
+            ? (chartData as any).daily_events.map((item: any) => ({
+                period: item.date,
+                count: item.count
+            }))
+            : [];
 
-        const monthlyStats = documentsByMonth?.monthly_data?.map((item: any) => ({
-            period: item.month,
-            count: item.count
-        })) || [];
+        const monthlyStats = Array.isArray((documentsByMonth as any)?.monthly_data)
+            ? (documentsByMonth as any).monthly_data.map((item: any) => ({
+                period: item.month,
+                count: item.count
+            }))
+            : [];
 
+        // Preparamos un objeto limpio para enviar a la vista, con valores por defecto
+        // para evitar los errores de tipo
         return json({
             user,
             stats: {
-                dailyStats: dailyStats,
-                monthlyStats: monthlyStats,
-                summary: chartData?.summary || {},
-                userActivity: userActivity || {},
-                recentActivity: recentActivity || {},
-                eventDistribution: eventDistribution?.distribution || {},
-                // Nuevos datos específicos de eventos
-                eventsDashboard: eventsDashboard || {},
-                eventsCounts: eventsCounts || {},
-                dailyEvents: dailyEvents || {},
-                eventTypes: eventTypes || {}
+                dailyStats,
+                monthlyStats,
+                summary: (chartData as any)?.summary || {
+                    metrics: {
+                        unique_users: 0,
+                        unique_sessions: 0,
+                        total_events: 0,
+                        events_by_type: {},
+                        top_events: []
+                    }
+                },
+                userActivity: {
+                    total_events: 0,
+                    events_by_type: {},
+                    recent_events: []
+                },
+                recentActivity: {
+                    recent_events: [],
+                    active_users: 0,
+                    activity_by_type: {}
+                },
+                eventDistribution: eventDistribution || {},
+                // Nuevos datos específicos de eventos con valores por defecto
+                eventsDashboard: {
+                    total_events: 0,
+                    unique_users: 0,
+                    sessions: 0,
+                    errors: 0,
+                    daily_events: [],
+                    recent_events: [],
+                    event_types: []
+                },
+                eventsCounts: {
+                    total_events: 0,
+                    unique_users: 0,
+                    sessions: 0,
+                    errors: 0
+                },
+                dailyEvents: [],
+                eventTypes: []
             },
             error: null
         }, { headers });
@@ -171,7 +268,8 @@ export async function loader({ request }: LoaderFunctionArgs) {
 }
 
 export default function AdminEstadisticas() {
-    const { user, stats, error } = useLoaderData<typeof loader>();
+    const { user, stats: rawStats, error } = useLoaderData<typeof loader>();
+    const stats = rawStats as any;
     const [activeTab, setActiveTab] = useState<'general' | 'usuarios' | 'actividad' | 'eventos'>('general');
     const trackEvent = useEventTracker();
 
@@ -237,6 +335,28 @@ export default function AdminEstadisticas() {
                     </div>
                 </div>
             )}
+
+            {/* Aviso de posibles problemas de carga */}
+            {!error && (
+                !stats.eventsDashboard?.total_events && !stats.eventsCounts?.total_events ||
+                !stats.dailyEvents?.length && !stats.eventsDashboard?.daily_events?.length ||
+                !stats.eventTypes?.length && !stats.eventsDashboard?.event_types?.length
+            ) && (
+                    <div className="mb-6 bg-yellow-50 border-l-4 border-yellow-400 p-4">
+                        <div className="flex">
+                            <div className="flex-shrink-0">
+                                <svg className="h-5 w-5 text-yellow-400" viewBox="0 0 20 20" fill="currentColor">
+                                    <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                                </svg>
+                            </div>
+                            <div className="ml-3">
+                                <p className="text-sm text-yellow-700">
+                                    Es posible que algunos datos no se hayan cargado completamente. Los gráficos y tablas pueden mostrar información parcial.
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                )}
 
             {/* Encabezado */}
             <div className="mb-8">
@@ -371,7 +491,7 @@ export default function AdminEstadisticas() {
                             <div className="bg-gray-50 p-4 rounded-lg">
                                 <h4 className="text-sm font-medium text-gray-500">Usuarios Activos Hoy</h4>
                                 <p className="text-2xl font-bold">
-                                    {stats.recentActivity?.active_users || 0}
+                                    {typeof stats.recentActivity?.active_users === "number" ? stats.recentActivity.active_users : 0}
                                 </p>
                             </div>
                             <div className="bg-gray-50 p-4 rounded-lg">
@@ -393,7 +513,7 @@ export default function AdminEstadisticas() {
 
                     <div className="bg-white p-6 rounded-lg shadow">
                         <h3 className="text-lg font-medium mb-4">Mi Actividad Reciente</h3>
-                        {stats.userActivity?.recent_events?.length ? (
+                        {(stats.userActivity?.recent_events?.length ?? 0) > 0 ? (
                             <div className="overflow-x-auto">
                                 <table className="w-full">
                                     <thead className="bg-gray-50">
@@ -404,7 +524,7 @@ export default function AdminEstadisticas() {
                                         </tr>
                                     </thead>
                                     <tbody className="bg-white divide-y divide-gray-200">
-                                        {stats.userActivity.recent_events.map((event: any, index: number) => (
+                                        {(stats.userActivity?.recent_events ?? []).map((event: any, index: number) => (
                                             <tr key={index}>
                                                 <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{event.name}</td>
                                                 <td className="px-6 py-4 whitespace-nowrap text-sm">
@@ -436,7 +556,7 @@ export default function AdminEstadisticas() {
                     <div className="bg-white p-6 rounded-lg shadow">
                         <h3 className="text-lg font-medium mb-4">Actividad por Tipo de Evento</h3>
                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                            {Object.entries(stats.recentActivity?.activity_by_type || {}).map(([type, count], index) => (
+                            {Object.entries(stats.recentActivity?.activity_by_type ?? {}).map(([type, count], index) => (
                                 <div key={index} className="bg-gray-50 p-4 rounded-lg">
                                     <h4 className="text-sm font-medium text-gray-500">
                                         {eventTypesTranslations[type] || type}
@@ -503,47 +623,50 @@ export default function AdminEstadisticas() {
                     <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
                         <div className="bg-white p-6 rounded-lg shadow">
                             <h3 className="text-sm font-medium text-gray-500">Total Eventos</h3>
-                            <p className="text-3xl font-bold text-gray-900">{stats.eventsDashboard?.total_events || stats.eventsCounts?.total_events || 0}</p>
+                            <p className="text-3xl font-bold text-gray-900">{stats.eventsDashboard?.total_events ?? stats.eventsCounts?.total_events ?? stats.summary?.metrics?.total_events ?? 0}</p>
                             <p className="text-sm text-gray-500 mt-2">Últimos 30 días</p>
                         </div>
                         <div className="bg-white p-6 rounded-lg shadow">
                             <h3 className="text-sm font-medium text-gray-500">Usuarios Únicos</h3>
-                            <p className="text-3xl font-bold text-blue-600">{stats.eventsDashboard?.unique_users || stats.eventsCounts?.unique_users || 0}</p>
+                            <p className="text-3xl font-bold text-blue-600">{stats.eventsDashboard?.unique_users ?? stats.eventsCounts?.unique_users ?? stats.summary?.metrics?.unique_users ?? 0}</p>
                             <p className="text-sm text-gray-500 mt-2">Últimos 30 días</p>
                         </div>
                         <div className="bg-white p-6 rounded-lg shadow">
                             <h3 className="text-sm font-medium text-gray-500">Sesiones</h3>
-                            <p className="text-3xl font-bold text-green-600">{stats.eventsDashboard?.sessions || stats.eventsCounts?.sessions || 0}</p>
+                            <p className="text-3xl font-bold text-green-600">{stats.eventsDashboard?.sessions ?? stats.eventsCounts?.sessions ?? stats.summary?.metrics?.unique_sessions ?? 0}</p>
                             <p className="text-sm text-gray-500 mt-2">Últimos 30 días</p>
                         </div>
                         <div className="bg-white p-6 rounded-lg shadow">
                             <h3 className="text-sm font-medium text-gray-500">Errores</h3>
-                            <p className="text-3xl font-bold text-red-600">{stats.eventsDashboard?.errors || stats.eventsCounts?.errors || 0}</p>
+                            <p className="text-3xl font-bold text-red-600">{stats.eventsDashboard?.errors ?? stats.eventsCounts?.errors ?? stats.summary?.metrics?.events_by_type?.error ?? 0}</p>
                             <p className="text-sm text-gray-500 mt-2">Últimos 30 días</p>
                         </div>
-                    </div>
-
-                    {/* Distribución de tipos de eventos del endpoint específico */}
+                    </div>                    {/* Distribución de tipos de eventos del endpoint específico */}
                     <div className="bg-white p-6 rounded-lg shadow">
                         <h3 className="text-lg font-medium mb-4">Distribución por Tipo de Evento</h3>
                         <div className="space-y-4">
                             {/* Usar los datos del endpoint específico de tipos de eventos que vienen como array */}
-                            {(stats.eventsDashboard?.event_types || stats.eventTypes || []).map((event: any, index: number) => (
-                                <div key={index}>
-                                    <div className="flex justify-between items-center mb-1">
-                                        <span className="text-sm font-medium">{eventTypesTranslations[event.type] || event.type}</span>
-                                        <span className="text-sm text-gray-500">
-                                            {event.count} ({event.percentage.toFixed(1)}%)
-                                        </span>
+                            {(stats.eventsDashboard?.event_types ?? stats.eventTypes ?? []).map((event: any, index: number) => {
+                                // Asegurar que percentage es un número
+                                const percentage = typeof event.percentage === 'number' ? event.percentage : 0;
+
+                                return (
+                                    <div key={index}>
+                                        <div className="flex justify-between items-center mb-1">
+                                            <span className="text-sm font-medium">{eventTypesTranslations[event.type] || event.type}</span>
+                                            <span className="text-sm text-gray-500">
+                                                {event.count} ({percentage.toFixed(1)}%)
+                                            </span>
+                                        </div>
+                                        <div className="w-full bg-gray-200 rounded-full h-2.5">
+                                            <div
+                                                className="bg-blue-600 h-2.5 rounded-full"
+                                                style={{ width: `${percentage}%` }}
+                                            ></div>
+                                        </div>
                                     </div>
-                                    <div className="w-full bg-gray-200 rounded-full h-2.5">
-                                        <div
-                                            className="bg-blue-600 h-2.5 rounded-full"
-                                            style={{ width: `${event.percentage}%` }}
-                                        ></div>
-                                    </div>
-                                </div>
-                            ))}
+                                );
+                            })}
                         </div>
                     </div>
 
@@ -551,9 +674,9 @@ export default function AdminEstadisticas() {
                     <div className="bg-white p-6 rounded-lg shadow">
                         <h3 className="text-lg font-medium mb-4">Eventos Diarios</h3>
                         <div className="h-64 flex items-end space-x-1">
-                            {(stats.eventsDashboard?.daily_events || stats.dailyEvents || []).map((day: any, index: number) => {
-                                const dailyEventsData = stats.eventsDashboard?.daily_events || stats.dailyEvents || [];
-                                const maxCount = Math.max(...dailyEventsData.map((d: any) => d.count || 0), 1);
+                            {(stats.eventsDashboard?.daily_events ?? stats.dailyEvents ?? []).map((day: any, index: number) => {
+                                const dailyEventsData = stats.eventsDashboard?.daily_events ?? stats.dailyEvents ?? [];
+                                const maxCount = Math.max(...dailyEventsData.map((d: any) => d.count ?? 0), 1);
                                 const heightPercentage = (day.count / maxCount) * 180;
 
                                 return (
@@ -574,7 +697,7 @@ export default function AdminEstadisticas() {
                     </div>                    {/* Tabla de eventos recientes del dashboard de eventos */}
                     <div className="bg-white p-6 rounded-lg shadow">
                         <h3 className="text-lg font-medium mb-4">Eventos Recientes</h3>
-                        {(stats.eventsDashboard?.recent_events?.length || stats.recentActivity?.recent_events?.length) ? (
+                        {((stats.eventsDashboard?.recent_events?.length ?? 0) > 0 || (stats.recentActivity?.recent_events?.length ?? 0) > 0) ? (
                             <div className="overflow-x-auto">
                                 <table className="w-full">
                                     <thead className="bg-gray-50">
@@ -587,7 +710,7 @@ export default function AdminEstadisticas() {
                                         </tr>
                                     </thead>
                                     <tbody className="bg-white divide-y divide-gray-200">
-                                        {(stats.eventsDashboard?.recent_events || stats.recentActivity?.recent_events || []).map((event: any, index: number) => (
+                                        {(stats.eventsDashboard?.recent_events ?? stats.recentActivity?.recent_events ?? []).map((event: any, index: number) => (
                                             <tr key={index}>
                                                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{event.id}</td>
                                                 <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{event.name}</td>

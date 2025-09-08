@@ -55,7 +55,7 @@ export default function OwnerLayout() {
                         </li>
                         <li>
                             <Link
-                                to="/owner/mis-lotes"
+                                to="/owner/lotes"
                                 className="block px-4 py-2 text-gray-700 rounded hover:bg-indigo-50 hover:text-indigo-700"
                             >
                                 Mis Lotes
@@ -97,7 +97,7 @@ export default function OwnerLayout() {
                         </li>
                         <li>
                             <Link
-                                to="/logout"
+                                to="/api/auth/logout"
                                 className="block px-4 py-2 text-gray-700 rounded hover:bg-indigo-50 hover:text-indigo-700"
                             >
                                 Cerrar Sesión

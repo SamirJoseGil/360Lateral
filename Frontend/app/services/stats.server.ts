@@ -272,105 +272,53 @@ export async function getStatsOverTime(request: Request, options: {
   }
 }
 
-// Función para obtener la actividad del usuario actual
-export async function getUserActivity(request: Request, days?: number) {
-  console.log(`[Stats] Obteniendo actividad del usuario: ${days || 30} días`);
-  
+/**
+ * Obtiene actividad del usuario actual
+ */
+export async function getUserActivity(request: Request) {
   try {
-    const token = await getAccessTokenFromCookies(request);
-    const headers = new Headers();
-    
-    // Sin token, no se puede obtener actividad del usuario
-    if (!token) {
-      return { activity: null, headers };
-    }
-    
-    const apiUrl = process.env.API_URL || "http://localhost:8000";
-    const response = await fetch(`${apiUrl}/api/stats/user/?days=${days || 30}`, {
-      headers: { 
-        Authorization: `Bearer ${token}`,
-        "Content-Type": "application/json"
-      }
-    });
+    // Este endpoint debe ser revisado para asegurar que coincida con la documentación
+    const endpoint = `${API_URL}/api/stats/dashboard/recent-activity/?user=current`;
+    const { res: response, setCookieHeaders } = await fetchWithAuth(request, endpoint);
     
     if (!response.ok) {
-      return { activity: null, headers };
+      console.error(`Error obteniendo actividad del usuario: ${response.status} ${response.statusText}`);
+      throw new Error(`Error en la solicitud: ${response.status} ${response.statusText}`);
     }
     
-    const data = await response.json();
-    
+    const activity = await response.json();
     return {
-      activity: data,
-      headers
+      activity,
+      headers: setCookieHeaders
     };
   } catch (error) {
-    console.error("Error fetching user activity:", error);
-    return { 
-      activity: null, 
-      headers: new Headers() 
-    };
+    console.error('Error obteniendo actividad del usuario:', error);
+    throw error;
   }
 }
 
-// Función para obtener estadísticas del dashboard administrativo (solo admin)
-export async function getAdminDashboardStats(request: Request, days?: number) {
-  console.log(`[Stats] Obteniendo estadísticas de dashboard admin: ${days || 30} días`);
-  
+/**
+ * Obtiene actividad reciente del sistema
+ */
+export async function getRecentActivity(request: Request, limit: number = 10) {
   try {
-    const token = await getAccessTokenFromCookies(request);
-    const headers = new Headers();
-    
-    if (process.env.NODE_ENV === "development" || !token) {
-      // Devolver datos simulados
-      return {
-        dashboardStats: {
-          unique_users: 128,
-          daily_data: Array.from({ length: 30 }, (_, i) => ({
-            date: new Date(Date.now() - i * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-            metrics: {
-              total_events: 45 + Math.floor(Math.random() * 20),
-              events_by_type: {
-                view: 20 + Math.floor(Math.random() * 10),
-                search: 15 + Math.floor(Math.random() * 10),
-                action: 5 + Math.floor(Math.random() * 5),
-                error: 5 + Math.floor(Math.random() * 5)
-              }
-            }
-          })),
-          total_events: 1200
-        },
-        headers
-      };
-    }
-    
-    const apiUrl = process.env.API_URL || "http://localhost:8000";
-    const response = await fetch(`${apiUrl}/api/stats/dashboard/`, {
-      headers: { 
-        Authorization: `Bearer ${token}`,
-        "Content-Type": "application/json"
-      }
-    });
+    // Según la documentación actualizada, este endpoint es correcto
+    const endpoint = `${API_URL}/api/stats/dashboard/recent-activity/?limit=${limit}`;
+    const { res: response, setCookieHeaders } = await fetchWithAuth(request, endpoint);
     
     if (!response.ok) {
-      throw new Error(`Error en la API: ${response.status}`);
+      console.error(`Error obteniendo actividad reciente: ${response.status} ${response.statusText}`);
+      throw new Error(`Error en la solicitud: ${response.status} ${response.statusText}`);
     }
     
-    const data = await response.json();
-    
+    const recentActivity = await response.json();
     return {
-      dashboardStats: data,
-      headers
+      recentActivity,
+      headers: setCookieHeaders
     };
   } catch (error) {
-    console.error("Error fetching admin dashboard stats:", error);
-    return { 
-      dashboardStats: {
-        unique_users: 0,
-        daily_data: [],
-        total_events: 0
-      }, 
-      headers: new Headers() 
-    };
+    console.error('Error obteniendo actividad reciente:', error);
+    throw error;
   }
 }
 
@@ -529,82 +477,11 @@ export async function getDocumentosStats(request: Request) {
 }
 
 /**
- * Obtiene actividad reciente para el dashboard
+ * Obtiene el resumen del dashboard
  */
-export async function getRecentActivity(request: Request, days: number = 7) {
-  console.log(`[Stats] Obteniendo actividad reciente de los últimos ${days} días`);
-  
-  try {
-    const token = await getAccessTokenFromCookies(request);
-    const headers = new Headers();
-    
-    if (process.env.NODE_ENV === "development" || !token) {
-      return {
-        recentActivity: {
-          recent_events: [
-            {
-              id: 3201,
-              type: "view",
-              name: "lote_detail",
-              timestamp: new Date().toISOString(),
-              user_id: 1
-            },
-            {
-              id: 3200,
-              type: "search",
-              name: "search_lotes",
-              timestamp: new Date(Date.now() - 5 * 60 * 1000).toISOString(),
-              user_id: 1
-            }
-          ],
-          active_users: 25,
-          activity_by_type: {
-            view: 320,
-            search: 145,
-            action: 80,
-            api: 35,
-            error: 12,
-            other: 5
-          }
-        },
-        headers
-      };
-    }
-    
-    const apiUrl = process.env.API_URL || "http://localhost:8000";
-    const response = await fetch(`${apiUrl}/api/stats/dashboard/recent-activity/?days=${days}`, {
-      headers: { 
-        Authorization: `Bearer ${token}`,
-        "Content-Type": "application/json"
-      }
-    });
-    
-    if (!response.ok) {
-      throw new Error(`Error en la API: ${response.status}`);
-    }
-    
-    const data = await response.json();
-    
-    return {
-      recentActivity: data,
-      headers
-    };
-  } catch (error) {
-    console.error("Error fetching recent activity:", error);
-    return { 
-      recentActivity: {
-        recent_events: [],
-        active_users: 0,
-        activity_by_type: {}
-      }, 
-      headers: new Headers() 
-    };
-  }
-}
-
-// Nueva función para obtener el resumen del dashboard
 export async function getDashboardSummary(request: Request) {
   try {
+    // Según la documentación de Swagger, este endpoint es correcto
     const endpoint = `${API_URL}/api/stats/dashboard/summary/`;
     const { res: response, setCookieHeaders } = await fetchWithAuth(request, endpoint);
     
@@ -613,14 +490,22 @@ export async function getDashboardSummary(request: Request) {
       throw new Error(`Error en la solicitud: ${response.status} ${response.statusText}`);
     }
     
-    const summary = await response.json();
+    const dashboardSummary = await response.json();
     return { 
-      summary, 
+      dashboardSummary, 
       headers: setCookieHeaders 
     };
   } catch (error) {
     console.error('Error obteniendo resumen del dashboard:', error);
-    throw error;
+    return { 
+      dashboardSummary: {
+        users_count: 0,
+        documents_count: 0,
+        lotes_count: 0,
+        recent_activity: []
+      },
+      headers: new Headers() 
+    };
   }
 }
 
@@ -747,9 +632,10 @@ export async function getDocumentsCount(request: Request) {
 /**
  * Obtiene el recuento de documentos por mes
  */
-export async function getDocumentsByMonth(request: Request) {
+export async function getDocumentsByMonth(request: Request, year?: number) {
   try {
-    const endpoint = `${API_URL}/api/stats/charts/documents-by-month/`;
+    // Según la documentación actualizada, este endpoint es correcto
+    const endpoint = `${API_URL}/api/stats/charts/documents-by-month/${year ? `?year=${year}` : ''}`;
     const { res: response, setCookieHeaders } = await fetchWithAuth(request, endpoint);
     
     if (!response.ok) {
@@ -758,9 +644,9 @@ export async function getDocumentsByMonth(request: Request) {
     }
     
     const documentsByMonth = await response.json();
-    return { 
-      documentsByMonth, 
-      headers: setCookieHeaders 
+    return {
+      documentsByMonth,
+      headers: setCookieHeaders
     };
   } catch (error) {
     console.error('Error obteniendo documentos por mes:', error);
@@ -773,6 +659,7 @@ export async function getDocumentsByMonth(request: Request) {
  */
 export async function getEventDistribution(request: Request) {
   try {
+    // Según la documentación actualizada, este endpoint es correcto
     const endpoint = `${API_URL}/api/stats/charts/event-distribution/`;
     const { res: response, setCookieHeaders } = await fetchWithAuth(request, endpoint);
     
@@ -782,9 +669,9 @@ export async function getEventDistribution(request: Request) {
     }
     
     const eventDistribution = await response.json();
-    return { 
-      eventDistribution, 
-      headers: setCookieHeaders 
+    return {
+      eventDistribution,
+      headers: setCookieHeaders
     };
   } catch (error) {
     console.error('Error obteniendo distribución de eventos:', error);
@@ -797,7 +684,8 @@ export async function getEventDistribution(request: Request) {
  */
 export async function getEventsDashboard(request: Request, days: number = 30) {
   try {
-    const endpoint = `${API_URL}/api/stats/events/dashboard/?days=${days}`;
+    // Usando la ruta confirmada en la documentación actualizada
+    const endpoint = `${API_URL}/api/stats/dashboard/events/?days=${days}`;
     const { res: response, setCookieHeaders } = await fetchWithAuth(request, endpoint);
     
     if (!response.ok) {
@@ -822,7 +710,8 @@ export async function getEventsDashboard(request: Request, days: number = 30) {
  */
 export async function getEventsCounts(request: Request, days: number = 30) {
   try {
-    const endpoint = `${API_URL}/api/stats/events/counts/?days=${days}`;
+    // Según la documentación actualizada, usamos el endpoint correcto de dashboard/events
+    const endpoint = `${API_URL}/api/stats/dashboard/events/?days=${days}`;
     const { res: response, setCookieHeaders } = await fetchWithAuth(request, endpoint);
     
     if (!response.ok) {
@@ -847,7 +736,8 @@ export async function getEventsCounts(request: Request, days: number = 30) {
  */
 export async function getDailyEvents(request: Request, days: number = 30) {
   try {
-    const endpoint = `${API_URL}/api/stats/events/daily/?days=${days}`;
+    // Según la documentación de Swagger y los logs de error, debemos usar la ruta del dashboard
+    const endpoint = `${API_URL}/api/stats/dashboard/events/?days=${days}`;
     const { res: response, setCookieHeaders } = await fetchWithAuth(request, endpoint);
     
     if (!response.ok) {
@@ -855,8 +745,10 @@ export async function getDailyEvents(request: Request, days: number = 30) {
       throw new Error(`Error en la solicitud: ${response.status} ${response.statusText}`);
     }
     
-    // Esta respuesta es un array directo de objetos {date, count}
-    const dailyEvents = await response.json();
+    // La respuesta del endpoint de dashboard contiene daily_events dentro del objeto
+    const dashboardData = await response.json();
+    const dailyEvents = dashboardData.daily_events || [];
+    
     return { 
       dailyEvents, 
       headers: setCookieHeaders 
@@ -872,12 +764,14 @@ export async function getDailyEvents(request: Request, days: number = 30) {
  */
 export async function getEventTypes(request: Request, days: number = 30) {
   try {
+    // Según la documentación de Swagger, esta es la ruta correcta
     const endpoint = `${API_URL}/api/stats/events/types/?days=${days}`;
     const { res: response, setCookieHeaders } = await fetchWithAuth(request, endpoint);
     
     if (!response.ok) {
       console.error(`Error obteniendo tipos de eventos: ${response.status} ${response.statusText}`);
-      throw new Error(`Error en la solicitud: ${response.status} ${response.statusText}`);
+      // Si hay un error, intentemos obtener los datos del endpoint de dashboard como alternativa
+      return getEventTypesFromDashboard(request, days);
     }
     
     // Esta respuesta es un array directo de objetos {type, count, percentage}
@@ -888,7 +782,35 @@ export async function getEventTypes(request: Request, days: number = 30) {
     };
   } catch (error) {
     console.error('Error obteniendo tipos de eventos:', error);
-    throw error;
+    // En caso de error, intentemos obtener los datos del endpoint de dashboard como alternativa
+    return getEventTypesFromDashboard(request, days);
+  }
+}
+
+/**
+ * Obtiene tipos de eventos desde el endpoint de dashboard como fallback
+ */
+async function getEventTypesFromDashboard(request: Request, days: number = 30) {
+  try {
+    const endpoint = `${API_URL}/api/stats/dashboard/events/?days=${days}`;
+    const { res: response, setCookieHeaders } = await fetchWithAuth(request, endpoint);
+    
+    if (!response.ok) {
+      console.error(`Error obteniendo tipos de eventos desde dashboard: ${response.status} ${response.statusText}`);
+      throw new Error(`Error en la solicitud: ${response.status} ${response.statusText}`);
+    }
+    
+    // La respuesta del dashboard contiene event_types dentro del objeto
+    const dashboardData = await response.json();
+    const eventTypes = dashboardData.event_types || [];
+    
+    return { 
+      eventTypes, 
+      headers: setCookieHeaders 
+    };
+  } catch (error) {
+    console.error('Error obteniendo tipos de eventos desde dashboard:', error);
+    return { eventTypes: [], headers: new Headers() };
   }
 }
 

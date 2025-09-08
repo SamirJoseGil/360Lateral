@@ -1,11 +1,11 @@
 """
 Service for event statistics and metrics.
 """
-from django.db.models import Count, Q
+from django.db.models import Count
+from django.db.models.functions import TruncDate
 from django.utils import timezone
-from datetime import timedelta
-import json
-from ..models import Stat
+from apps.stats.models import Stat
+from apps.stats.models import Stat
 
 
 class EventStatsService:
@@ -24,7 +24,7 @@ class EventStatsService:
         Returns:
             int: Total event count
         """
-        start_date = timezone.now() - timedelta(days=days)
+        start_date = timezone.now() - timezone.timedelta(days=days)
         return Stat.objects.filter(timestamp__gte=start_date).count()
     
     @staticmethod
@@ -38,7 +38,7 @@ class EventStatsService:
         Returns:
             int: Count of unique users
         """
-        start_date = timezone.now() - timedelta(days=days)
+        start_date = timezone.now() - timezone.timedelta(days=days)
         # Count distinct user_ids that aren't null
         return Stat.objects.filter(
             timestamp__gte=start_date,
@@ -56,7 +56,7 @@ class EventStatsService:
         Returns:
             int: Count of unique sessions
         """
-        start_date = timezone.now() - timedelta(days=days)
+        start_date = timezone.now() - timezone.timedelta(days=days)
         # Count distinct session_ids that aren't null or empty
         return Stat.objects.filter(
             timestamp__gte=start_date,
@@ -74,7 +74,7 @@ class EventStatsService:
         Returns:
             int: Count of errors
         """
-        start_date = timezone.now() - timedelta(days=days)
+        start_date = timezone.now() - timezone.timedelta(days=days)
         return Stat.objects.filter(
             timestamp__gte=start_date,
             type='error'
@@ -89,26 +89,34 @@ class EventStatsService:
             days (int): Number of days to look back
             
         Returns:
-            list: List of dicts with date and count
+            dict: Dictionary with daily counts and total
         """
-        start_date = timezone.now() - timedelta(days=days)
+        # Obtener la fecha de inicio (hoy - days)
+        start_date = timezone.now() - timezone.timedelta(days=days)
         
-        # Get counts by date
+        # Filtrar eventos por fecha
         daily_stats = Stat.objects.filter(
             timestamp__gte=start_date
-        ).extra({
-            'date': "DATE(timestamp)"
-        }).values('date').annotate(count=Count('id')).order_by('date')
+        ).annotate(
+            date=TruncDate('timestamp')
+        ).values('date').annotate(
+            count=Count('id')
+        ).order_by('date')
         
-        # Format results
-        results = []
-        for stat in daily_stats:
-            results.append({
-                'date': stat['date'].strftime('%Y-%m-%d'),
-                'count': stat['count']
-            })
-            
-        return results
+        # Preparar los datos para la respuesta
+        result = {
+            'daily_counts': [
+                {
+                    'date': item['date'].strftime('%Y-%m-%d'),
+                    'count': item['count']
+                }
+                for item in daily_stats
+            ],
+            'total_count': sum(item['count'] for item in daily_stats),
+            'days_period': days
+        }
+        
+        return result
     
     @staticmethod
     def get_event_type_distribution(days=30):
@@ -121,7 +129,7 @@ class EventStatsService:
         Returns:
             list: List of dicts with type, count, and percentage
         """
-        start_date = timezone.now() - timedelta(days=days)
+        start_date = timezone.now() - timezone.timedelta(days=days)
         
         # Get counts by type
         type_stats = Stat.objects.filter(
@@ -147,19 +155,48 @@ class EventStatsService:
     @staticmethod
     def get_event_dashboard_data(days=30):
         """
-        Get all event dashboard data in a single call.
+        Obtiene un resumen general de las estadísticas de eventos para el dashboard.
         
         Args:
-            days (int): Number of days to look back
+            days (int): Número de días a considerar. Por defecto es 30.
             
         Returns:
-            dict: Complete event dashboard data
+            dict: Diccionario con varias métricas de eventos.
         """
-        return {
-            'total_events': EventStatsService.get_events_count(days),
-            'unique_users': EventStatsService.get_unique_users_count(days),
-            'sessions': EventStatsService.get_sessions_count(days),
-            'errors': EventStatsService.get_errors_count(days),
-            'daily_events': EventStatsService.get_daily_events(days),
-            'event_types': EventStatsService.get_event_type_distribution(days)
+        # Obtener la fecha de inicio (hoy - days)
+        start_date = timezone.now() - timezone.timedelta(days=days)
+        
+        # Filtrar eventos por fecha
+        events = Stat.objects.filter(timestamp__gte=start_date)
+        
+        # Obtener conteo total
+        total_count = events.count()
+        
+        # Obtener distribución por tipo de evento
+        # Usamos 'type' en lugar de 'event_type' que no existe en el modelo
+        event_types = events.values('type').annotate(
+            count=Count('id')
+        ).order_by('-count')
+        
+        # Obtener eventos por día
+        daily_events = events.annotate(
+            date=TruncDate('timestamp')
+        ).values('date').annotate(
+            count=Count('id')
+        ).order_by('date')
+        
+        # Preparar los datos para la respuesta
+        result = {
+            'total_events': total_count,
+            'event_types': list(event_types),
+            'daily_events': [
+                {
+                    'date': item['date'].strftime('%Y-%m-%d'),
+                    'count': item['count']
+                }
+                for item in daily_events
+            ],
+            'period_days': days
         }
+        
+        return result

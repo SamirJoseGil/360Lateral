@@ -49,7 +49,10 @@ export async function loader({ request }: LoaderFunctionArgs) {
 
   return json({
     user,
-    sessionId
+    sessionId,
+    ENV: {
+      API_URL: process.env.API_URL || "http://localhost:8000",
+    }
   });
 }
 
@@ -152,6 +155,13 @@ export default function App() {
                   console.log("Auth logout event detected, refreshing");
                 });
               `,
+            }}
+          />
+          <script
+            dangerouslySetInnerHTML={{
+              __html: `window.ENV = ${JSON.stringify(
+                data.ENV
+              )}`,
             }}
           />
         </body>

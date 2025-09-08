@@ -15,6 +15,7 @@ from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.cache import cache_page
 from rest_framework import views, generics, status
 from django.utils import timezone
+from django.http import HttpResponseRedirect, JsonResponse
 
 logger = logging.getLogger(__name__)
 
@@ -584,3 +585,31 @@ class DocumentValidationService:
             return list(chain(pending_docs, docs_without_status))[:limit]
             
         return pending_docs[:limit]
+
+@api_view(['GET', 'POST'])
+def document_root_view(request):
+    """
+    Vista para manejar solicitudes a la raíz de documents.
+    Redirige a la ruta correcta para el manejo de documentos.
+    """
+    logger.info(f"DEBUG - Document root view called with method: {request.method}")
+    logger.info(f"DEBUG - Request path: {request.path}")
+    
+    if request.method == 'POST':
+        # Redirigir a la ruta correcta para subir documentos
+        redirect_url = '/api/documents/documents/'
+        logger.info(f"DEBUG - Redirecting POST request to: {redirect_url}")
+        return HttpResponseRedirect(redirect_url)
+    elif request.method == 'GET':
+        # Devolver información sobre el uso correcto del endpoint
+        return JsonResponse({
+            "message": "Para subir documentos, use la ruta correcta: /api/documents/documents/",
+            "endpoints": {
+                "upload": "/api/documents/documents/",
+                "list": "/api/documents/documents/",
+                "lote_documents": "/api/documents/lote/{lote_id}/",
+                "validation": "/api/documents/validation/"
+            }
+        })
+    else:
+        return JsonResponse({"error": "Método no permitido"}, status=405)

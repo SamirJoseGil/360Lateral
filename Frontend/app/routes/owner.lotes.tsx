@@ -1,4 +1,4 @@
-// filepath: d:\Accesos Directos\Escritorio\frontendx\app\routes\owner.mis-lotes.tsx
+// filepath: d:\Accesos Directos\Escritorio\frontendx\app\routes\owner.lotes.tsx
 import { json } from "@remix-run/node";
 import { useLoaderData, Link } from "@remix-run/react";
 import { useState, useEffect } from "react";
@@ -31,7 +31,7 @@ async function getAccessToken(request: Request): Promise<string | null> {
 // Función para obtener los lotes del propietario
 async function obtenerLotes(request: Request) {
     try {
-        const apiUrl = getApiUrl("/api/lotes/mis-lotes/");
+        const apiUrl = getApiUrl("/api/lotes/lotes/");
         const accessToken = await getAccessToken(request);
 
         console.log("[Lotes] Fetching from endpoint:", apiUrl);

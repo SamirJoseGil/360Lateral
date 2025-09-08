@@ -1,5 +1,6 @@
 // filepath: d:\Accesos Directos\Escritorio\frontendx\app\services\lotes.server.ts
-import { API_URL, fetchWithAuth } from "~/utils/auth.server";
+import { API_URL } from "~/utils/api.server";
+import { fetchWithAuth } from "~/utils/auth.server";
 import { getAccessTokenFromCookies } from "~/utils/auth.server";
 
 // Define interfaces for the backend models
@@ -65,7 +66,7 @@ export async function getMisLotes(request: Request, searchQuery?: string) {
   
   try {
     // Construir endpoint con parámetros de búsqueda si es necesario
-    let endpoint = `${API_URL}/api/lotes/mis-lotes/`;
+    let endpoint = `${API_URL}/api/lotes/lotes/`;
     
     if (searchQuery) {
       endpoint += `?search=${encodeURIComponent(searchQuery)}`;
@@ -104,7 +105,7 @@ export async function getUserLotesStats(request: Request, userId?: string) {
     // Definir el endpoint según si es el usuario autenticado u otro usuario
     let endpoint = userId
       ? `${API_URL}/api/lotes/usuario/${userId}/stats/`
-      : `${API_URL}/api/lotes/mis-lotes/stats/`;
+      : `${API_URL}/api/lotes/lotes/stats/`;
       
     console.log(`[Lotes] Fetching stats from endpoint: ${endpoint}`);
     const { res: response, setCookieHeaders } = await fetchWithAuth(request, endpoint);
@@ -236,54 +237,143 @@ export async function getLoteById(request: Request, loteId: string) {
 // Función para obtener tratamientos POT
 export async function getTratamientosPOT(request: Request) {
   try {
-    const endpoint = `${API_URL}/api/pot/tratamientos/lista/`;
-    const accessToken = await getAccessTokenFromCookies(request);
-
-    const response = await fetch(endpoint, {
-      method: "GET",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${accessToken}`,
-      },
-    });
+    // Según la documentación, el endpoint correcto es /api/pot/tratamientos/
+    const endpoint = `${API_URL}/api/pot/tratamientos/`;
+    console.log(`[POT] Obteniendo tratamientos POT desde: ${endpoint}`);
+    
+    // Usar fetchWithAuth en lugar de fetch directa para manejar cookies y tokens
+    const { res: response, setCookieHeaders } = await fetchWithAuth(request, endpoint);
+    
+    if (!response.ok) {
+      console.error(`[POT] Error obteniendo tratamientos: ${response.status} ${response.statusText}`);
+      // Intentar con el endpoint alternativo si el principal falla
+      return await getTratamientosPOTAlternativo(request);
+    }
 
     const data = await response.json();
-    return { tratamientos: data.results, headers: response.headers };
+    console.log(`[POT] Se obtuvieron ${data.results?.length || 0} tratamientos POT`);
+    
+    return { 
+      tratamientos: data.results || data, 
+      headers: setCookieHeaders 
+    };
   } catch (error) {
-    console.error("Error obteniendo tratamientos POT:", error);
+    console.error("[POT] Error obteniendo tratamientos POT:", error);
+    // Intentar con el endpoint alternativo en caso de error
+    return await getTratamientosPOTAlternativo(request);
+  }
+}
+
+// Función alternativa para obtener tratamientos usando endpoint secundario
+async function getTratamientosPOTAlternativo(request: Request) {
+  try {
+    const endpoint = `${API_URL}/api/pot/lista/`;
+    console.log(`[POT] Intentando obtener tratamientos POT desde endpoint alternativo: ${endpoint}`);
+    
+    const { res: response, setCookieHeaders } = await fetchWithAuth(request, endpoint);
+    
+    if (!response.ok) {
+      console.error(`[POT] Error en endpoint alternativo: ${response.status} ${response.statusText}`);
+      return { tratamientos: [], headers: new Headers() };
+    }
+
+    const data = await response.json();
+    console.log(`[POT] Se obtuvieron ${Array.isArray(data) ? data.length : 'algunos'} tratamientos POT desde endpoint alternativo`);
+    
+    // El formato podría ser diferente, adaptamos la respuesta
+    const tratamientos = Array.isArray(data) ? data : 
+                        data.results ? data.results : 
+                        [];
+    
+    return { 
+      tratamientos, 
+      headers: setCookieHeaders 
+    };
+  } catch (error) {
+    console.error("[POT] Error obteniendo tratamientos POT (alternativo):", error);
     return { tratamientos: [], headers: new Headers() };
   }
 }
 
-// Crear un nuevo lote
-export async function createLote(request: Request, loteData: Omit<Lote, 'id' | 'created_at' | 'updated_at'>) {
-  console.log(`Creando nuevo lote: ${loteData.nombre}`);
-  
+/**
+ * Crea un nuevo lote en el sistema
+ */
+export async function createLote(request: Request, loteData: any) {
   try {
-    const endpoint = `${API_URL}/api/lotes/`;
-    console.log("[Lotes] POSTing to endpoint:", endpoint);
+    // Verificar que tenemos datos mínimos requeridos para crear un lote
+    if (!loteData.nombre || (!loteData.cbml && !loteData.direccion)) {
+      throw new Error("Se requiere nombre y CBML o dirección para crear un lote");
+    }
     
-    // Usar fetchWithAuth en lugar de manejar el token y CSRF manualmente
-    const { res: response, setCookieHeaders } = await fetchWithAuth(request, endpoint, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify(loteData),
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error("[Lotes] Error creando lote:", response.status, errorText);
-      throw new Error(`Error creando lote: ${response.status} ${errorText}`);
+    // Eliminar campos relacionados con POT que podrían estar causando problemas
+    const loteDataLimpio = { ...loteData };
+    delete loteDataLimpio.tratamiento_pot;
+    
+    // Si hay metadatos.pot.aprovechamiento_urbano, eliminar el tratamiento
+    if (loteDataLimpio.metadatos?.pot?.aprovechamiento_urbano?.tratamiento) {
+      delete loteDataLimpio.metadatos.pot.aprovechamiento_urbano.tratamiento;
+    }
+    
+    // Convertir el objeto a FormData para evitar el error "_mutable"
+    const formData = new FormData();
+    
+    // Agregar los campos básicos al FormData
+    formData.append('nombre', loteDataLimpio.nombre || '');
+    formData.append('cbml', loteDataLimpio.cbml || '');
+    formData.append('direccion', loteDataLimpio.direccion || '');
+    if (loteDataLimpio.area) formData.append('area', loteDataLimpio.area.toString());
+    if (loteDataLimpio.descripcion) formData.append('descripcion', loteDataLimpio.descripcion);
+    if (loteDataLimpio.matricula) formData.append('matricula', loteDataLimpio.matricula);
+    if (loteDataLimpio.codigo_catastral) formData.append('codigo_catastral', loteDataLimpio.codigo_catastral);
+    if (loteDataLimpio.barrio) formData.append('barrio', loteDataLimpio.barrio);
+    if (loteDataLimpio.estrato) formData.append('estrato', loteDataLimpio.estrato.toString());
+    if (loteDataLimpio.uso_suelo) formData.append('uso_suelo', loteDataLimpio.uso_suelo);
+    if (loteDataLimpio.clasificacion_suelo) formData.append('clasificacion_suelo', loteDataLimpio.clasificacion_suelo);
+    if (loteDataLimpio.latitud) formData.append('latitud', loteDataLimpio.latitud.toString());
+    if (loteDataLimpio.longitud) formData.append('longitud', loteDataLimpio.longitud.toString());
+    if (loteDataLimpio.status) formData.append('status', loteDataLimpio.status);
+    if (loteDataLimpio.owner) formData.append('owner', loteDataLimpio.owner.toString());
+    
+    // Si hay metadatos, agregarlos como JSON string
+    if (loteDataLimpio.metadatos && Object.keys(loteDataLimpio.metadatos).length > 0) {
+      formData.append('metadatos', JSON.stringify(loteDataLimpio.metadatos));
     }
 
-    const data = await response.json();
-    console.log("[Lotes] Lote creado con ID:", data.id);
+    // Usar el endpoint correcto según la documentación
+    const endpoint = `${API_URL}/api/lotes/create/`;
     
-    return { lote: data, headers: setCookieHeaders };
+    console.log(`[Lotes] Creando lote con endpoint: ${endpoint}`);
+    console.log(`[Lotes] Usando FormData para enviar datos`);
+
+    const { res, setCookieHeaders } = await fetchWithAuth(request, endpoint, {
+      method: 'POST',
+      // No incluir Content-Type, el navegador lo establecerá automáticamente con el boundary
+      body: formData,
+    });
+
+    if (!res.ok) {
+      console.error(`[Lotes] Error creando lote: ${res.status} ${res.statusText}`);
+      
+      try {
+        // Intentar obtener los detalles del error desde la respuesta
+        const errorData = await res.json();
+        console.error("[Lotes] Detalles del error:", errorData);
+        
+        const errorMessage = errorData.error || errorData.message || errorData.detail || 
+                           JSON.stringify(errorData) || `Error en la solicitud: ${res.status} ${res.statusText}`;
+        
+        throw new Error(errorMessage);
+      } catch (jsonError) {
+        // Si no podemos parsear el error como JSON, usar el mensaje genérico
+        throw new Error(`Error en la solicitud: ${res.status} ${res.statusText}`);
+      }
+    }
+
+    const result = await res.json();
+    console.log(`[Lotes] Lote creado exitosamente:`, result);
+    return { lote: result, headers: setCookieHeaders };
   } catch (error) {
-    console.error("[Lotes] Error creando lote:", error);
+    console.error("[Lotes] Error en createLote:", error);
     throw error;
   }
 }
@@ -360,7 +450,8 @@ export async function getLotePotData(request: Request, cbml: string) {
   console.log(`Obteniendo datos POT para el lote con CBML: ${cbml}`);
   
   try {
-    const endpoint = `${API_URL}/api/pot/lote/${cbml}/`;
+    // Endpoint correcto según la documentación
+    const endpoint = `${API_URL}/api/pot/normativa/cbml/?cbml=${encodeURIComponent(cbml)}`;
     console.log(`[POT] Fetching from endpoint: ${endpoint}`);
     
     const { res: response, setCookieHeaders } = await fetchWithAuth(request, endpoint);
@@ -369,6 +460,19 @@ export async function getLotePotData(request: Request, cbml: string) {
       console.error(`[POT] Error en la respuesta de la API: ${response.status} ${response.statusText}`);
       const errorText = await response.text();
       console.error(`[POT] Cuerpo de respuesta de error: ${errorText}`);
+      
+      // Si es un 404, devolvemos un objeto vacío en lugar de lanzar un error
+      if (response.status === 404) {
+        console.warn(`[POT] No se encontraron datos POT para el CBML ${cbml}, continuando con datos vacíos`);
+        return {
+          potData: { 
+            encontrado: false,
+            mensaje: "No se encontraron datos POT para este CBML" 
+          },
+          headers: setCookieHeaders
+        };
+      }
+      
       throw new Error(`Error al obtener datos POT: ${response.statusText}`);
     }
     
@@ -376,11 +480,22 @@ export async function getLotePotData(request: Request, cbml: string) {
     console.log(`[POT] Datos POT recibidos para CBML ${cbml}`);
     
     return {
-      potData: data,
+      potData: {
+        ...data,
+        encontrado: true
+      },
       headers: setCookieHeaders
     };
   } catch (error) {
     console.error(`[POT] Error obteniendo datos POT para CBML ${cbml}:`, error);
-    throw error;
+    // En caso de error, devolver un objeto que indique que no se encontraron datos
+    return {
+      potData: {
+        encontrado: false,
+        mensaje: "Error al obtener datos POT",
+        error: error instanceof Error ? error.message : String(error)
+      },
+      headers: new Headers()
+    };
   }
 }
