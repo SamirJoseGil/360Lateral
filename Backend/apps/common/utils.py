@@ -1,5 +1,5 @@
 """
-Utilidades comunes para todas las aplicaciones
+Utilidades comunes para todas las aplicaciones - Optimizado
 """
 
 from rest_framework.views import exception_handler
@@ -7,10 +7,18 @@ from rest_framework.response import Response
 from rest_framework import status
 from django.core.exceptions import ValidationError
 from django.http import Http404
+from django.db import connections
+from django.core.cache import cache
 import logging
+import time
+import json
+import hashlib
+import secrets
+import string
+import uuid
+from datetime import datetime
 
 logger = logging.getLogger('security')
-
 
 def custom_exception_handler(exc, context):
     """
@@ -117,9 +125,7 @@ def generate_secure_filename(original_filename):
     """
     Generar un nombre de archivo seguro y único
     """
-    import uuid
     import os
-    from datetime import datetime
     
     # Sanitizar nombre original
     clean_name = sanitize_filename(original_filename)
@@ -173,8 +179,6 @@ def hash_sensitive_data(data):
     """
     Hash de datos sensibles para logging seguro
     """
-    import hashlib
-    
     if not data:
         return "empty"
     
@@ -245,9 +249,6 @@ def generate_secure_token(length=32):
     """
     Generar token seguro para diversos usos
     """
-    import secrets
-    import string
-    
     alphabet = string.ascii_letters + string.digits
     return ''.join(secrets.choice(alphabet) for _ in range(length))
 
@@ -292,10 +293,6 @@ def audit_log(action, user, resource=None, details=None, ip_address=None):
     """
     Crear log de auditoría para acciones importantes
     """
-    import json
-    from datetime import datetime
-    import uuid
-    
     # Función auxiliar para hacer JSONEncoder personalizado
     def json_custom_encoder(obj):
         if isinstance(obj, uuid.UUID):
@@ -308,7 +305,7 @@ def audit_log(action, user, resource=None, details=None, ip_address=None):
     log_entry = {
         'timestamp': datetime.now().isoformat(),
         'action': action,
-        'user_id': str(user.id) if user and hasattr(user, 'id') else None,  # Convertir UUID a string explícitamente
+        'user_id': str(user.id) if user and hasattr(user, 'id') else None,
         'user_email': mask_sensitive_data(user.email) if user and hasattr(user, 'email') else None,
         'resource': resource,
         'details': details,
@@ -319,29 +316,6 @@ def audit_log(action, user, resource=None, details=None, ip_address=None):
     logger.info(f"AUDIT: {json.dumps(log_entry, default=json_custom_encoder)}")
     
     return log_entry
-
-
-class SecurityHeadersMixin:
-    """
-    Mixin para añadir headers de seguridad a views
-    """
-    
-    def dispatch(self, request, *args, **kwargs):
-        response = super().dispatch(request, *args, **kwargs)
-        
-        # Headers de seguridad específicos
-        response['X-Content-Type-Options'] = 'nosniff'
-        response['X-Frame-Options'] = 'DENY'
-        response['X-XSS-Protection'] = '1; mode=block'
-        response['Referrer-Policy'] = 'strict-origin-when-cross-origin'
-        
-        # Cache control para datos sensibles
-        if hasattr(self, 'sensitive_data') and self.sensitive_data:
-            response['Cache-Control'] = 'no-store, no-cache, must-revalidate, private, max-age=0'
-            response['Pragma'] = 'no-cache'
-            response['Expires'] = '0'
-        
-        return response
 
 
 def secure_compare(a, b):
@@ -372,3 +346,132 @@ def get_user_permissions_context(user):
         'is_staff': getattr(user, 'is_staff', False),
         'is_superuser': getattr(user, 'is_superuser', False),
     }
+
+
+# === HEALTH CHECK FUNCTIONS (migradas desde health_check) ===
+
+def check_database_health():
+    """
+    Verificar salud de conexión a base de datos
+    """
+    try:
+        with connections["default"].cursor() as cursor:
+            cursor.execute("SELECT 1")
+        return {
+            "status": "healthy",
+            "message": "Database connection successful"
+        }
+    except Exception as e:
+        return {
+            "status": "unhealthy", 
+            "message": f"Database connection failed: {str(e)}"
+        }
+
+
+def check_cache_health():
+    """
+    Verificar salud de conexión a cache/Redis
+    """
+    try:
+        cache.set('health_check_test', 'ok', timeout=10)
+        result = cache.get('health_check_test')
+        if result == 'ok':
+            return {
+                "status": "healthy",
+                "message": "Cache connection successful"
+            }
+        else:
+            raise Exception("Cache test failed")
+    except Exception as e:
+        return {
+            "status": "unhealthy",
+            "message": f"Cache connection failed: {str(e)}"
+        }
+
+
+def get_system_memory_info():
+    """
+    Obtener información de memoria del sistema
+    """
+    try:
+        import psutil
+        memory = psutil.virtual_memory()
+        return {
+            "total": memory.total,
+            "available": memory.available,
+            "percent": memory.percent,
+            "status": "healthy" if memory.percent < 90 else "warning"
+        }
+    except ImportError:
+        return {
+            "status": "unavailable",
+            "message": "psutil not installed"
+        }
+    except Exception as e:
+        return {
+            "status": "unhealthy",
+            "message": f"Memory check failed: {str(e)}"
+        }
+
+
+def comprehensive_health_check():
+    """
+    Health check completo del sistema
+    """
+    start_time = time.time()
+    
+    health_status = {
+        "status": "healthy",
+        "timestamp": datetime.now().isoformat(),
+        "services": {},
+        "system": {},
+        "response_time_ms": 0
+    }
+    
+    overall_status = True
+    
+    # Verificar base de datos
+    db_health = check_database_health()
+    health_status["services"]["database"] = db_health
+    if db_health["status"] != "healthy":
+        overall_status = False
+    
+    # Verificar cache
+    cache_health = check_cache_health()
+    health_status["services"]["cache"] = cache_health
+    # Cache no es crítico, no afecta overall_status
+    
+    # Verificar memoria
+    memory_info = get_system_memory_info()
+    health_status["system"]["memory"] = memory_info
+    if memory_info.get("percent", 0) >= 95:
+        overall_status = False
+    
+    # Estado final
+    health_status["status"] = "healthy" if overall_status else "unhealthy"
+    health_status["response_time_ms"] = round((time.time() - start_time) * 1000, 2)
+    
+    return health_status
+
+
+class SecurityHeadersMixin:
+    """
+    Mixin para añadir headers de seguridad a views
+    """
+    
+    def dispatch(self, request, *args, **kwargs):
+        response = super().dispatch(request, *args, **kwargs)
+        
+        # Headers de seguridad específicos
+        response['X-Content-Type-Options'] = 'nosniff'
+        response['X-Frame-Options'] = 'DENY'
+        response['X-XSS-Protection'] = '1; mode=block'
+        response['Referrer-Policy'] = 'strict-origin-when-cross-origin'
+        
+        # Cache control para datos sensibles
+        if hasattr(self, 'sensitive_data') and self.sensitive_data:
+            response['Cache-Control'] = 'no-store, no-cache, must-revalidate, private, max-age=0'
+            response['Pragma'] = 'no-cache'
+            response['Expires'] = '0'
+        
+        return response

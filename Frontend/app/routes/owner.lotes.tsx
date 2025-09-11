@@ -4,72 +4,10 @@ import { useLoaderData, Link } from "@remix-run/react";
 import { useState, useEffect } from "react";
 import type { LoaderFunctionArgs } from "@remix-run/node";
 import { getUser } from "~/utils/auth.server";
-
-// Función para obtener la URL de la API
-function getApiUrl(endpoint: string): string {
-    const apiBaseUrl = process.env.API_BASE_URL || "http://localhost:8000";
-    return `${apiBaseUrl}${endpoint}`;
-}
-
-// Función para obtener el token de acceso
-async function getAccessToken(request: Request): Promise<string | null> {
-    const cookieHeader = request.headers.get("Cookie");
-    if (!cookieHeader) return null;
-
-    console.log("Cookie header in getAccessTokenFromCookies: present");
-    const cookies = cookieHeader.split(';').map(c => c.trim());
-    console.log("Available cookies:", cookies.map(c => c.split('=')[0]));
-
-    const accessTokenCookie = cookies.find(c => c.startsWith('l360_access='));
-    if (!accessTokenCookie) return null;
-
-    const accessToken = accessTokenCookie.split('=')[1];
-    console.log("Access token found:", accessToken.substring(0, 20) + "...");
-    return accessToken;
-}
-
-// Función para obtener los lotes del propietario
-async function obtenerLotes(request: Request) {
-    try {
-        const apiUrl = getApiUrl("/api/lotes/lotes/");
-        const accessToken = await getAccessToken(request);
-
-        console.log("[Lotes] Fetching from endpoint:", apiUrl);
-
-        const response = await fetch(apiUrl, {
-            method: "GET",
-            headers: {
-                "Content-Type": "application/json",
-                "Authorization": `Bearer ${accessToken}`,
-            },
-        });
-
-        if (!response.ok) {
-            const errorText = await response.text();
-            console.error("[Lotes] Error fetching lotes:", response.status, errorText);
-            throw new Error(`Error fetching lotes: ${response.status} ${errorText}`);
-        }
-
-        const data = await response.json();
-        console.log("[Lotes] Datos recibidos:", {
-            hasResults: data.results && data.results.length > 0,
-            count: data.count || 0
-        });
-
-        // Ensure we're returning the results array from the API
-        return {
-            lotes: data.results || [],
-            count: data.count || 0,
-            headers: response.headers
-        };
-    } catch (error) {
-        console.error("[Lotes] Error obteniendo lotes:", error);
-        return { lotes: [], count: 0, headers: new Headers() };
-    }
-}
+import { getMisLotes } from "~/services/lotes.server";
 import LoteCard from "~/components/LoteCard";
 
-// Loader para cargar los datos
+// Loader para cargar los datos usando el servicio actualizado
 export async function loader({ request }: LoaderFunctionArgs) {
     // Verificar que el usuario esté autenticado y sea propietario
     const user = await getUser(request);
@@ -83,7 +21,12 @@ export async function loader({ request }: LoaderFunctionArgs) {
     }
 
     try {
-        const resultado = await obtenerLotes(request);
+        // Obtener parámetros de búsqueda si existen
+        const url = new URL(request.url);
+        const searchQuery = url.searchParams.get("search");
+
+        // Usar el servicio optimizado para obtener lotes
+        const resultado = await getMisLotes(request, searchQuery || undefined);
 
         // Verificar si hay lotes en la respuesta y loggear información relevante
         console.log("[MisLotes Loader] Datos recibidos:", {
@@ -95,11 +38,20 @@ export async function loader({ request }: LoaderFunctionArgs) {
         return json({
             hasResults: resultado.lotes && resultado.lotes.length > 0,
             lotes: resultado.lotes || [],
-            count: resultado.count || 0
+            count: resultado.count || 0,
+            searchQuery: searchQuery || ""
+        }, {
+            headers: resultado.headers
         });
     } catch (error) {
         console.error("[MisLotes Loader] Error obteniendo lotes:", error);
-        return json({ hasResults: false, error: "Error al cargar los lotes", lotes: [] });
+        return json({
+            hasResults: false,
+            error: "Error al cargar los lotes. Por favor, intente de nuevo.",
+            lotes: [],
+            count: 0,
+            searchQuery: ""
+        });
     }
 }
 

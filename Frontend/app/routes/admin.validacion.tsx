@@ -5,6 +5,7 @@ import { useState } from "react";
 import { usePageView, recordAction } from "~/hooks/useStats";
 import { getUser } from "~/utils/auth.server";
 import { recordEvent } from "~/services/stats.server";
+import { getNormativaPorCBML } from "~/services/pot.server";
 import {
     getValidationSummary,
     getRecentDocumentsForValidation,
@@ -57,18 +58,18 @@ export async function loader({ request }: LoaderFunctionArgs) {
         // Convertir los documentos recientes al formato esperado por el componente
         const documentos = recentDocumentsResponse.recentDocuments.map((doc: any) => ({
             id: doc.id.toString(),
-            nombre: doc.nombre || doc.titulo || `Documento ${doc.id}`,
-            tipo: doc.tipo_documento || "Otro",
-            estado: doc.estado_validacion || "pendiente",
-            fechaSubida: doc.fecha_subida || doc.created_at || new Date().toISOString().split('T')[0],
-            solicitante: doc.usuario_nombre || `Usuario ${doc.usuario_id || "desconocido"}`
+            nombre: doc.title || doc.nombre || doc.titulo || `Documento ${doc.id}`,
+            tipo: doc.document_type || doc.tipo_documento || "Otro",
+            estado: doc.metadata?.validation_status || doc.estado_validacion || "pendiente",
+            fechaSubida: doc.created_at || doc.fecha_subida || new Date().toISOString().split('T')[0],
+            solicitante: doc.user_name || doc.usuario_nombre || `Usuario ${doc.user_id || doc.usuario_id || "desconocido"}`
         }));
 
         // Datos de validación desde la API
         const validacionData = {
-            pendientes: summary.pendiente || 0,
-            completadas: summary.validado || 0,
-            rechazadas: summary.rechazado || 0,
+            pendientes: summary.pendientes || summary.pendiente || 0,
+            completadas: summary.validados || summary.validado || summary.completadas || 0,
+            rechazadas: summary.rechazados || summary.rechazado || summary.rechazadas || 0,
             documentos,
             pagination: documentsResponse.pagination
         };
@@ -449,8 +450,8 @@ export default function AdminValidacion() {
                                 <button
                                     type="submit"
                                     className={`px-4 py-2 rounded-md font-medium text-white ${modalAction === 'validar'
-                                            ? 'bg-green-600 hover:bg-green-700'
-                                            : 'bg-red-600 hover:bg-red-700'
+                                        ? 'bg-green-600 hover:bg-green-700'
+                                        : 'bg-red-600 hover:bg-red-700'
                                         } ${isSubmitting ? 'opacity-70 cursor-not-allowed' : ''}`}
                                     disabled={isSubmitting}
                                 >

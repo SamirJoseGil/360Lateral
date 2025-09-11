@@ -2,24 +2,9 @@
 Serializadores para usuarios
 """
 from rest_framework import serializers
-from django.contrib.auth import authenticate
 from django.contrib.auth.password_validation import validate_password
 from drf_yasg.utils import swagger_serializer_method
 from .models import User, UserProfile, UserRequest
-
-
-class UserBasicSerializer(serializers.ModelSerializer):
-    """
-    Serializer básico para mostrar información mínima de usuario
-    """
-    full_name = serializers.SerializerMethodField()
-    
-    class Meta:
-        model = User
-        fields = ['id', 'username', 'email', 'full_name']
-    
-    def get_full_name(self, obj):
-        return f"{obj.first_name} {obj.last_name}".strip() or obj.username
 
 
 class UserSimpleSerializer(serializers.ModelSerializer):
@@ -40,13 +25,14 @@ class UserSerializer(serializers.ModelSerializer):
     """Serializador para el modelo User"""
     
     full_name = serializers.SerializerMethodField()
+    role_fields = serializers.SerializerMethodField()
     
     class Meta:
         model = User
         fields = [
             'id', 'email', 'username', 'first_name', 'last_name', 'full_name',
             'phone', 'company', 'role', 'is_verified', 'is_active',
-            'created_at', 'updated_at'
+            'created_at', 'updated_at', 'role_fields'
         ]
         read_only_fields = ['id', 'created_at', 'updated_at', 'is_verified']
         
@@ -54,117 +40,80 @@ class UserSerializer(serializers.ModelSerializer):
     def get_full_name(self, instance):
         """Retorna el nombre completo del usuario"""
         return instance.get_full_name()
+    
+    def get_role_fields(self, instance):
+        """Retorna campos específicos según el rol del usuario"""
+        if instance.role == 'owner':
+            return {
+                'document_type': instance.document_type,
+                'document_number': instance.document_number,
+                'address': instance.address,
+                'id_verification_file': instance.id_verification_file.url if instance.id_verification_file else None,
+                'lots_count': instance.lots_count
+            }
+        elif instance.role == 'developer':
+            return {
+                'company_name': instance.company_name,
+                'company_nit': instance.company_nit,
+                'position': instance.position,
+                'experience_years': instance.experience_years,
+                'portfolio_url': instance.portfolio_url,
+                'focus_area': instance.focus_area
+            }
+        elif instance.role == 'admin':
+            return {
+                'department': instance.department,
+                'permissions_scope': instance.permissions_scope
+            }
+        return {}
 
 
-class RegisterSerializer(serializers.ModelSerializer):
-    """Serializador para registro de usuarios"""
-    password = serializers.CharField(
-        write_only=True, 
-        validators=[validate_password],
-        help_text="Contraseña (mínimo 8 caracteres, debe incluir mayúsculas, minúsculas y números)"
-    )
-    password_confirm = serializers.CharField(
-        write_only=True,
-        help_text="Confirmación de contraseña (debe coincidir con la contraseña)"
-    )
+class UpdateProfileSerializer(serializers.ModelSerializer):
+    """Serializador para actualizar perfil del usuario según su rol"""
     
     class Meta:
         model = User
         fields = [
-            'email', 'username', 'password', 'password_confirm',
-            'first_name', 'last_name', 'phone', 'company', 'role'
+            'first_name', 'last_name', 'phone', 'company',
+            # Campos para owner
+            'document_type', 'document_number', 'address', 'id_verification_file',
+            # Campos para developer
+            'company_name', 'company_nit', 'position', 'experience_years', 
+            'portfolio_url', 'focus_area',
+            # Campos para admin
+            'department', 'permissions_scope'
         ]
-        extra_kwargs = {
-            'email': {'help_text': 'Dirección de email única'},
-            'username': {'help_text': 'Nombre de usuario único'},
-            'first_name': {'help_text': 'Nombre del usuario'},
-            'last_name': {'help_text': 'Apellido del usuario'},
-            'phone': {'help_text': 'Número de teléfono (opcional)'},
-            'company': {'help_text': 'Empresa (opcional)'},
-            'role': {'help_text': 'Rol del usuario: admin, owner, developer'},
-        }
     
     def validate(self, attrs):
-        if attrs['password'] != attrs['password_confirm']:
-            raise serializers.ValidationError("Las contraseñas no coinciden")
-        return attrs
-    
-    def create(self, validated_data):
-        validated_data.pop('password_confirm')
-        password = validated_data.pop('password')
-        user = User.objects.create_user(**validated_data)
-        user.set_password(password)
-        user.save()
-        return user
-
-
-class LoginSerializer(serializers.Serializer):
-    """Serializador para login"""
-    email = serializers.EmailField(help_text="Email del usuario registrado")
-    password = serializers.CharField(
-        write_only=True,
-        help_text="Contraseña del usuario"
-    )
-    
-    def validate(self, attrs):
-        email = attrs.get('email')
-        password = attrs.get('password')
+        """Validar campos según el rol del usuario"""
+        user = self.context['request'].user
         
-        if email and password:
-            user = authenticate(
-                request=self.context.get('request'),
-                username=email,
-                password=password
-            )
-            
-            if not user:
-                raise serializers.ValidationError('Credenciales inválidas')
-            
-            if not user.is_active:
-                raise serializers.ValidationError('Usuario inactivo')
-            
-            attrs['user'] = user
-            return attrs
-        else:
-            raise serializers.ValidationError('Email y contraseña requeridos')
-
-
-class ChangePasswordSerializer(serializers.Serializer):
-    """Serializador para cambio de contraseña"""
-    current_password = serializers.CharField(write_only=True)
-    new_password = serializers.CharField(write_only=True, validators=[validate_password])
+        # Filtrar campos permitidos según el rol
+        allowed_fields = ['first_name', 'last_name', 'phone', 'company']
+        
+        if user.role == 'owner':
+            allowed_fields.extend([
+                'document_type', 'document_number', 'address', 'id_verification_file'
+            ])
+        elif user.role == 'developer':
+            allowed_fields.extend([
+                'company_name', 'company_nit', 'position', 'experience_years',
+                'portfolio_url', 'focus_area'
+            ])
+        elif user.role == 'admin':
+            allowed_fields.extend(['department', 'permissions_scope'])
+        
+        # Remover campos no permitidos
+        validated_attrs = {k: v for k, v in attrs.items() if k in allowed_fields}
+        
+        return validated_attrs
     
-    def validate_current_password(self, value):
-        user = self.context['request'].user
-        if not user.check_password(value):
-            raise serializers.ValidationError('Contraseña actual incorrecta')
-        return value
-    
-    def save(self):
-        user = self.context['request'].user
-        user.set_password(self.validated_data['new_password'])
-        user.save()
-        return user
-
-
-class TokenSerializer(serializers.Serializer):
-    """Serializador para tokens JWT"""
-    
-    @staticmethod
-    def get_token_for_user(user):
-        """Generar tokens para un usuario"""
-        from rest_framework_simplejwt.tokens import RefreshToken
-        refresh = RefreshToken.for_user(user)
-        return {
-            'refresh': str(refresh),
-            'access': str(refresh.access_token),
-            'user': {
-                'id': str(user.id),
-                'email': user.email,
-                'name': user.get_full_name(),
-                'role': user.role
-            }
-        }
+    def update(self, instance, validated_data):
+        """Actualizar solo los campos permitidos"""
+        for attr, value in validated_data.items():
+            setattr(instance, attr, value)
+        instance.save()
+        return instance
 
 
 class UserProfileSerializer(serializers.ModelSerializer):

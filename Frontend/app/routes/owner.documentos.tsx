@@ -27,7 +27,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
         const documentType = url.searchParams.get("tipo");
         const searchQuery = url.searchParams.get("buscar");
 
-        // Build API endpoint with filters
+        // Build API endpoint with filters using correct user documents endpoint
         let endpoint = `${API_URL}/api/documents/user/`;
         const params = new URLSearchParams();
 

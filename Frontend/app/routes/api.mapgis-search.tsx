@@ -1,26 +1,25 @@
 import { ActionFunction, json } from '@remix-run/node';
-import { consultarPorCBML, consultarPorMatricula, consultarPorDireccion } from '~/services/mapgis.server';
+import { consultarPorCBML, consultarPorMatricula, consultarPorDireccion, MapGisResponseDetalle, MapGisResponseSearch } from '~/services/mapgis.server';
 
-// Función auxiliar para manejar el timeout
-const withTimeout = async (promise: Promise<any>, timeoutMs = 50000): Promise<any> => {
-    let timeoutId: NodeJS.Timeout | undefined = undefined;
-
-    // Crear una promesa que se rechaza después de cierto tiempo
-    const timeoutPromise = new Promise((_, reject) => {
-        timeoutId = setTimeout(() => {
+// Helper function to handle timeouts
+const withTimeout = <T extends unknown>(promise: Promise<T>, timeoutMs: number): Promise<T> => {
+    return new Promise((resolve, reject) => {
+        // Set up timeout
+        const timeoutId = setTimeout(() => {
             reject(new Error(`La operación excedió el tiempo límite de ${timeoutMs / 1000} segundos`));
         }, timeoutMs);
-    });
 
-    try {
-        // Race entre la promesa original y el timeout
-        const result = await Promise.race([promise, timeoutPromise]);
-        if (timeoutId !== undefined) clearTimeout(timeoutId);
-        return result;
-    } catch (error) {
-        if (timeoutId !== undefined) clearTimeout(timeoutId);
-        throw error;
-    }
+        // Execute the original promise
+        promise
+            .then(result => {
+                clearTimeout(timeoutId);
+                resolve(result);
+            })
+            .catch(error => {
+                clearTimeout(timeoutId);
+                reject(error);
+            });
+    });
 };
 
 export const action: ActionFunction = async ({ request }) => {
@@ -36,8 +35,10 @@ export const action: ActionFunction = async ({ request }) => {
             }, { status: 400 });
         }
 
-        // Configurar el timeout para la consulta (50 segundos)
+        // Configurar timeout de 50 segundos
         const timeoutMs = 50000;
+
+        // Ejecutar la consulta correspondiente según el tipo de búsqueda
         let resultPromise;
 
         switch (searchType) {
@@ -58,7 +59,9 @@ export const action: ActionFunction = async ({ request }) => {
         }
 
         // Ejecutar la consulta con timeout
-        const result = await withTimeout(resultPromise, timeoutMs);
+        const result = await withTimeout<
+            { resultado: MapGisResponseDetalle; headers: Headers; } | { resultado: MapGisResponseSearch; headers: Headers; }
+        >(resultPromise, timeoutMs);
 
         return json({
             success: true,

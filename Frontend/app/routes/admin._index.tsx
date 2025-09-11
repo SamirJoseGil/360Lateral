@@ -3,8 +3,7 @@ import { json, redirect } from "@remix-run/node";
 import type { LoaderFunctionArgs } from "@remix-run/node";
 import { useLoaderData } from "@remix-run/react";
 import { getUser } from "~/utils/auth.server";
-import { getDashboardSummary, getEventsDashboard, recordEvent } from "~/services/stats.server";
-import { PageViewTracker, useEventTracker } from "~/components/StatsTracker";
+import { getDashboardSummary, getEventsDashboard, recordEvent, getUsersStats, getLotesStats, getDocumentosStats } from "~/services/stats.server";
 
 export async function loader({ request }: LoaderFunctionArgs) {
     // Verificar que el usuario esté autenticado y sea admin
@@ -31,27 +30,39 @@ export async function loader({ request }: LoaderFunctionArgs) {
             console.error("Error registrando evento de vista:", error);
         }
 
-        // Obtener datos para el dashboard
-        const dashboardSummaryResponse = await getDashboardSummary(request);
-        const eventsDashboardResponse = await getEventsDashboard(request);
+        // Obtener datos para el dashboard usando los nuevos endpoints
+        const [
+            dashboardSummaryResponse,
+            eventsDashboardResponse,
+            usersStatsResponse,
+            lotesStatsResponse,
+            documentosStatsResponse
+        ] = await Promise.all([
+            getDashboardSummary(request).catch(err => ({ dashboardSummary: {}, headers: new Headers() })),
+            getEventsDashboard(request).catch(err => ({ eventsDashboard: {}, headers: new Headers() })),
+            getUsersStats(request).catch(err => ({ usersStats: {}, headers: new Headers() })),
+            getLotesStats(request).catch(err => ({ lotesStats: {}, headers: new Headers() })),
+            getDocumentosStats(request).catch(err => ({ documentosStats: {}, headers: new Headers() }))
+        ]);
 
         // Combinar headers
         const combinedHeaders = new Headers();
-        if (dashboardSummaryResponse.headers) {
-            for (const [key, value] of dashboardSummaryResponse.headers.entries()) {
-                combinedHeaders.append(key, value);
-            }
-        }
-        if (eventsDashboardResponse.headers) {
-            for (const [key, value] of eventsDashboardResponse.headers.entries()) {
-                combinedHeaders.append(key, value);
-            }
-        }
+        [dashboardSummaryResponse, eventsDashboardResponse, usersStatsResponse, lotesStatsResponse, documentosStatsResponse]
+            .forEach(response => {
+                if (response.headers) {
+                    for (const [key, value] of response.headers.entries()) {
+                        combinedHeaders.append(key, value);
+                    }
+                }
+            });
 
         return json({
             user,
             dashboardSummary: dashboardSummaryResponse.dashboardSummary || {},
             eventsDashboard: eventsDashboardResponse.eventsDashboard || {},
+            usersStats: usersStatsResponse.usersStats || {},
+            lotesStats: lotesStatsResponse.lotesStats || {},
+            documentosStats: documentosStatsResponse.documentosStats || {},
             error: null
         }, {
             headers: combinedHeaders
@@ -63,46 +74,26 @@ export async function loader({ request }: LoaderFunctionArgs) {
             user,
             dashboardSummary: {},
             eventsDashboard: {},
+            usersStats: {},
+            lotesStats: {},
+            documentosStats: {},
             error: "Error al cargar los datos del dashboard. Por favor, inténtelo de nuevo más tarde."
         });
     }
 }
 
 export default function AdminDashboard() {
-    const { user, dashboardSummary, eventsDashboard, error } = useLoaderData<typeof loader>();
+    const { user, dashboardSummary, eventsDashboard, usersStats, lotesStats, documentosStats, error } = useLoaderData<typeof loader>();
     const [activeSection, setActiveSection] = useState<'dashboard' | 'stats' | 'activity'>('dashboard');
-    const trackEvent = useEventTracker();
 
     // Registrar cambio de sección
     const handleSectionChange = (section: 'dashboard' | 'stats' | 'activity') => {
         setActiveSection(section);
-        trackEvent({
-            type: 'action',
-            name: 'admin_dashboard_section_change',
-            value: { section, user_id: user.id }
-        });
+        // TODO: Implementar tracking del lado cliente si es necesario
     };
-
-    // Registrar vista de la página
-    useEffect(() => {
-        trackEvent({
-            type: 'view',
-            name: 'admin_dashboard_client_view',
-            value: {
-                user_id: user.id,
-                section: activeSection
-            }
-        });
-    }, [trackEvent, user.id, activeSection]);
 
     return (
         <div className="p-6">
-            {/* Rastreador de vistas de página */}
-            <PageViewTracker
-                pageName="admin_panel_view"
-                additionalData={{ user_id: user.id, role: user.role }}
-            />
-
             {error && (
                 <div className="mb-6 bg-red-100 border-l-4 border-red-400 p-4">
                     <div className="flex">
@@ -118,7 +109,7 @@ export default function AdminDashboard() {
                 </div>
             )}
 
-            {/* Resto del contenido del dashboard */}
+            {/* Encabezado */}
             <div className="mb-8">
                 <h1 className="text-3xl font-bold">Panel de Administración</h1>
                 <p className="text-gray-600 mt-2">Bienvenido/a {user.name}, gestione su aplicación desde aquí.</p>
@@ -162,18 +153,18 @@ export default function AdminDashboard() {
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                     <div className="bg-white p-6 rounded-lg shadow">
                         <h3 className="text-lg font-medium mb-4">Usuarios</h3>
-                        <p className="text-3xl font-bold">{dashboardSummary.users_count || 0}</p>
+                        <p className="text-3xl font-bold">{usersStats?.total || 0}</p>
                         <p className="text-sm text-gray-500 mt-2">Total de usuarios registrados</p>
                     </div>
                     <div className="bg-white p-6 rounded-lg shadow">
-                        <h3 className="text-lg font-medium mb-4">Documentos</h3>
-                        <p className="text-3xl font-bold">{dashboardSummary.documents_count || 0}</p>
-                        <p className="text-sm text-gray-500 mt-2">Total de documentos subidos</p>
+                        <h3 className="text-lg font-medium mb-4">Lotes</h3>
+                        <p className="text-3xl font-bold">{lotesStats?.total || 0}</p>
+                        <p className="text-sm text-gray-500 mt-2">Total de lotes registrados</p>
                     </div>
                     <div className="bg-white p-6 rounded-lg shadow">
-                        <h3 className="text-lg font-medium mb-4">Lotes</h3>
-                        <p className="text-3xl font-bold">{dashboardSummary.lotes_count || 0}</p>
-                        <p className="text-sm text-gray-500 mt-2">Total de lotes registrados</p>
+                        <h3 className="text-lg font-medium mb-4">Documentos</h3>
+                        <p className="text-3xl font-bold">{documentosStats?.total || 0}</p>
+                        <p className="text-sm text-gray-500 mt-2">Total de documentos subidos</p>
                     </div>
                 </div>
             )}
@@ -185,19 +176,19 @@ export default function AdminDashboard() {
                         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                             <div className="bg-gray-50 p-4 rounded-lg">
                                 <h4 className="text-sm font-medium text-gray-500">Total Eventos</h4>
-                                <p className="text-2xl font-bold">{eventsDashboard.total_events || 0}</p>
+                                <p className="text-2xl font-bold">{eventsDashboard?.total_events || 0}</p>
                             </div>
                             <div className="bg-gray-50 p-4 rounded-lg">
-                                <h4 className="text-sm font-medium text-gray-500">Usuarios Únicos</h4>
-                                <p className="text-2xl font-bold">{eventsDashboard.unique_users || 0}</p>
+                                <h4 className="text-sm font-medium text-gray-500">Eventos Hoy</h4>
+                                <p className="text-2xl font-bold">{eventsDashboard?.daily_events?.[0]?.count || 0}</p>
                             </div>
                             <div className="bg-gray-50 p-4 rounded-lg">
-                                <h4 className="text-sm font-medium text-gray-500">Sesiones</h4>
-                                <p className="text-2xl font-bold">{eventsDashboard.sessions || 0}</p>
+                                <h4 className="text-sm font-medium text-gray-500">Tipos de Eventos</h4>
+                                <p className="text-2xl font-bold">{eventsDashboard?.event_types?.length || 0}</p>
                             </div>
                             <div className="bg-gray-50 p-4 rounded-lg">
-                                <h4 className="text-sm font-medium text-gray-500">Errores</h4>
-                                <p className="text-2xl font-bold">{eventsDashboard.errors || 0}</p>
+                                <h4 className="text-sm font-medium text-gray-500">Período</h4>
+                                <p className="text-2xl font-bold">{eventsDashboard?.period_days || 30} días</p>
                             </div>
                         </div>
                     </div>
@@ -208,7 +199,7 @@ export default function AdminDashboard() {
                 <div className="space-y-6">
                     <div className="bg-white p-6 rounded-lg shadow">
                         <h3 className="text-lg font-medium mb-4">Actividad Reciente</h3>
-                        {(dashboardSummary.recent_activity?.length ?? 0) > 0 ? (
+                        {dashboardSummary?.recent_activity?.length > 0 ? (
                             <div className="overflow-x-auto">
                                 <table className="w-full">
                                     <thead className="bg-gray-50">

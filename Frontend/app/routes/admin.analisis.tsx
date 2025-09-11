@@ -11,7 +11,7 @@ import {
     getDocumentsByMonth,
     getEventDistribution
 } from "~/services/stats.server";
-import { usePageView, recordAction } from "~/hooks/useStats";
+import { getUserLotesStats } from "~/services/lotes.server";
 
 export async function loader({ request }: LoaderFunctionArgs) {
     console.log("Admin analisis loader - processing request");
@@ -40,7 +40,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
             }
         });
 
-        // Obtener todos los datos de gráficos y estadísticas usando los nuevos endpoints
+        // Obtener todos los datos de gráficos y estadísticas usando los servicios de lotes
         const [
             allChartResponse,
             lotesSummaryResponse,
@@ -48,30 +48,27 @@ export async function loader({ request }: LoaderFunctionArgs) {
             documentsByMonthResponse,
             eventDistributionResponse
         ] = await Promise.all([
-            getAllChartData(request),
-            getLotesSummary(request),
-            getDocumentsCount(request),
-            getDocumentsByMonth(request),
-            getEventDistribution(request)
+            getAllChartData(request).catch(err => ({ chartData: {}, headers: new Headers() })),
+            getUserLotesStats(request).catch((err: any) => ({ stats: {}, headers: new Headers() })),
+            getDocumentsCount(request).catch(err => ({ documentsCount: { count: 0 }, headers: new Headers() })),
+            getDocumentsByMonth(request).catch(err => ({ documentsByMonth: [], headers: new Headers() })),
+            getEventDistribution(request).catch(err => ({ eventDistribution: { distribution: [] }, headers: new Headers() }))
         ]);
 
         // Extraer datos de los diferentes endpoints
         const { chartData } = allChartResponse;
-        const { lotesSummary } = lotesSummaryResponse;
+        const { stats: lotesSummary } = lotesSummaryResponse;
         const { documentsCount } = documentsCountResponse;
         const { documentsByMonth } = documentsByMonthResponse;
         const { eventDistribution } = eventDistributionResponse;
 
         // Transformar datos para gráfico mensual
         const months = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"];
-        const graficoMensual = Array.isArray(documentsByMonth?.monthly_data)
-            ? documentsByMonth.monthly_data.map((point: any) => {
-                const date = new Date(point.month);
-                return {
-                    mes: months[date.getMonth()],
-                    documentos: point.count
-                };
-            })
+        const graficoMensual = Array.isArray(documentsByMonth)
+            ? documentsByMonth.map((point: any) => ({
+                mes: point.mes || months[new Date(point.month || Date.now()).getMonth()],
+                documentos: point.count || point.valor || 0
+            }))
             : [];
 
         // Datos reales para el análisis usando los nuevos endpoints
@@ -80,29 +77,39 @@ export async function loader({ request }: LoaderFunctionArgs) {
                 totalLotes: lotesSummary.total || 0,
                 lotesActivos: lotesSummary.activos || 0,
                 lotesInactivos: lotesSummary.inactivos || 0,
-                documentosAnalizados: documentsCount.total || 0
+                documentosAnalizados: documentsCount.count || 0
             },
             graficoMensual: graficoMensual.length ? graficoMensual : [
                 { mes: "Ene", documentos: 0 },
                 { mes: "Feb", documentos: 0 },
                 { mes: "Mar", documentos: 0 }
             ],
-            distribucionTipo: Object.entries(eventDistribution.distribution || {}).map(([tipo, cantidad]) => {
-                const totalEventos = Object.values(eventDistribution.distribution || {}).reduce((acc: number, val: any) => acc + Number(val), 0);
-                return {
-                    tipo: tipo.charAt(0).toUpperCase() + tipo.slice(1),
-                    cantidad: Number(cantidad),
-                    porcentaje: totalEventos > 0 ? (Number(cantidad) / totalEventos) * 100 : 0
-                };
-            }),
+            distribucionTipo: Array.isArray(eventDistribution.distribution)
+                ? eventDistribution.distribution.map((event: any) => ({
+                    tipo: event.type?.charAt(0).toUpperCase() + event.type?.slice(1) || 'Unknown',
+                    cantidad: event.count || 0,
+                    porcentaje: event.percentage || 0
+                }))
+                : [],
             recientes: chartData?.recent_events?.map((event: any, index: number) => ({
                 id: event.id || `event-${index}`,
-                nombre: event.name,
-                documentos: event.count,
+                nombre: event.name || `Evento ${index + 1}`,
+                documentos: event.count || 0,
                 estado: event.status || (event.count > 10 ? "completo" : "pendiente"),
                 ultimaActualizacion: event.timestamp ? new Date(event.timestamp).toISOString().split('T')[0] : new Date().toISOString().split('T')[0]
             })) || []
         };
+
+        // Combinar headers
+        const combinedHeaders = new Headers();
+        [allChartResponse, lotesSummaryResponse, documentsCountResponse, documentsByMonthResponse, eventDistributionResponse]
+            .forEach(response => {
+                if (response.headers) {
+                    for (const [key, value] of response.headers.entries()) {
+                        combinedHeaders.append(key, value);
+                    }
+                }
+            });
 
         return json({
             user,
@@ -110,13 +117,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
             realData: true,
             error: null
         }, {
-            headers: {
-                ...allChartResponse.headers,
-                ...lotesSummaryResponse.headers,
-                ...documentsCountResponse.headers,
-                ...documentsByMonthResponse.headers,
-                ...eventDistributionResponse.headers
-            }
+            headers: combinedHeaders
         });
 
     } catch (error) {
@@ -189,11 +190,6 @@ export async function loader({ request }: LoaderFunctionArgs) {
 
 export default function AdminAnalisis() {
     const { analisisData, realData, error } = useLoaderData<typeof loader>();
-
-    // Registrar vista de página en el cliente
-    usePageView('admin_analysis_client', {
-        section: 'dashboard'
-    });
 
     return (
         <div className="p-6">
@@ -292,15 +288,11 @@ export default function AdminAnalisis() {
                 <div className="bg-white p-6 rounded-lg shadow">
                     <h2 className="text-lg font-semibold mb-4">Documentos Procesados por Mes</h2>
                     <div className="h-64 flex items-end space-x-2">
-                        {analisisData.graficoMensual.map((item: { mes: string; documentos: number }, index: number) => (
+                        {analisisData.graficoMensual.map((item: any, index: number) => (
                             <div key={index} className="flex flex-col items-center flex-1">
                                 <div
-                                    className="w-full bg-blue-500 rounded-t"
+                                    className="w-full bg-blue-500 rounded-t cursor-pointer hover:bg-blue-600 transition-colors"
                                     style={{ height: `${(item.documentos / 100) * 200}px` }}
-                                    onClick={() => recordAction('chart_bar_click', {
-                                        mes: item.mes,
-                                        documentos: item.documentos
-                                    })}
                                 ></div>
                                 <div className="text-xs mt-2">{item.mes}</div>
                                 <div className="text-xs font-medium">{item.documentos}</div>
@@ -313,7 +305,7 @@ export default function AdminAnalisis() {
                 <div className="bg-white p-6 rounded-lg shadow">
                     <h2 className="text-lg font-semibold mb-4">Distribución por Tipo de {realData ? 'Evento' : 'Documento'}</h2>
                     <div className="space-y-4">
-                        {analisisData.distribucionTipo.map((item, index) => (
+                        {analisisData.distribucionTipo.map((item: any, index: number) => (
                             <div key={index}>
                                 <div className="flex justify-between items-center mb-1">
                                     <span className="text-sm font-medium">{item.tipo}</span>
@@ -321,13 +313,8 @@ export default function AdminAnalisis() {
                                 </div>
                                 <div className="w-full bg-gray-200 rounded-full h-2.5">
                                     <div
-                                        className="bg-blue-600 h-2.5 rounded-full"
+                                        className="bg-blue-600 h-2.5 rounded-full cursor-pointer hover:bg-blue-700 transition-colors"
                                         style={{ width: `${item.porcentaje}%` }}
-                                        onClick={() => recordAction('distribution_bar_click', {
-                                            tipo: item.tipo,
-                                            cantidad: item.cantidad,
-                                            porcentaje: item.porcentaje
-                                        })}
                                     ></div>
                                 </div>
                             </div>
@@ -355,13 +342,7 @@ export default function AdminAnalisis() {
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-gray-200">
-                            {analisisData.recientes.map((lote: {
-                                id: string;
-                                nombre: string;
-                                documentos: number;
-                                estado: string;
-                                ultimaActualizacion: string;
-                            }) => (
+                            {analisisData.recientes.map((lote: any) => (
                                 <tr key={lote.id}>
                                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{lote.nombre}</td>
                                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{lote.documentos}</td>
@@ -378,10 +359,7 @@ export default function AdminAnalisis() {
                                             className="text-blue-600 hover:text-blue-900"
                                             onClick={(e) => {
                                                 e.preventDefault();
-                                                recordAction('view_details_click', {
-                                                    id: lote.id,
-                                                    nombre: lote.nombre
-                                                });
+                                                // TODO: Implementar acción
                                             }}
                                         >
                                             Ver Detalles
@@ -399,9 +377,7 @@ export default function AdminAnalisis() {
                         className="text-blue-600 hover:text-blue-900 text-sm font-medium"
                         onClick={(e) => {
                             e.preventDefault();
-                            recordAction('view_all_events_click', {
-                                timestamp: new Date().toISOString()
-                            });
+                            // TODO: Implementar acción
                         }}
                     >
                         Ver todos los eventos &rarr;

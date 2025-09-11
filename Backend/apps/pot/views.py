@@ -1,5 +1,5 @@
 """
-Vistas para la API REST de tratamientos POT.
+Vistas para la API REST de tratamientos POT - Optimizado
 """
 import logging
 from django.shortcuts import get_object_or_404
@@ -8,7 +8,6 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated, IsAdminUser
 from rest_framework.response import Response
 from rest_framework import status, viewsets
-from rest_framework.views import APIView
 
 from .models import (
     TratamientoPOT, 
@@ -26,6 +25,38 @@ from .serializers import (
 )
 
 logger = logging.getLogger(__name__)
+
+# Mapeo de nombres de tratamientos a códigos
+MAPEO_TRATAMIENTOS = {
+    'consolidacion_nivel_1': 'CN1',
+    'consolidacion_nivel_2': 'CN2', 
+    'consolidacion_nivel_3': 'CN3',
+    'consolidacion_nivel_4': 'CN4',
+    'redesarrollo': 'RD',
+    'desarrollo': 'D',
+    'conservacion': 'C'
+}
+
+def _obtener_codigo_tratamiento(nombre_tratamiento):
+    """Helper para obtener código de tratamiento desde nombre"""
+    nombre_lower = nombre_tratamiento.lower()
+    
+    if "consolidación nivel 1" in nombre_lower or "consolidacion nivel 1" in nombre_lower:
+        return "CN1"
+    elif "consolidación nivel 2" in nombre_lower or "consolidacion nivel 2" in nombre_lower:
+        return "CN2"
+    elif "consolidación nivel 3" in nombre_lower or "consolidacion nivel 3" in nombre_lower:
+        return "CN3"
+    elif "consolidación nivel 4" in nombre_lower or "consolidacion nivel 4" in nombre_lower:
+        return "CN4"
+    elif "redesarrollo" in nombre_lower:
+        return "RD"
+    elif "desarrollo" in nombre_lower:
+        return "D"
+    elif "conservación" in nombre_lower or "conservacion" in nombre_lower:
+        return "C"
+    else:
+        return nombre_tratamiento[:3].upper()  # Fallback
 
 
 class TratamientoPOTViewSet(viewsets.ModelViewSet):
@@ -253,69 +284,157 @@ def consultar_normativa_por_cbml(request):
                 "error": "Se requiere el parámetro 'cbml'"
             }, status=status.HTTP_400_BAD_REQUEST)
         
-        # Importar el servicio de tratamientos de lotes
-        from apps.lotes.services.tratamiento_service import TratamientoService
+        # Usar el servicio POT independiente
+        from .services import pot_service
         
-        # Obtener el tratamiento aplicable al CBML
-        servicio = TratamientoService()
-        resultado = servicio.obtener_tratamiento_por_cbml(cbml)
+        # Consultar información del CBML
+        resultado_cbml = pot_service.consultar_normativa_por_cbml(cbml)
         
-        if not resultado:
+        if not resultado_cbml.get('success'):
             return Response({
-                "error": f"No se encontró información para el CBML: {cbml}"
+                "error": resultado_cbml.get('error', 'Error desconocido')
             }, status=status.HTTP_404_NOT_FOUND)
         
-        # Obtener el nombre del tratamiento
-        nombre_tratamiento = resultado.get('nombre')
-        if not nombre_tratamiento:
+        # Obtener tratamiento por código
+        codigo = resultado_cbml.get('codigo_tratamiento')
+        if not codigo:
             return Response({
-                "error": "La información del tratamiento está incompleta"
+                "error": "No se pudo determinar el código del tratamiento"
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
         
-        # Buscar el tratamiento en la base de datos
-        codigo = None
-        if "Consolidación Nivel 1" in nombre_tratamiento:
-            codigo = "CN1"
-        elif "Consolidación Nivel 2" in nombre_tratamiento:
-            codigo = "CN2"
-        elif "Consolidación Nivel 3" in nombre_tratamiento:
-            codigo = "CN3"
-        elif "Consolidación Nivel 4" in nombre_tratamiento:
-            codigo = "CN4"
-        elif "Redesarrollo" in nombre_tratamiento:
-            codigo = "RD"
-        elif "Desarrollo" in nombre_tratamiento:
-            codigo = "D"
-        elif "Conservación" in nombre_tratamiento:
-            codigo = "C"
-        else:
-            # Buscar por nombre si no coincide exactamente
-            tratamientos = TratamientoPOT.objects.filter(nombre__icontains=nombre_tratamiento[:10])
-            if tratamientos.exists():
-                tratamiento = tratamientos.first()
-                return Response({
-                    "cbml": cbml,
-                    "tratamiento": TratamientoPOTDetailSerializer(tratamiento).data
-                })
-            else:
-                return Response({
-                    "error": f"No se encontró un tratamiento POT para: {nombre_tratamiento}"
-                }, status=status.HTTP_404_NOT_FOUND)
+        resultado_tratamiento = pot_service.obtener_tratamiento_por_codigo(codigo)
         
-        # Buscar por código
-        try:
-            tratamiento = TratamientoPOT.objects.get(codigo=codigo)
+        if not resultado_tratamiento.get('success'):
             return Response({
-                "cbml": cbml,
-                "tratamiento": TratamientoPOTDetailSerializer(tratamiento).data
-            })
-        except TratamientoPOT.DoesNotExist:
-            return Response({
-                "error": f"No se encontró el tratamiento POT con código: {codigo}"
+                "error": resultado_tratamiento.get('error', 'Tratamiento no encontrado')
             }, status=status.HTTP_404_NOT_FOUND)
+        
+        return Response({
+            "cbml": cbml,
+            "tratamiento_encontrado": resultado_cbml.get('nombre_tratamiento'),
+            "codigo_tratamiento": codigo,
+            "normativa": resultado_tratamiento.get('tratamiento'),
+            "datos_mapgis": resultado_cbml.get('datos_mapgis', {})
+        })
             
     except Exception as e:
         logger.exception(f"Error consultando normativa por CBML: {e}")
         return Response({
             "error": f"Error consultando normativa: {str(e)}"
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def calcular_aprovechamiento_pot(request):
+    """
+    Calcula el aprovechamiento urbanístico para un lote específico
+    """
+    try:
+        codigo_tratamiento = request.data.get('codigo_tratamiento')
+        area_lote = request.data.get('area_lote')
+        tipologia = request.data.get('tipologia', 'multifamiliar')
+        
+        if not codigo_tratamiento or not area_lote:
+            return Response({
+                "error": "Se requieren 'codigo_tratamiento' y 'area_lote'"
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        from .services import pot_service
+        resultado = pot_service.calcular_aprovechamiento(codigo_tratamiento, area_lote, tipologia)
+        
+        if resultado.get('success'):
+            return Response(resultado)
+        else:
+            return Response({
+                "error": resultado.get('error', 'Error en cálculo')
+            }, status=status.HTTP_400_BAD_REQUEST)
+            
+    except Exception as e:
+        logger.exception(f"Error calculando aprovechamiento: {e}")
+        return Response({
+            "error": f"Error calculando aprovechamiento: {str(e)}"
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def obtener_tipos_vivienda(request):
+    """
+    Obtiene los tipos de vivienda disponibles en el sistema POT
+    """
+    try:
+        tipos_vivienda = {
+            'tipos_frente_minimo': [
+                {'codigo': 'unifamiliar', 'nombre': 'Unifamiliar'},
+                {'codigo': 'bifamiliar_pisos_diferentes', 'nombre': 'Bifamiliar en pisos diferentes'},
+                {'codigo': 'bifamiliar_mismo_piso', 'nombre': 'Bifamiliar en el mismo piso'},
+                {'codigo': 'trifamiliar', 'nombre': 'Trifamiliar'},
+                {'codigo': 'multifamiliar', 'nombre': 'Multifamiliar'},
+            ],
+            'tipos_area_lote': [
+                {'codigo': 'unifamiliar', 'nombre': 'Unifamiliar'},
+                {'codigo': 'bifamiliar_pisos_diferentes', 'nombre': 'Bifamiliar en pisos diferentes'},
+                {'codigo': 'bifamiliar_mismo_piso', 'nombre': 'Bifamiliar en el mismo piso'},
+                {'codigo': 'trifamiliar', 'nombre': 'Trifamiliar'},
+                {'codigo': 'multifamiliar', 'nombre': 'Multifamiliar'},
+            ],
+            'tipos_area_vivienda': [
+                {'codigo': '1_alcoba', 'nombre': '1 Alcoba'},
+                {'codigo': '2_alcobas', 'nombre': '2 Alcobas'},
+                {'codigo': '3_alcobas_vip', 'nombre': '3 Alcobas VIP'},
+                {'codigo': '3_alcobas_vis', 'nombre': '3 Alcobas VIS'},
+                {'codigo': '4_alcobas_vip', 'nombre': '4 Alcobas VIP'},
+                {'codigo': '4_alcobas_vis', 'nombre': '4 Alcobas VIS'},
+            ]
+        }
+        
+        return Response(tipos_vivienda)
+        
+    except Exception as e:
+        logger.exception(f"Error obteniendo tipos de vivienda: {e}")
+        return Response({
+            "error": f"Error obteniendo tipos de vivienda: {str(e)}"
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def health_check_pot(request):
+    """
+    Health check para el módulo POT
+    """
+    try:
+        from .services import pot_service
+        import datetime
+        
+        # Verificar conexión a base de datos
+        total_tratamientos = TratamientoPOT.objects.count()
+        tratamientos_activos = TratamientoPOT.objects.filter(activo=True).count()
+        
+        # Verificar servicio POT
+        resultado_service = pot_service.listar_tratamientos_activos()
+        
+        health_status = {
+            'status': 'ok',
+            'timestamp': datetime.datetime.now().isoformat(),
+            'database': {
+                'total_tratamientos': total_tratamientos,
+                'tratamientos_activos': tratamientos_activos,
+                'conexion': 'ok'
+            },
+            'pot_service': {
+                'disponible': resultado_service.get('success', False),
+                'tratamientos_disponibles': resultado_service.get('count', 0)
+            }
+        }
+        
+        return Response(health_status)
+        
+    except Exception as e:
+        logger.exception(f"Error en health check POT: {e}")
+        return Response({
+            'status': 'error',
+            'error': str(e),
+            'timestamp': datetime.datetime.now().isoformat()
+        }, status=status.HTTP_503_SERVICE_UNAVAILABLE)

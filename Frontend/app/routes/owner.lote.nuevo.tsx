@@ -4,7 +4,8 @@ import { Form, useActionData, useNavigation, Link } from "@remix-run/react";
 import { useState, useEffect } from "react";
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "@remix-run/node";
 import { getUser } from "~/utils/auth.server";
-import { createLote, getTratamientosPOT, getLotePotData } from "~/services/lotes.server";
+import { createLote, getTratamientosPOT } from "~/services/lotes.server";
+import { getNormativaPorCBML, getTratamientosActivosPOT } from "~/services/pot.server";
 import StatusModal from "~/components/StatusModal";
 import { useNavigate } from "@remix-run/react";
 import { consultarPorCBML, consultarPorMatricula, consultarPorDireccion } from "~/services/mapgis.server";
@@ -65,8 +66,8 @@ export async function loader({ request }: LoaderFunctionArgs) {
                         // Intentar obtener datos POT adicionales
                         let potData = null;
                         try {
-                            const potResponse = await getLotePotData(request, searchValue);
-                            potData = potResponse.potData;
+                            const potResponse = await getNormativaPorCBML(request, searchValue);
+                            potData = potResponse.normativa;
                             console.log('Datos POT obtenidos:', potData);
                         } catch (potError) {
                             console.error('Error obteniendo datos POT:', potError);
@@ -126,8 +127,8 @@ export async function loader({ request }: LoaderFunctionArgs) {
     }
 
     try {
-        // Obtener los tratamientos POT disponibles
-        const { tratamientos } = await getTratamientosPOT(request);
+        // Obtener los tratamientos POT disponibles usando el servicio correcto
+        const { tratamientos } = await getTratamientosActivosPOT(request);
         return json({ user, tratamientos });
     } catch (error) {
         console.error("Error obteniendo tratamientos:", error);

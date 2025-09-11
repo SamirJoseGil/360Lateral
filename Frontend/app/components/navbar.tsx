@@ -78,7 +78,8 @@ export default function Navbar({ user }: NavbarProps) {
                     { to: "/admin", label: "Dashboard" },
                     { to: "/admin/usuarios", label: "Usuarios" },
                     { to: "/admin/validacion", label: "Validación" },
-                    { to: "/admin/analisis", label: "Análisis" },
+                    { to: "/admin/pot", label: "POT" },
+                    { to: "/admin/system", label: "Sistema" },
                 ];
             case "owner":
                 return [

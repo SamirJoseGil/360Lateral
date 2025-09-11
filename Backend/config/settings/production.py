@@ -187,7 +187,7 @@ SERVER_EMAIL = EMAIL_HOST_USER
 # SECURITY MIDDLEWARE PRODUCTION
 # =============================================================================
 
-# Add security middleware for production
+# Add security middleware for production (using middleware from base.py and adding more)
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
     'corsheaders.middleware.CorsMiddleware',
@@ -197,11 +197,8 @@ MIDDLEWARE = [
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
-    # Custom security middleware
-    'app.middleware.SecurityHeadersMiddleware',
-    'app.middleware.RateLimitMiddleware',
-    'app.middleware.SecurityLoggingMiddleware',
-    'app.middleware.RequestValidationMiddleware',
+    # Custom security middleware from apps.common
+    'apps.common.middleware.api_logging.APILoggingMiddleware',
 ]
 
 # =============================================================================

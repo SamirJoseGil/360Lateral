@@ -45,23 +45,23 @@ export default function Footer() {
                         <h3 className="text-lg font-bold mb-4">Plataforma</h3>
                         <ul className="space-y-2">
                             <li>
-                                <Link to="/propietarios" className="text-gris-300 hover:text-white hover:underline">
+                                <Link to="/owner" className="text-gris-300 hover:text-white hover:underline">
                                     Propietarios
                                 </Link>
                             </li>
                             <li>
-                                <Link to="/desarrolladores" className="text-gris-300 hover:text-white hover:underline">
+                                <Link to="/developer" className="text-gris-300 hover:text-white hover:underline">
                                     Desarrolladores
                                 </Link>
                             </li>
                             <li>
-                                <Link to="/lotes/buscar" className="text-gris-300 hover:text-white hover:underline">
+                                <Link to="/developer/search" className="text-gris-300 hover:text-white hover:underline">
                                     Buscar Lotes
                                 </Link>
                             </li>
                             <li>
-                                <Link to="/analisis-urbanistico" className="text-gris-300 hover:text-white hover:underline">
-                                    Análisis Urbanístico
+                                <Link to="/lotes/nuevo" className="text-gris-300 hover:text-white hover:underline">
+                                    Registrar Lote
                                 </Link>
                             </li>
                         </ul>

@@ -2,49 +2,51 @@
  * Módulo para manejar interacciones con la API
  */
 
-import { getSession } from "./session.server";
-
 // URL base de la API
 export const API_URL = process.env.API_URL || "http://localhost:8000";
 
-interface FetchOptions extends RequestInit {
-  headers?: HeadersInit;
-}
+// MapGIS endpoint types and functions (consolidado desde api.client.ts)
+export type MapGisSearchType = 'cbml' | 'matricula' | 'direccion';
 
-/**
- * Realiza una solicitud a la API con autenticación incluida
- * @param request Objeto Request de la solicitud entrante
- * @param endpoint URL del endpoint a llamar
- * @param options Opciones adicionales para fetch
- * @returns Respuesta y headers para mantener la sesión
- */
-export async function fetchWithAuth(
-  request: Request,
-  endpoint: string,
-  options: FetchOptions = {}
-) {
-  // Obtener la sesión y el token
-  const session = await getSession(request);
-  const token = session.get("token");
+// Updated endpoints to use public routes
+export const mapGisEndpoints = {
+  cbml: `${API_URL}/api/lotes/public/cbml/`,
+  matricula: `${API_URL}/api/lotes/public/matricula/`,
+  direccion: `${API_URL}/api/lotes/public/direccion/`,
+};
 
-  // Preparar headers combinando los proporcionados con el token de autorización
-  const headers = new Headers(options.headers || {});
-  
-  if (token) {
-    headers.append("Authorization", `Bearer ${token}`);
+export async function fetchMapGisData(type: MapGisSearchType, value: string) {
+  const endpoint = mapGisEndpoints[type];
+  if (!endpoint) {
+    throw new Error(`Invalid search type: ${type}`);
   }
   
-  // No incluimos el token como cookie para evitar CSRF
-  headers.append("Content-Type", "application/json");
-
-  // Realizar la solicitud a la API
+  const payload: Record<string, string> = {};
+  payload[type] = value;
+  
   const response = await fetch(endpoint, {
-    ...options,
-    headers,
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(payload),
   });
+  
+  if (!response.ok) {
+    throw new Error(`Failed to fetch MapGIS data: ${response.statusText}`);
+  }
+  
+  return await response.json();
+}
 
-  // Preparar headers para incluir en la respuesta y mantener la sesión
-  const setCookieHeaders = new Headers();
-
-  return { res: response, setCookieHeaders };
+// Utilidad para control de acceso basado en roles
+export function checkPermission(userRole: string, requiredRole: string): boolean {
+  const roles = {
+    'user': 0,
+    'developer': 1,
+    'owner': 2,
+    'admin': 3
+  };
+  
+  return (roles[userRole as keyof typeof roles] || 0) >= (roles[requiredRole as keyof typeof roles] || 0);
 }

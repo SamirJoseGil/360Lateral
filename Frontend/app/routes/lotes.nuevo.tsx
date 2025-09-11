@@ -1,15 +1,40 @@
 import { useState } from 'react';
 import { ActionFunction, LoaderFunction, json, redirect } from '@remix-run/node';
 import { useActionData, useLoaderData } from '@remix-run/react';
+import { getUser } from '~/utils/auth.server';
+import { recordEvent } from '~/services/stats.server';
 import EnhancedMapGisSearch from '~/components/EnhancedMapGisSearch';
 import LoteForm from '~/components/LoteForm';
 import type { MapGisLoteDetalle } from '~/services/mapgis.server';
 
-// Loader para obtener datos iniciales si es necesario
+// Loader para verificar autenticación y permisos
 export const loader: LoaderFunction = async ({ request }) => {
-    // Verificar autenticación, permisos, etc.
+    // Verificar autenticación
+    const user = await getUser(request);
+    if (!user) {
+        return redirect("/login");
+    }
 
-    return json({});
+    // Solo propietarios y administradores pueden crear lotes
+    if (user.role !== "owner" && user.role !== "admin") {
+        return redirect(`/${user.role}`);
+    }
+
+    // Registrar evento de acceso a la creación de lotes
+    try {
+        await recordEvent(request, {
+            type: "view",
+            name: "create_lote_page",
+            value: {
+                user_id: user.id,
+                role: user.role
+            }
+        });
+    } catch (error) {
+        console.error("Error registrando evento:", error);
+    }
+
+    return json({ user });
 };
 
 // Action para procesar la creación del lote

@@ -38,8 +38,7 @@ LOCAL_APPS = [
     'apps.lotes',
     'apps.documents',
     'apps.stats',
-    'apps.common',
-    'apps.health_check',
+    'apps.common',  # Common consolidado con health checks
     'apps.pot',
 ]
 
@@ -54,7 +53,7 @@ MIDDLEWARE = [
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
-    'apps.common.middleware.api_logging.APILoggingMiddleware',  # Nueva línea
+    'apps.common.middleware.api_logging.APILoggingMiddleware',  # API logging
 ]
 
 # URL Configuration
@@ -152,7 +151,7 @@ REST_FRAMEWORK = {
         'rest_framework_simplejwt.authentication.JWTAuthentication',
     ],
     'DEFAULT_PERMISSION_CLASSES': [
-        'apps.common.permissions.AllowPublicEndpoints',  # Permiso personalizado que permite endpoints específicos públicos
+        'rest_framework.permissions.IsAuthenticated',  # Por defecto requerir autenticación
     ],
     'DEFAULT_FILTER_BACKENDS': [
         'django_filters.rest_framework.DjangoFilterBackend',
@@ -289,6 +288,10 @@ if 'smtp' in EMAIL_BACKEND.lower():
 DEFAULT_FROM_EMAIL = os.environ.get('DEFAULT_FROM_EMAIL', 'noreply@lateral360.local')
 SERVER_EMAIL = DEFAULT_FROM_EMAIL
 
+# =============================================================================
+# FILE UPLOAD CONFIGURATION
+# =============================================================================
+
 # File upload settings
 FILE_UPLOAD_MAX_MEMORY_SIZE = int(os.environ.get('MAX_UPLOAD_SIZE', 10 * 1024 * 1024))  # 10MB
 DATA_UPLOAD_MAX_MEMORY_SIZE = FILE_UPLOAD_MAX_MEMORY_SIZE
@@ -297,108 +300,3 @@ DATA_UPLOAD_MAX_NUMBER_FIELDS = 100
 # Allowed file extensions
 ALLOWED_FILE_EXTENSIONS = ['.pdf', '.doc', '.docx', '.jpg', '.jpeg', '.png', '.txt', '.xlsx', '.xls']
 MAX_FILE_SIZE = FILE_UPLOAD_MAX_MEMORY_SIZE
-
-# =============================================================================
-# DEFAULT SETTINGS
-# =============================================================================
-
-# Default primary key field type
-DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
-
-# Admin configuration
-ADMIN_ENABLED = os.environ.get('ADMIN_ENABLED', 'True').lower() == 'true'
-
-# =============================================================================
-# EMAIL CONFIGURATION
-# =============================================================================
-
-EMAIL_BACKEND = os.environ.get(
-    'EMAIL_BACKEND',
-    'django.core.mail.backends.console.EmailBackend'
-)
-
-# SMTP settings (only used if EMAIL_BACKEND is SMTP)
-if 'smtp' in EMAIL_BACKEND.lower():
-    EMAIL_HOST = os.environ.get('EMAIL_HOST', 'smtp.gmail.com')
-    EMAIL_PORT = int(os.environ.get('EMAIL_PORT', 587))
-    EMAIL_USE_TLS = os.environ.get('EMAIL_USE_TLS', 'True').lower() == 'true'
-    EMAIL_HOST_USER = os.environ.get('EMAIL_HOST_USER')
-    EMAIL_HOST_PASSWORD = os.environ.get('EMAIL_HOST_PASSWORD')
-    DEFAULT_FROM_EMAIL = EMAIL_HOST_USER or 'noreply@lateral360.com'
-
-# =============================================================================
-# PASSWORD RESET & FRONTEND URL
-# =============================================================================
-
-# Password reset settings
-PASSWORD_RESET_TOKEN_EXPIRY = int(os.environ.get('PASSWORD_RESET_TOKEN_EXPIRY', 24))  # Horas
-FRONTEND_URL = os.environ.get('FRONTEND_URL', 'http://localhost:3000')
-
-# Configuración para el middleware de registro de API
-API_LOG_REQUEST_BODY = True
-API_LOG_RESPONSE_BODY = True
-API_LOG_MAX_BODY_LENGTH = 5000
-
-# Configurar los loggers específicos para API
-LOGGING = {
-    'version': 1,
-    'disable_existing_loggers': False,
-    'formatters': {
-        'verbose': {
-            'format': '{levelname} {asctime} {module} {process:d} {thread:d} {message}',
-            'style': '{',
-        },
-        'simple': {
-            'format': '{levelname} {message}',
-            'style': '{',
-        },
-        'json': {
-            'format': '{"time": "%(asctime)s", "level": "%(levelname)s", "message": "%(message)s", %(data)s}',
-            'datefmt': '%Y-%m-%d %H:%M:%S',
-            'class': 'pythonjsonlogger.jsonlogger.JsonFormatter',
-        },
-    },
-    'filters': {
-        'require_debug_true': {
-            '()': 'django.utils.log.RequireDebugTrue',
-        },
-    },
-    'handlers': {
-        'console': {
-            'level': 'INFO',
-            'filters': ['require_debug_true'],
-            'class': 'logging.StreamHandler',
-            'formatter': 'simple'
-        },
-        'file': {
-            'level': 'INFO',
-            'class': 'logging.handlers.RotatingFileHandler',
-            'filename': os.path.join(BASE_DIR, 'logs', 'api-requests.log'),
-            'maxBytes': 1024 * 1024 * 5,  # 5 MB
-            'backupCount': 10,
-            'formatter': 'verbose',
-        },
-        'api_file': {
-            'level': 'INFO',
-            'class': 'logging.handlers.RotatingFileHandler',
-            'filename': os.path.join(BASE_DIR, 'logs', 'api-requests.log'),
-            'maxBytes': 1024 * 1024 * 5,  # 5 MB
-            'backupCount': 10,
-            'formatter': 'verbose',
-        },
-    },
-    'loggers': {
-        'django': {
-            'handlers': ['console', 'file'],
-            'level': 'INFO',
-            'propagate': True,
-        },
-        'api.requests': {
-            'handlers': ['console', 'api_file'],
-            'level': 'INFO',
-            'propagate': False,
-        },
-    },
-}
-
-# Esta edición no modifica el archivo, solo lo revisa

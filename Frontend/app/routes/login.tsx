@@ -1,12 +1,30 @@
-// app/routes/auth.login.tsx
-import { Form, useActionData } from "@remix-run/react";
-import { ActionFunctionArgs, json, redirect } from "@remix-run/node";
-import { loginAction } from "~/utils/auth.server";
-import { getSession, sessionStorage } from "~/utils/session.server";
-import cookie from "cookie";
+import { Form, useActionData, useLoaderData } from "@remix-run/react";
+import { ActionFunctionArgs, LoaderFunctionArgs, json, redirect } from "@remix-run/node";
+import { getUser } from "~/utils/auth.server";
+import { recordEvent } from "~/services/stats.server";
 
-// Importamos la función de creación de sesión del nuevo archivo
-import { createUserSession } from "~/utils/session.server";
+// Loader para redirigir si ya está autenticado
+export async function loader({ request }: LoaderFunctionArgs) {
+    const user = await getUser(request);
+
+    // Si el usuario ya está autenticado, redirigir según su rol
+    if (user) {
+        return redirect(`/${user.role}`);
+    }
+
+    // Registrar vista de página de login para estadísticas
+    try {
+        await recordEvent(request, {
+            type: "view",
+            name: "login_page",
+            value: {}
+        });
+    } catch (error) {
+        console.error("Error registrando vista de login:", error);
+    }
+
+    return json({});
+}
 
 // Acción de login usando el nuevo sistema de sesiones
 export async function action({ request }: ActionFunctionArgs) {
@@ -47,11 +65,15 @@ export async function action({ request }: ActionFunctionArgs) {
         // Si llegamos aquí, el login fue exitoso
         const { refresh, access, user } = data.data;
 
-        // Crear la sesión de usuario y establecer las cookies
+        // Crear cookies de sesión y redirigir
         console.log(`loginAction - creating user session and redirecting to: ${redirectTo}`);
 
-        // Esta función se encarga de crear las cookies y redireccionar
-        return createUserSession(user, redirectTo, access, refresh);
+        const headers = new Headers();
+        headers.append("Set-Cookie", `l360_access=${encodeURIComponent(access)}; Path=/; HttpOnly; SameSite=Strict; Secure=${process.env.NODE_ENV === 'production'}`);
+        headers.append("Set-Cookie", `l360_refresh=${encodeURIComponent(refresh)}; Path=/; HttpOnly; SameSite=Strict; Secure=${process.env.NODE_ENV === 'production'}`);
+        headers.append("Set-Cookie", `l360_user=${encodeURIComponent(JSON.stringify(user))}; Path=/; HttpOnly; SameSite=Strict; Secure=${process.env.NODE_ENV === 'production'}`);
+
+        return redirect(redirectTo, { headers });
     } catch (error) {
         console.error("loginAction - error:", error);
         return json(

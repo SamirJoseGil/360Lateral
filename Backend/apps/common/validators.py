@@ -2,7 +2,6 @@ from django.core.exceptions import ValidationError
 from django.core.validators import FileExtensionValidator
 from django.utils.deconstruct import deconstructible
 from pathlib import Path
-import magic
 import re
 
 

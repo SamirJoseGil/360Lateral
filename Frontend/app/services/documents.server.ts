@@ -32,11 +32,11 @@ export interface DocumentsResponse {
 }
 
 /**
- * Upload a document to the server
+ * Upload a document to the server using the correct endpoint
  */
 export async function uploadDocument(request: Request, formData: FormData) {
   try {
-    const endpoint = `${API_URL}/api/documents/`;
+    const endpoint = `${API_URL}/api/documents/documents/upload/`;
     
     console.log("[Documents] Uploading document to endpoint:", endpoint);
     
@@ -109,11 +109,183 @@ export async function getLoteDocuments(request: Request, loteId: string) {
 }
 
 /**
+ * Get all documents for the current user
+ */
+export async function getUserDocuments(request: Request, filters?: {
+  document_type?: string;
+  search?: string;
+  ordering?: string;
+  limit?: number;
+  offset?: number;
+}) {
+  try {
+    let endpoint = `${API_URL}/api/documents/user/`;
+    
+    // Build query parameters
+    if (filters) {
+      const params = new URLSearchParams();
+      
+      if (filters.document_type) params.append('document_type', filters.document_type);
+      if (filters.search) params.append('search', filters.search);
+      if (filters.ordering) params.append('ordering', filters.ordering);
+      if (filters.limit) params.append('limit', filters.limit.toString());
+      if (filters.offset) params.append('offset', filters.offset.toString());
+      
+      const queryString = params.toString();
+      if (queryString) {
+        endpoint += `?${queryString}`;
+      }
+    }
+    
+    console.log(`[Documents] Fetching user documents from endpoint: ${endpoint}`);
+    
+    const { res: response, setCookieHeaders } = await fetchWithAuth(request, endpoint);
+    
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error(`[Documents] Error fetching user documents:`, response.status, errorText);
+      throw new Error(`Error fetching user documents: ${response.status} ${errorText}`);
+    }
+    
+    const data = await response.json();
+    console.log(`[Documents] Received ${data.results?.length || 0} user documents`);
+    
+    return { 
+      documents: data.results || [], 
+      count: data.count || 0,
+      next: data.next,
+      previous: data.previous,
+      headers: setCookieHeaders 
+    };
+  } catch (error) {
+    console.error("[Documents] Error in getUserDocuments:", error);
+    throw error;
+  }
+}
+
+/**
+ * Get all documents (admin only)
+ */
+export async function getAllDocuments(request: Request, filters?: {
+  document_type?: string;
+  lote?: string;
+  search?: string;
+  ordering?: string;
+  limit?: number;
+  offset?: number;
+}) {
+  try {
+    let endpoint = `${API_URL}/api/documents/documents/`;
+    
+    // Build query parameters
+    if (filters) {
+      const params = new URLSearchParams();
+      
+      if (filters.document_type) params.append('document_type', filters.document_type);
+      if (filters.lote) params.append('lote', filters.lote);
+      if (filters.search) params.append('search', filters.search);
+      if (filters.ordering) params.append('ordering', filters.ordering);
+      if (filters.limit) params.append('limit', filters.limit.toString());
+      if (filters.offset) params.append('offset', filters.offset.toString());
+      
+      const queryString = params.toString();
+      if (queryString) {
+        endpoint += `?${queryString}`;
+      }
+    }
+    
+    console.log(`[Documents] Fetching all documents from endpoint: ${endpoint}`);
+    
+    const { res: response, setCookieHeaders } = await fetchWithAuth(request, endpoint);
+    
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error(`[Documents] Error fetching all documents:`, response.status, errorText);
+      throw new Error(`Error fetching all documents: ${response.status} ${errorText}`);
+    }
+    
+    const data = await response.json();
+    console.log(`[Documents] Received ${data.results?.length || 0} documents`);
+    
+    return { 
+      documents: data.results || [], 
+      count: data.count || 0,
+      next: data.next,
+      previous: data.previous,
+      headers: setCookieHeaders 
+    };
+  } catch (error) {
+    console.error("[Documents] Error in getAllDocuments:", error);
+    throw error;
+  }
+}
+
+/**
+ * Get document details by ID
+ */
+export async function getDocumentById(request: Request, documentId: string) {
+  try {
+    const endpoint = `${API_URL}/api/documents/documents/${documentId}/`;
+    
+    console.log(`[Documents] Fetching document ${documentId} from endpoint: ${endpoint}`);
+    
+    const { res: response, setCookieHeaders } = await fetchWithAuth(request, endpoint);
+    
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error(`[Documents] Error fetching document ${documentId}:`, response.status, errorText);
+      throw new Error(`Error fetching document: ${response.status} ${errorText}`);
+    }
+    
+    const document = await response.json();
+    console.log(`[Documents] Retrieved document ${documentId} successfully`);
+    
+    return { document, headers: setCookieHeaders };
+  } catch (error) {
+    console.error("[Documents] Error in getDocumentById:", error);
+    throw error;
+  }
+}
+
+/**
+ * Update document details
+ */
+export async function updateDocument(request: Request, documentId: string, updateData: Partial<Document>) {
+  try {
+    const endpoint = `${API_URL}/api/documents/documents/${documentId}/`;
+    
+    console.log(`[Documents] Updating document ${documentId} at endpoint: ${endpoint}`);
+    
+    const { res: response, setCookieHeaders } = await fetchWithAuth(request, endpoint, {
+      method: "PATCH",
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(updateData),
+    });
+    
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error(`[Documents] Error updating document ${documentId}:`, response.status, errorText);
+      throw new Error(`Error updating document: ${response.status} ${errorText}`);
+    }
+    
+    const document = await response.json();
+    console.log(`[Documents] Document ${documentId} updated successfully`);
+    
+    return { document, headers: setCookieHeaders };
+  } catch (error) {
+    console.error("[Documents] Error in updateDocument:", error);
+    throw error;
+  }
+}
+
+/**
  * Delete a document
  */
 export async function deleteDocument(request: Request, documentId: string) {
   try {
-    const endpoint = `${API_URL}/api/documents/${documentId}/`;
+    const endpoint = `${API_URL}/api/documents/documents/${documentId}/`;
     
     console.log(`[Documents] Deleting document ${documentId} at endpoint: ${endpoint}`);
     
@@ -141,7 +313,7 @@ export async function deleteDocument(request: Request, documentId: string) {
  */
 export async function archiveDocument(request: Request, documentId: string) {
   try {
-    const endpoint = `${API_URL}/api/documents/${documentId}/archive/`;
+    const endpoint = `${API_URL}/api/documents/documents/${documentId}/archive/`;
     
     console.log(`[Documents] Archiving document ${documentId} at endpoint: ${endpoint}`);
     
@@ -161,6 +333,60 @@ export async function archiveDocument(request: Request, documentId: string) {
     return { message: data.message, headers: setCookieHeaders };
   } catch (error) {
     console.error("[Documents] Error in archiveDocument:", error);
+    throw error;
+  }
+}
+
+/**
+ * Get document download information
+ */
+export async function getDocumentDownload(request: Request, documentId: string) {
+  try {
+    const endpoint = `${API_URL}/api/documents/documents/${documentId}/download/`;
+    
+    console.log(`[Documents] Getting download info for document ${documentId} from endpoint: ${endpoint}`);
+    
+    const { res: response, setCookieHeaders } = await fetchWithAuth(request, endpoint);
+    
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error(`[Documents] Error getting download info for document ${documentId}:`, response.status, errorText);
+      throw new Error(`Error getting download info: ${response.status} ${errorText}`);
+    }
+    
+    const downloadInfo = await response.json();
+    console.log(`[Documents] Retrieved download info for document ${documentId} successfully`);
+    
+    return { downloadInfo, headers: setCookieHeaders };
+  } catch (error) {
+    console.error("[Documents] Error in getDocumentDownload:", error);
+    throw error;
+  }
+}
+
+/**
+ * Get available document types
+ */
+export async function getDocumentTypes(request: Request) {
+  try {
+    const endpoint = `${API_URL}/api/documents/documents/types/`;
+    
+    console.log("[Documents] Fetching document types from endpoint:", endpoint);
+    
+    const { res: response, setCookieHeaders } = await fetchWithAuth(request, endpoint);
+    
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error("[Documents] Error fetching document types:", response.status, errorText);
+      throw new Error(`Error fetching document types: ${response.status} ${errorText}`);
+    }
+    
+    const documentTypes = await response.json();
+    console.log("[Documents] Retrieved document types successfully");
+    
+    return { documentTypes, headers: setCookieHeaders };
+  } catch (error) {
+    console.error("[Documents] Error in getDocumentTypes:", error);
     throw error;
   }
 }
@@ -248,7 +474,7 @@ export async function getValidationDocuments(request: Request, filters?: {
  */
 export async function getRecentDocumentsForValidation(request: Request, limit: number = 10) {
   try {
-    const endpoint = `${API_URL}/api/documents/validation/recent/?limit=${limit}`;
+    const endpoint = `${API_URL}/api/documents/validation/list/?status=pendiente&limit=${limit}`;
     const { res: response, setCookieHeaders } = await fetchWithAuth(request, endpoint);
     
     if (!response.ok) {
@@ -268,7 +494,7 @@ export async function getRecentDocumentsForValidation(request: Request, limit: n
 }
 
 /**
- * Obtiene detalles de un documento específico
+ * Obtiene detalles de un documento específico para validación
  */
 export async function getDocumentDetails(request: Request, documentId: string) {
   try {
@@ -309,7 +535,7 @@ export async function performDocumentAction(
       },
       body: JSON.stringify({
         action,
-        comentarios: comentarios || ''
+        comments: comentarios || ''
       }),
     });
     

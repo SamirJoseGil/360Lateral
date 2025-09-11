@@ -1,11 +1,8 @@
 """
-URLs para la aplicación de lotes
+URLs para la aplicación de lotes - Optimizado y sin duplicaciones
 """
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
-
-from apps.lotes.views.lote_views import lote_create_from_mapgis, lote_search
-from apps.lotes.views.user_lotes import UserLotesView, my_lotes, user_lote_stats
 from .views.favorites_views import FavoriteViewSet
 
 # Importamos todas las vistas desde el módulo principal
@@ -30,20 +27,24 @@ from .views import (
     # Vistas públicas de MapGIS
     PublicCBMLView,
     PublicMatriculaView,
-    PublicDireccionView
+    PublicDireccionView,
+    
+    # Vistas de usuarios
+    UserLotesView,
+    my_lotes,
+    user_lote_stats
 )
 
-from .views.tratamiento_views import ( 
-    obtener_tratamiento_por_cbml,
-    actualizar_tratamientos
+# Importar vistas específicas que no están en __init__.py
+from .views.lotes_views import lote_create_from_mapgis, lote_search
+from .views.tratamientos_views import (
+    calcular_aprovechamiento,
+    obtener_tratamiento_por_cbml
 )
-
-# Importar vistas de lotes por usuario
-
 
 app_name = 'lotes'
 
-# Create a router for the favorite viewset
+# Router para favoritos
 favorites_router = DefaultRouter()
 favorites_router.register(r'favorites', FavoriteViewSet, basename='favorite')
 
@@ -72,20 +73,12 @@ urlpatterns = [
     # Rutas para tratamientos urbanísticos
     path('tratamientos/', listar_tratamientos, name='listar-tratamientos'),
     path('tratamientos/por-cbml/', obtener_tratamiento_por_cbml, name='tratamiento-por-cbml'),
-    path('tratamientos/actualizar/', actualizar_tratamientos, name='actualizar-tratamientos'),
+    path('tratamientos/calcular/', calcular_aprovechamiento, name='calcular-aprovechamiento'),
 
     # Endpoints públicos para MapGIS - No requieren autenticación
     path('public/cbml/', PublicCBMLView.as_view(), name='public-cbml'),
     path('public/matricula/', PublicMatriculaView.as_view(), name='public-matricula'),
     path('public/direccion/', PublicDireccionView.as_view(), name='public-direccion'),
-
-    # Rutas directas (sin anidamiento adicional) para compatibilidad con el frontend
-    path('create/', lote_create, name='lote-create-direct'),
-    path('search/', lote_search, name='lote-search-direct'),
-    path('<int:pk>/', lote_detail, name='lote-detail-direct'),
-    path('<int:pk>/update/', lote_update, name='lote-update-direct'),
-    path('<int:pk>/delete/', lote_delete, name='lote-delete-direct'),
-    path('create-from-mapgis/', lote_create_from_mapgis, name='lote-create-from-mapgis-direct'),
 
     # Include favorites endpoints
     path('', include(favorites_router.urls)),

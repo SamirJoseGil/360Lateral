@@ -17,14 +17,10 @@ export async function loader({ request }: LoaderFunctionArgs) {
       },
     });
 
-    return json({
-      user,
-    });
+    return json({ user });
   } catch (error) {
     console.error("Error registrando visita:", error);
-    return json({
-      user,
-    });
+    return json({ user });
   }
 }
 

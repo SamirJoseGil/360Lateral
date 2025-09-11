@@ -8,7 +8,11 @@ declare module "@remix-run/node" {
   }
 }
 
+// To allow this host, add "71da7ad69d48.ngrok-free.app" to `server.allowedHosts` in vite.config.js.
 export default defineConfig({
+  server: {
+    allowedHosts: ["71da7ad69d48.ngrok-free.app"],
+  },
   plugins: [
     remix({
       future: {

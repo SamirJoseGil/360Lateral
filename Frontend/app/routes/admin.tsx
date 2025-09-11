@@ -22,8 +22,8 @@ export async function loader({ request }: LoaderFunctionArgs) {
         console.log(`Admin layout loader - user is not admin (${user.role}), redirecting`);
         // Redirigir a la ruta apropiada según el rol
         const roleMappings: Record<string, string> = {
-            "owner": "/propietario",
-            "developer": "/desarrollador",
+            "owner": "/owner",
+            "developer": "/developer",
             "admin": "/admin"
         };
         return redirect(roleMappings[user.role] || "/");
@@ -54,10 +54,10 @@ export default function AdminLayout() {
     // Opciones del sidebar para el administrador
     const sidebarOptions = [
         { to: "/admin", label: "Dashboard", icon: "dashboard" },
-        { to: "/admin/usuarios", label: "Informacion de usuarios", icon: "users" },
-        { to: "/admin/validacion", label: "Validación de documentos", icon: "check-circle" },
-        { to: "/admin/analisis", label: "Análisis de lotes", icon: "chart-bar" },
-        { to: "/admin/estadisticas", label: "Estadísticas generales", icon: "chart-line" },
+        { to: "/admin/usuarios", label: "Gestión de Usuarios", icon: "users" },
+        { to: "/admin/validacion", label: "Validación de Documentos", icon: "check-circle" },
+        { to: "/admin/pot", label: "Gestión POT", icon: "document-text" },
+        { to: "/admin/system", label: "Monitoreo del Sistema", icon: "chart-bar" },
     ];
 
     // Registrar vista de página cuando el componente se monta

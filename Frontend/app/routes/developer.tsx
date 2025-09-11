@@ -1,18 +1,12 @@
 import { json, redirect } from "@remix-run/node";
 import { Outlet, useLoaderData } from "@remix-run/react";
 import type { LoaderFunctionArgs } from "@remix-run/node";
-import { getUser, isRedirectLoop } from "~/utils/auth.server";
+import { getUser } from "~/utils/auth.server";
 import Sidebar from "~/components/sidebar";
 import { recordEvent } from "~/services/stats.server";
 
 // Loader para verificar autenticación y rol de desarrollador
 export async function loader({ request }: LoaderFunctionArgs) {
-    // Si detectamos un bucle de redirección, enviamos al usuario al inicio
-    if (isRedirectLoop(request)) {
-        console.warn("Detected redirect loop in developer layout. Breaking loop.");
-        return redirect("/");
-    }
-
     // Verificar que el usuario esté autenticado y sea desarrollador
     const user = await getUser(request);
     if (!user) {

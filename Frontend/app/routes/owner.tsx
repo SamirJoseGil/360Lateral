@@ -1,16 +1,9 @@
-// filepath: d:\Accesos Directos\Escritorio\frontendx\app\routes\owner.tsx
 import { json, redirect } from "@remix-run/node";
 import { Link, Outlet, useLoaderData } from "@remix-run/react";
 import type { LoaderFunctionArgs } from "@remix-run/node";
-import { getUser, isRedirectLoop } from "~/utils/auth.server";
+import { getUser } from "~/utils/auth.server";
 
 export async function loader({ request }: LoaderFunctionArgs) {
-    // Si detectamos un bucle de redirección, enviamos al usuario al inicio
-    if (isRedirectLoop(request)) {
-        console.warn("Detected redirect loop in owner dashboard. Breaking loop.");
-        return redirect("/");
-    }
-
     // Verificar que el usuario esté autenticado y sea propietario
     const user = await getUser(request);
     if (!user) {
@@ -21,9 +14,6 @@ export async function loader({ request }: LoaderFunctionArgs) {
     // Solo redirigimos si el usuario no es propietario
     if (user.role !== "owner") {
         console.log(`Non-owner user trying to access owner dashboard: ${user.role}`);
-        // Usar redirección simple
-        const url = new URL(request.url);
-        url.searchParams.set("_rc", "1"); // Añadir contador de redirecciones manualmente
         return redirect(`/${user.role}`);
     }
 
@@ -63,13 +53,20 @@ export default function OwnerLayout() {
                         </li>
                         <li>
                             <Link
+                                to="/lotes/nuevo"
+                                className="block px-4 py-2 text-gray-700 rounded hover:bg-indigo-50 hover:text-indigo-700"
+                            >
+                                Registrar Lote
+                            </Link>
+                        </li>
+                        <li>
+                            <Link
                                 to="/owner/documentos"
                                 className="block px-4 py-2 text-gray-700 rounded hover:bg-indigo-50 hover:text-indigo-700"
                             >
                                 Documentos
                             </Link>
                         </li>
-                        {/*
                         <li>
                             <Link
                                 to="/owner/solicitudes"
@@ -78,7 +75,6 @@ export default function OwnerLayout() {
                                 Solicitudes
                             </Link>
                         </li>
-                        */}
                         <li>
                             <Link
                                 to="/owner/analisis/solicitar"

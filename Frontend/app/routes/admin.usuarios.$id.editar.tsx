@@ -37,7 +37,8 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
 
     try {
         const token = await getAccessTokenFromCookies(request);
-        const response = await fetch(`http://localhost:8000/api/users/${userId}/`, {
+        const apiUrl = process.env.API_URL || "http://localhost:8000";
+        const response = await fetch(`${apiUrl}/api/users/${userId}/`, {
             headers: {
                 Authorization: `Bearer ${token}`,
             },
@@ -91,7 +92,8 @@ export async function action({ request, params }: ActionFunctionArgs) {
 
     try {
         const token = await getAccessTokenFromCookies(request);
-        const response = await fetch(`http://localhost:8000/api/users/${userId}/`, {
+        const apiUrl = process.env.API_URL || "http://localhost:8000";
+        const response = await fetch(`${apiUrl}/api/users/${userId}/`, {
             method: "PUT",
             headers: {
                 "Content-Type": "application/json",

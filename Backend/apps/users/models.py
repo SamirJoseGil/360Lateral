@@ -31,6 +31,81 @@ class User(AbstractUser):
     )
     is_verified = models.BooleanField(default=False, verbose_name='Email Verificado')
     
+    # Campos específicos para Dueño de Lote (owner)
+    document_type = models.CharField(
+        max_length=20, 
+        choices=[
+            ('CC', 'Cédula de Ciudadanía'),
+            ('NIT', 'NIT'),
+            ('CE', 'Cédula de Extranjería'),
+            ('PASSPORT', 'Pasaporte'),
+            ('TI', 'Tarjeta de Identidad')
+        ],
+        blank=True, 
+        null=True,
+        verbose_name='Tipo de Documento'
+    )
+    document_number = models.CharField(max_length=50, blank=True, null=True, verbose_name='Número de Documento')
+    address = models.TextField(blank=True, null=True, verbose_name='Dirección de Residencia')
+    id_verification_file = models.FileField(
+        upload_to='documents/id_verification/', 
+        blank=True, 
+        null=True,
+        verbose_name='Archivo de Verificación de Identidad'
+    )
+    lots_count = models.PositiveIntegerField(default=0, verbose_name='Cantidad de Lotes')
+    
+    # Campos específicos para Desarrollador (developer)
+    company_name = models.CharField(max_length=200, blank=True, null=True, verbose_name='Nombre de la Empresa')
+    company_nit = models.CharField(max_length=50, blank=True, null=True, verbose_name='NIT de la Empresa')
+    position = models.CharField(max_length=100, blank=True, null=True, verbose_name='Cargo')
+    experience_years = models.PositiveIntegerField(blank=True, null=True, verbose_name='Años de Experiencia')
+    portfolio_url = models.URLField(blank=True, null=True, verbose_name='URL del Portafolio')
+    focus_area = models.CharField(
+        max_length=50,
+        choices=[
+            ('residential', 'Residencial'),
+            ('commercial', 'Comercial'),
+            ('mixed', 'Mixto'),
+            ('vis', 'VIS (Vivienda de Interés Social)'),
+            ('industrial', 'Industrial'),
+            ('other', 'Otro')
+        ],
+        blank=True,
+        null=True,
+        verbose_name='Área de Enfoque'
+    )
+    
+    # Campos específicos para Administrador (admin)
+    department = models.CharField(
+        max_length=100,
+        choices=[
+            ('normativa', 'Normativa'),
+            ('soporte_tecnico', 'Soporte Técnico'),
+            ('gestion_usuarios', 'Gestión de Usuarios'),
+            ('desarrollo', 'Desarrollo'),
+            ('comercial', 'Comercial'),
+            ('legal', 'Legal'),
+            ('general', 'General')
+        ],
+        blank=True,
+        null=True,
+        verbose_name='Departamento'
+    )
+    permissions_scope = models.CharField(
+        max_length=20,
+        choices=[
+            ('full', 'Administrador Completo'),
+            ('limited', 'Administrador Limitado'),
+            ('readonly', 'Solo Lectura'),
+            ('department', 'Solo Departamento')
+        ],
+        default='limited',
+        blank=True,
+        null=True,
+        verbose_name='Alcance de Permisos'
+    )
+    
     created_at = models.DateTimeField(auto_now_add=True, verbose_name='Fecha de Creación')
     updated_at = models.DateTimeField(auto_now=True, verbose_name='Última Actualización')
     

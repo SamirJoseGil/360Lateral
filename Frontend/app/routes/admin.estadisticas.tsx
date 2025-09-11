@@ -106,7 +106,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
         }
 
         try {
-            const userActivityResponse = await getUserActivity(request);
+            const userActivityResponse = await getUserActivity(request, 30);
             userActivity = userActivityResponse.activity || {};
             if (userActivityResponse.headers) {
                 for (const [key, value] of userActivityResponse.headers.entries()) {

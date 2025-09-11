@@ -1,17 +1,21 @@
 """
 Vistas para la API de usuarios
 """
-from datetime import timezone
 from rest_framework import generics, status, permissions, viewsets, filters
 from rest_framework.decorators import api_view, permission_classes, action
 from rest_framework.permissions import AllowAny, IsAuthenticated, IsAdminUser
 from rest_framework.response import Response
-from django.contrib.auth import get_user_model
 import logging
 
 from .models import User, UserProfile, UserRequest
-from .serializers import UserSerializer, UserProfileSerializer, UserRequestSerializer, UserRequestDetailSerializer, UserRequestCreateSerializer, UserRequestUpdateSerializer, RequestStatusSummarySerializer
+from .serializers import (
+    UserSerializer, UserProfileSerializer, UserRequestSerializer, 
+    UserRequestDetailSerializer, UserRequestCreateSerializer, 
+    UserRequestUpdateSerializer, RequestStatusSummarySerializer,
+    UpdateProfileSerializer
+)
 from .permissions import CanManageUsers, IsOwnerOrAdmin
+from .services import RequestStatusService
 
 # Importar utilidades si existen
 try:
@@ -27,6 +31,8 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 
+# Eliminar UserViewSet y vistas duplicadas ya que UserListCreateView y UserDetailView cubren la funcionalidad
+
 class CurrentUserView(generics.RetrieveUpdateAPIView):
     """Vista para el usuario actual"""
     serializer_class = UserSerializer
@@ -34,78 +40,6 @@ class CurrentUserView(generics.RetrieveUpdateAPIView):
     
     def get_object(self):
         return self.request.user
-
-
-class UserViewSet(viewsets.ModelViewSet):
-    """ViewSet para gestión completa de usuarios"""
-    queryset = User.objects.all()
-    serializer_class = UserSerializer
-    permission_classes = [IsAuthenticated, CanManageUsers]
-    
-    def get_queryset(self):
-        """Filtrar usuarios según rol"""
-        # Detectar si estamos en el contexto de generación de esquema de Swagger/OpenAPI
-        if getattr(self, 'swagger_fake_view', False):
-            # Retornar queryset vacío o filtrado para no causar errores
-            return User.objects.none()  # O User.objects.all() si prefieres mostrar todos
-        
-        # Comportamiento normal para peticiones reales
-        user = self.request.user
-        if user.is_admin:
-            return User.objects.all()
-        elif user.is_owner:
-            # Los propietarios solo ven su propio perfil
-            return User.objects.filter(id=user.id)
-        else:
-            # Desarrolladores ven usuarios básicos
-            return User.objects.filter(role__in=['owner', 'developer'])
-    
-    def perform_destroy(self, instance):
-        """Solo admins pueden eliminar usuarios"""
-        if not self.request.user.is_admin:
-            from rest_framework.exceptions import PermissionDenied
-            raise PermissionDenied("No tienes permisos para eliminar usuarios")
-        
-        # Log de eliminación
-        audit_log(
-            action='USER_DELETED',
-            user=self.request.user,
-            details={'deleted_user': instance.email},
-            ip_address=get_client_ip(self.request)
-        )
-        
-        super().perform_destroy(instance)
-    
-    @action(detail=True, methods=['get'])
-    def profile(self, request, pk=None):
-        """Obtener perfil extendido de usuario"""
-        # Detectar si estamos en el contexto de generación de esquema
-        if getattr(self, 'swagger_fake_view', False):
-            return Response({})
-            
-        user = self.get_object()
-        profile, created = UserProfile.objects.get_or_create(user=user)
-        serializer = UserProfileSerializer(profile)
-        return Response(serializer.data)
-    
-    @action(detail=True, methods=['post'])
-    def update_profile(self, request, pk=None):
-        """Actualizar perfil extendido"""
-        # Detectar si estamos en el contexto de generación de esquema
-        if getattr(self, 'swagger_fake_view', False):
-            return Response({})
-            
-        user = self.get_object()
-        profile, created = UserProfile.objects.get_or_create(user=user)
-        serializer = UserProfileSerializer(profile, data=request.data, partial=True)
-        serializer.is_valid(raise_exception=True)
-        serializer.save()
-        
-        return Response({
-            'success': True,
-            'message': 'Perfil actualizado',
-            'data': serializer.data
-        })
 
 
 # Vista basada en clase para listar y crear usuarios
@@ -159,6 +93,43 @@ def me(request):
     """Obtener datos del usuario actualmente autenticado"""
     serializer = UserSerializer(request.user)
     return Response(serializer.data)
+
+
+# Vista para actualizar perfil del usuario actual
+@api_view(['PUT', 'PATCH'])
+@permission_classes([IsAuthenticated])
+def update_profile(request):
+    """Actualizar perfil del usuario autenticado"""
+    serializer = UpdateProfileSerializer(
+        request.user, 
+        data=request.data, 
+        partial=True,
+        context={'request': request}
+    )
+    
+    if serializer.is_valid():
+        user = serializer.save()
+        
+        # Log de actualización
+        audit_log(
+            action='PROFILE_UPDATED',
+            user=request.user,
+            details={'updated_fields': list(serializer.validated_data.keys())},
+            ip_address=get_client_ip(request)
+        )
+        
+        # Retornar datos actualizados
+        response_serializer = UserSerializer(user)
+        return Response({
+            'success': True,
+            'message': 'Perfil actualizado correctamente',
+            'user': response_serializer.data
+        })
+    
+    return Response({
+        'success': False,
+        'errors': serializer.errors
+    }, status=status.HTTP_400_BAD_REQUEST)
 
 # Función utilitaria para que las URLs funcionen con las vistas basadas en funciones o clases
 user_list_create = UserListCreateView.as_view()
@@ -295,128 +266,3 @@ class UserRequestViewSet(viewsets.ModelViewSet):
         
         serializer = UserRequestSerializer(updates, many=True)
         return Response(serializer.data)
-    
-
-# Servicio para manejar la lógica de solicitudes de usuario
-class RequestStatusService:
-    """
-    Service to manage and retrieve user request statuses.
-    """
-    
-    @staticmethod
-    def get_user_requests(user, request_type=None, status=None):
-        """
-        Get all requests for a specific user with optional filtering.
-        
-        Args:
-            user: User object or ID
-            request_type: Optional type of request to filter by
-            status: Optional status to filter by
-            
-        Returns:
-            QuerySet of UserRequest objects
-        """
-        if isinstance(user, int):
-            user_id = user
-        else:
-            user_id = user.id
-            
-        # Start with base query for this user
-        queryset = UserRequest.objects.filter(user_id=user_id)
-        
-        # Apply filters if provided
-        if request_type:
-            queryset = queryset.filter(request_type=request_type)
-            
-        if status:
-            queryset = queryset.filter(status=status)
-            
-        # Return sorted by most recent first
-        return queryset.order_by('-created_at')
-    
-    @staticmethod
-    def get_request_details(request_id, user=None):
-        """
-        Get detailed information about a specific request.
-        If user is provided, ensure it belongs to them.
-        
-        Args:
-            request_id: ID of the request
-            user: Optional User object to verify ownership
-            
-        Returns:
-            UserRequest object or None if not found or not owned by user
-        """
-        try:
-            if user:
-                return UserRequest.objects.get(id=request_id, user=user)
-            return UserRequest.objects.get(id=request_id)
-        except UserRequest.DoesNotExist:
-            return None
-    
-    @staticmethod
-    def get_request_status_summary(user):
-        """
-        Get a summary of request statuses for a user.
-        
-        Args:
-            user: User object or ID
-            
-        Returns:
-            Dict with counts by status and type
-        """
-        if isinstance(user, int):
-            user_id = user
-        else:
-            user_id = user.id
-            
-        # Get all requests for this user
-        requests = UserRequest.objects.filter(user_id=user_id)
-        
-        # Count by status
-        pending = requests.filter(status='pending').count()
-        approved = requests.filter(status='approved').count()
-        rejected = requests.filter(status='rejected').count()
-        
-        # Count by type
-        counts_by_type = {}
-        request_types = requests.values_list('request_type', flat=True).distinct()
-        
-        for req_type in request_types:
-            counts_by_type[req_type] = requests.filter(request_type=req_type).count()
-        
-        return {
-            'total': requests.count(),
-            'pending': pending,
-            'approved': approved,
-            'rejected': rejected,
-            'by_type': counts_by_type
-        }
-    
-    @staticmethod
-    def get_recent_status_updates(user, days=30, limit=10):
-        """
-        Get recent status updates for a user's requests.
-        
-        Args:
-            user: User object or ID
-            days: Number of days to look back
-            limit: Maximum number of updates to return
-            
-        Returns:
-            List of recent status updates
-        """
-        if isinstance(user, int):
-            user_id = user
-        else:
-            user_id = user.id
-            
-        start_date = timezone.now() - timezone.timedelta(days=days)
-        
-        # Get recently updated requests
-        recent_updates = UserRequest.objects.filter(
-            user_id=user_id,
-            updated_at__gte=start_date
-        ).order_by('-updated_at')[:limit]
-        
-        return recent_updates

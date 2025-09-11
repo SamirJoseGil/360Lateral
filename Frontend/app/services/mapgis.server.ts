@@ -1,10 +1,15 @@
-// filepath: d:\Accesos Directos\Escritorio\frontendx\app\services\mapgis.server.ts
+// Este archivo ahora usa los endpoints correctos según la documentación de lotes
 import { fetchWithAuth } from "~/utils/auth.server";
 
-// URL base para las operaciones de MapGIS
-const BASE_URL = "http://localhost:8000/api/lotes/public/";
+const API_URL = process.env.API_URL || "http://localhost:8000";
 
-// Tipos para los datos de MapGIS actualizados según la nueva respuesta del backend
+export { 
+  fetchMapGisData,
+  mapGisEndpoints,
+  type MapGisSearchType 
+} from "~/utils/api.server";
+
+// Tipos específicos para MapGIS que pueden seguir siendo útiles
 export type UsoSuelo = {
   categoria_uso: string;
   subcategoria_uso: string;
@@ -21,7 +26,6 @@ export type RestriccionesAmbientales = {
   retiros_rios?: string;
 };
 
-// Tipo para los resultados de búsqueda por CBML o matrícula
 export type MapGisLoteDetalle = {
   cbml: string;
   area_lote: string;
@@ -31,7 +35,7 @@ export type MapGisLoteDetalle = {
   aprovechamiento_urbano: AprovechamientoUrbano;
   restricciones_ambientales: RestriccionesAmbientales;
   
-  // Campos opcionales del modelo anterior que podrían seguir siendo útiles
+  // Campos opcionales
   matricula?: string;
   direccion?: string;
   latitud?: number;
@@ -41,7 +45,6 @@ export type MapGisLoteDetalle = {
   comuna?: string;
 };
 
-// Tipo para los resultados de búsqueda por dirección
 export type MapGisSearchResult = {
   cbml: string;
   matricula: string;
@@ -62,95 +65,131 @@ export type MapGisResponseSearch = {
   fuente: string;
 };
 
-// Consultar por CBML
+// Funciones específicas usando los endpoints correctos según la documentación de lotes
 export async function consultarPorCBML(request: Request, cbml: string) {
   console.log(`Consultando por CBML: ${cbml}`);
   
   try {
-    const { res, setCookieHeaders } = await fetchWithAuth(request, `${BASE_URL}cbml/`, {
+    // Usar el endpoint del módulo de lotes según la documentación
+    const endpoint = `${API_URL}/api/lotes/scrap/cbml/`;
+    
+    const { res, setCookieHeaders } = await fetchWithAuth(request, endpoint, {
       method: 'POST',
       headers: {
-        'Content-Type': 'application/json'
+        'Content-Type': 'application/json',
       },
       body: JSON.stringify({ cbml })
     });
     
     if (!res.ok) {
-      console.error(`Error en consulta CBML: ${res.status}`);
-      const errorText = await res.text();
-      throw new Error(`Error en consulta CBML: ${errorText}`);
+      throw new Error(`Error ${res.status}: ${res.statusText}`);
     }
     
-    const resultado = await res.json() as MapGisResponseDetalle;
-    
-    return {
-      resultado,
-      headers: setCookieHeaders
-    };
+    const resultado = await res.json();
+    return { resultado, headers: setCookieHeaders };
   } catch (error) {
     console.error(`Error en consultarPorCBML (${cbml}):`, error);
     throw error;
   }
 }
 
-// Consultar por matrícula inmobiliaria
 export async function consultarPorMatricula(request: Request, matricula: string) {
   console.log(`Consultando por matrícula: ${matricula}`);
   
   try {
-    const { res, setCookieHeaders } = await fetchWithAuth(request, `${BASE_URL}matricula/`, {
+    // Usar el endpoint del módulo de lotes según la documentación
+    const endpoint = `${API_URL}/api/lotes/scrap/matricula/`;
+    
+    const { res, setCookieHeaders } = await fetchWithAuth(request, endpoint, {
       method: 'POST',
       headers: {
-        'Content-Type': 'application/json'
+        'Content-Type': 'application/json',
       },
       body: JSON.stringify({ matricula })
     });
     
     if (!res.ok) {
-      console.error(`Error en consulta matrícula: ${res.status}`);
-      const errorText = await res.text();
-      throw new Error(`Error en consulta matrícula: ${errorText}`);
+      throw new Error(`Error ${res.status}: ${res.statusText}`);
     }
     
-    const resultado = await res.json() as MapGisResponseDetalle;
-    
-    return {
-      resultado,
-      headers: setCookieHeaders
-    };
+    const resultado = await res.json();
+    return { resultado, headers: setCookieHeaders };
   } catch (error) {
     console.error(`Error en consultarPorMatricula (${matricula}):`, error);
     throw error;
   }
 }
 
-// Consultar por dirección
 export async function consultarPorDireccion(request: Request, direccion: string) {
   console.log(`Consultando por dirección: ${direccion}`);
   
   try {
-    const { res, setCookieHeaders } = await fetchWithAuth(request, `${BASE_URL}direccion/`, {
+    // Usar el endpoint del módulo de lotes según la documentación
+    const endpoint = `${API_URL}/api/lotes/scrap/direccion/`;
+    
+    const { res, setCookieHeaders } = await fetchWithAuth(request, endpoint, {
       method: 'POST',
       headers: {
-        'Content-Type': 'application/json'
+        'Content-Type': 'application/json',
       },
       body: JSON.stringify({ direccion })
     });
     
     if (!res.ok) {
-      console.error(`Error en consulta dirección: ${res.status}`);
-      const errorText = await res.text();
-      throw new Error(`Error en consulta dirección: ${errorText}`);
+      throw new Error(`Error ${res.status}: ${res.statusText}`);
     }
     
-    const resultado = await res.json() as MapGisResponseSearch;
-    
-    return {
-      resultado,
-      headers: setCookieHeaders
-    };
+    const resultado = await res.json();
+    return { resultado, headers: setCookieHeaders };
   } catch (error) {
     console.error(`Error en consultarPorDireccion (${direccion}):`, error);
+    throw error;
+  }
+}
+
+// Función adicional para consultar restricciones ambientales
+export async function consultarRestricciones(request: Request, cbml: string) {
+  console.log(`Consultando restricciones ambientales para CBML: ${cbml}`);
+  
+  try {
+    // Usar el endpoint especializado para restricciones ambientales
+    const endpoint = `${API_URL}/api/lotes/consultar/restricciones/`;
+    
+    const { res, setCookieHeaders } = await fetchWithAuth(request, endpoint, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ cbml })
+    });
+    
+    if (!res.ok) {
+      throw new Error(`Error ${res.status}: ${res.statusText}`);
+    }
+    
+    const resultado = await res.json();
+    return { resultado, headers: setCookieHeaders };
+  } catch (error) {
+    console.error(`Error en consultarRestricciones (${cbml}):`, error);
+    throw error;
+  }
+}
+
+// Health check para MapGIS
+export async function checkMapGisHealth(request: Request) {
+  try {
+    const endpoint = `${API_URL}/api/lotes/health/mapgis/`;
+    
+    const { res, setCookieHeaders } = await fetchWithAuth(request, endpoint);
+    
+    if (!res.ok) {
+      throw new Error(`Error ${res.status}: ${res.statusText}`);
+    }
+    
+    const resultado = await res.json();
+    return { resultado, headers: setCookieHeaders };
+  } catch (error) {
+    console.error("Error en health check MapGIS:", error);
     throw error;
   }
 }

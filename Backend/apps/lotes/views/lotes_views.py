@@ -1,10 +1,11 @@
 """
-Vistas CRUD para la gestión de lotes
+Vistas CRUD para la gestión de lotes - Consolidadas y optimizadas
 """
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework import status
+from django.db import models
 import logging
 
 from ..models import Lote
@@ -23,26 +24,23 @@ def lote_list(request):
         try:
             # Filtrar lotes según permisos
             user = request.user
-            if user.is_superuser or user.role == 'admin':
+            if user.is_superuser or getattr(user, 'role', None) == 'admin':
                 lotes = Lote.objects.all()
-            elif user.role == 'developer':
-                # Simplificado sin proyectos por ahora
-                lotes = Lote.objects.filter(owner=user)
             else:
-                lotes = Lote.objects.filter(owner=user)
+                lotes = Lote.objects.filter(usuario=user)
                 
             serializer = LoteSerializer(lotes, many=True)
-            return Response(serializer.data)
+            return Response({
+                'count': len(serializer.data),
+                'results': serializer.data
+            })
         except Exception as e:
-            # Capturar errores de base de datos y proporcionar mensaje útil
-            import logging
-            logger = logging.getLogger(__name__)
             logger.error(f"Error al acceder a lotes: {str(e)}")
             
             if "no existe la relación" in str(e).lower():
                 return Response({
                     "error": "La tabla de lotes no existe en la base de datos.",
-                    "detail": "Este error ocurre cuando las migraciones no se han aplicado. Ejecuta 'python manage.py migrate' para crear las tablas necesarias.",
+                    "detail": "Ejecuta 'python manage.py migrate' para crear las tablas necesarias.",
                     "code": "table_not_exists"
                 }, status=500)
             
@@ -55,8 +53,8 @@ def lote_list(request):
         serializer = LoteSerializer(data=request.data, context={'request': request})
         if serializer.is_valid():
             # Asignar el propietario si no se proporcionó
-            if 'owner' not in serializer.validated_data:
-                serializer.validated_data['owner'] = request.user
+            if 'usuario' not in serializer.validated_data:
+                serializer.validated_data['usuario'] = request.user
                 
             serializer.save()
             return Response(serializer.data, status=status.HTTP_201_CREATED)
@@ -76,14 +74,12 @@ def lote_detail(request, pk):
     except Lote.DoesNotExist:
         return Response(status=status.HTTP_404_NOT_FOUND)
     except Exception as e:
-        import logging
-        logger = logging.getLogger(__name__)
         logger.error(f"Error al acceder a lote {pk}: {str(e)}")
         
         if "no existe la relación" in str(e).lower():
             return Response({
                 "error": "La tabla de lotes no existe en la base de datos.",
-                "detail": "Este error ocurre cuando las migraciones no se han aplicado. Ejecuta 'python manage.py migrate' para crear las tablas necesarias.",
+                "detail": "Ejecuta 'python manage.py migrate' para crear las tablas necesarias.",
                 "code": "table_not_exists"
             }, status=500)
         
@@ -94,7 +90,7 @@ def lote_detail(request, pk):
     
     # Verificar permisos
     user = request.user
-    if not (user.is_superuser or user.role == 'admin' or lote.owner == user):
+    if not (user.is_superuser or getattr(user, 'role', None) == 'admin' or lote.usuario == user):
         return Response({'detail': 'No tienes permiso para acceder a este lote'}, 
                       status=status.HTTP_403_FORBIDDEN)
     
@@ -110,8 +106,242 @@ def lote_detail(request, pk):
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     
     elif request.method == 'DELETE':
-        if not (user.is_superuser or user.role == 'admin'):
+        if not (user.is_superuser or getattr(user, 'role', None) == 'admin'):
             return Response({'detail': 'Solo los administradores pueden eliminar lotes'},
                           status=status.HTTP_403_FORBIDDEN)
         lote.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def lote_create(request):
+    """Crear un nuevo lote"""
+    try:
+        # Validar datos mínimos
+        if not request.data.get('nombre'):
+            return Response(
+                {"error": "El nombre del lote es requerido"}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Preparar datos para crear el lote
+        lote_data = {
+            'usuario': request.user,
+            'nombre': request.data.get('nombre', 'Nuevo lote'),
+            'estado': request.data.get('status', 'active')
+        }
+        
+        # Agregar campos opcionales si existen
+        optional_fields = [
+            'cbml', 'direccion', 'area', 'descripcion', 'matricula', 
+            'barrio', 'estrato', 'codigo_catastral', 'latitud', 'longitud',
+            'tratamiento_pot', 'uso_suelo', 'clasificacion_suelo'
+        ]
+        
+        for field in optional_fields:
+            if field in request.data and request.data.get(field):
+                lote_data[field] = request.data.get(field)
+        
+        # Metadatos adicionales
+        if 'metadatos' in request.data and isinstance(request.data.get('metadatos'), dict):
+            lote_data['metadatos'] = request.data.get('metadatos')
+        
+        # Crear el lote
+        lote = Lote.objects.create(**lote_data)
+        
+        logger.info(f"Lote creado: ID={lote.id}, Nombre={lote.nombre}, Usuario={request.user.username}")
+        
+        serializer = LoteSerializer(lote)
+        return Response({
+            'id': lote.id,
+            'mensaje': 'Lote creado exitosamente',
+            'lote': serializer.data
+        }, status=status.HTTP_201_CREATED)
+        
+    except Exception as e:
+        logger.exception(f"Error creando lote: {e}")
+        return Response(
+            {"error": f"Error creando lote: {str(e)}"}, 
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+
+@api_view(['PUT', 'PATCH'])
+@permission_classes([IsAuthenticated])
+def lote_update(request, pk):
+    """Actualizar un lote existente"""
+    try:
+        lote = Lote.objects.get(pk=pk)
+        
+        # Verificar permisos
+        if lote.usuario != request.user and not request.user.is_staff:
+            return Response(
+                {'detail': 'No tienes permiso para editar este lote'}, 
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        serializer = LoteDetailSerializer(lote, data=request.data, partial=True)
+        if serializer.is_valid():
+            serializer.save()
+            return Response({
+                'id': lote.id,
+                'mensaje': 'Lote actualizado exitosamente',
+                'lote': serializer.data
+            })
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        
+    except Lote.DoesNotExist:
+        return Response(
+            {"error": "Lote no encontrado"}, 
+            status=status.HTTP_404_NOT_FOUND
+        )
+    except Exception as e:
+        logger.exception(f"Error actualizando lote: {e}")
+        return Response(
+            {"error": f"Error actualizando lote: {str(e)}"}, 
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+
+@api_view(['DELETE'])
+@permission_classes([IsAuthenticated])
+def lote_delete(request, pk):
+    """Eliminar un lote"""
+    try:
+        lote = Lote.objects.get(id=pk, usuario=request.user)
+        nombre_lote = lote.nombre
+        lote.delete()
+        
+        return Response({
+            'mensaje': f'Lote "{nombre_lote}" eliminado exitosamente'
+        })
+        
+    except Lote.DoesNotExist:
+        return Response(
+            {"error": "Lote no encontrado"}, 
+            status=status.HTTP_404_NOT_FOUND
+        )
+    except Exception as e:
+        return Response(
+            {"error": f"Error eliminando lote: {str(e)}"}, 
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def lote_create_from_mapgis(request):
+    """Crear un nuevo lote importando datos desde MapGIS usando CBML"""
+    try:
+        cbml = request.data.get('cbml')
+        if not cbml:
+            return Response(
+                {"error": "CBML es requerido"}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Importar servicio MapGIS
+        from ..services.mapgis_service import MapGISService
+        mapgis_service = MapGISService()
+        
+        # Consultar datos en MapGIS
+        logger.info(f"Consultando datos en MapGIS para CBML: {cbml}")
+        resultado_mapgis = mapgis_service.buscar_por_cbml(cbml)
+        
+        # Verificar si se encontraron datos
+        if not resultado_mapgis.get('encontrado'):
+            return Response(
+                {"error": f"No se encontraron datos para el CBML {cbml}"}, 
+                status=status.HTTP_404_NOT_FOUND
+            )
+        
+        # Extraer datos de MapGIS
+        datos_mapgis = resultado_mapgis.get('datos', {})
+        
+        # Preparar datos para el lote
+        nombre_lote = request.data.get('nombre') or f"Lote CBML {cbml}"
+        
+        lote_data = {
+            'usuario': request.user,
+            'nombre': nombre_lote,
+            'cbml': cbml,
+            'estado': request.data.get('status', 'active')
+        }
+        
+        # Agregar datos de MapGIS
+        if datos_mapgis.get('area_lote_m2'):
+            lote_data['area'] = datos_mapgis.get('area_lote_m2')
+        
+        if datos_mapgis.get('clasificacion_suelo'):
+            lote_data['clasificacion_suelo'] = datos_mapgis.get('clasificacion_suelo')
+        
+        if datos_mapgis.get('aprovechamiento_urbano', {}).get('tratamiento'):
+            lote_data['tratamiento_pot'] = datos_mapgis['aprovechamiento_urbano']['tratamiento']
+        
+        # Crear el lote
+        lote = Lote.objects.create(**lote_data)
+        
+        logger.info(f"Lote creado desde MapGIS: ID={lote.id}, CBML={cbml}")
+        
+        serializer = LoteSerializer(lote)
+        return Response({
+            'id': lote.id,
+            'mensaje': 'Lote creado desde MapGIS exitosamente',
+            'lote': serializer.data,
+            'datos_mapgis': datos_mapgis
+        }, status=status.HTTP_201_CREATED)
+        
+    except Exception as e:
+        logger.exception(f"Error creando lote desde MapGIS: {e}")
+        return Response(
+            {"error": f"Error creando lote desde MapGIS: {str(e)}"}, 
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def lote_search(request):
+    """Buscar lotes aplicando filtros"""
+    try:
+        user = request.user
+        
+        # Base queryset según permisos
+        if user.is_superuser or getattr(user, 'role', None) == 'admin':
+            queryset = Lote.objects.all()
+        else:
+            queryset = Lote.objects.filter(usuario=user)
+        
+        # Aplicar filtros
+        if 'search' in request.query_params:
+            search_term = request.query_params['search']
+            queryset = queryset.filter(
+                models.Q(nombre__icontains=search_term) |
+                models.Q(direccion__icontains=search_term) |
+                models.Q(cbml__icontains=search_term)
+            )
+        
+        # Filtros específicos
+        if 'estrato' in request.query_params:
+            queryset = queryset.filter(estrato=request.query_params['estrato'])
+        
+        if 'estado' in request.query_params:
+            queryset = queryset.filter(estado=request.query_params['estado'])
+        
+        # Ordenamiento
+        ordering = request.query_params.get('ordering', '-fecha_creacion')
+        queryset = queryset.order_by(ordering)
+        
+        serializer = LoteSerializer(queryset, many=True)
+        return Response({
+            'count': len(serializer.data),
+            'results': serializer.data
+        })
+        
+    except Exception as e:
+        logger.exception(f"Error en búsqueda de lotes: {e}")
+        return Response(
+            {"error": f"Error en búsqueda: {str(e)}"}, 
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )

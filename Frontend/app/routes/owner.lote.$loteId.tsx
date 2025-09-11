@@ -3,9 +3,11 @@ import { Link, useLoaderData, useParams } from "@remix-run/react";
 import type { LoaderFunctionArgs } from "@remix-run/node";
 import { getUser } from "~/utils/auth.server";
 import { getLoteById } from "~/services/lotes.server";
+import { getNormativaPorCBML } from "~/services/pot.server";
 import { getLoteDocuments } from "~/services/documents.server";
 import DocumentStatusIndicator from "~/components/DocumentStatusIndicator";
 import RequiredDocumentsNotice from "~/components/RequiredDocumentsNotice";
+import POTInfo from "~/components/POTInfo";
 
 export async function loader({ request, params }: LoaderFunctionArgs) {
     // Verificar que el usuario esté autenticado y sea propietario
@@ -34,6 +36,19 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
             return json({ error: "No tienes permiso para ver este lote" }, { status: 403 });
         }
 
+        // Get POT normativa if CBML is available
+        let normativaPOT = null;
+        if (loteResponse.lote.cbml) {
+            try {
+                const potResponse = await getNormativaPorCBML(request, loteResponse.lote.cbml);
+                normativaPOT = potResponse.normativa;
+                console.log(`[LotePage] Normativa POT obtenida para CBML ${loteResponse.lote.cbml}`);
+            } catch (potError) {
+                console.error(`[LotePage] Error fetching POT data for CBML ${loteResponse.lote.cbml}:`, potError);
+                // Continue without POT data
+            }
+        }
+
         // Get documents for this lote (with error handling)
         let documents = [];
         let documentsCount = 0;
@@ -57,6 +72,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
 
         return json({
             lote: loteResponse.lote,
+            normativaPOT,
             documents,
             documentsCount
         }, {
@@ -70,6 +86,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     const { loteId } = useParams();
     const loaderData = useLoaderData<typeof loader>();
     const lote = 'lote' in loaderData ? loaderData.lote : {};
+    const normativaPOT = 'normativaPOT' in loaderData ? loaderData.normativaPOT : null;
 
     return (
         <div className="p-6">
@@ -177,6 +194,18 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
                                     <dd className="mt-1 text-sm text-gray-900">{lote.clasificacion_suelo || 'No especificado'}</dd>
                                 </div>
                             </dl>
+                        </div>
+                    )}
+
+                    {/* Normativa POT detallada desde el servicio usando el componente */}
+                    {normativaPOT && normativaPOT.codigo_tratamiento && (
+                        <div className="mt-8 border-t border-gray-200 pt-4">
+                            <h3 className="text-lg font-medium mb-4">Normativa POT Detallada</h3>
+                            <POTInfo
+                                potData={normativaPOT}
+                                showMapGisData={true}
+                                className="shadow-sm"
+                            />
                         </div>
                     )}
 

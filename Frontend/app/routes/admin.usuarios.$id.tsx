@@ -27,9 +27,11 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     const userId = params.id;
 
     try {
-        const response = await fetch(`http://localhost:8000/api/users/${userId}/`, {
+        const token = await getAccessTokenFromCookies(request);
+        const apiUrl = process.env.API_URL || "http://localhost:8000";
+        const response = await fetch(`${apiUrl}/api/users/${userId}/`, {
             headers: {
-                Authorization: `Bearer ${await getAccessTokenFromCookies(request)}`,
+                Authorization: `Bearer ${token}`,
             },
         }); if (!response.ok) {
             throw new Error("Error al cargar detalles del usuario");

@@ -18,6 +18,9 @@ urlpatterns = [
     
     # Vista para obtener el usuario actualmente autenticado
     path('me/', views.me, name='user-me'),
+    
+    # Vista para actualizar perfil del usuario actual
+    path('me/update/', views.update_profile, name='user-update-profile'),
 
     # User request URLs
     path('', include(router.urls)),

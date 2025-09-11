@@ -1,17 +1,11 @@
 # This file makes the views directory a Python package
 
 """
-Inicialización del módulo de vistas para la aplicación de lotes
+Vistas para la aplicación de lotes - Módulo optimizado
 """
 
 # Importar vistas CRUD básicas
-from .lotes_views import lote_list, lote_detail
-
-from .lote_views import (
-    lote_create,
-    lote_update,
-    lote_delete
-)
+from .lotes_views import lote_list, lote_detail, lote_create, lote_update, lote_delete
 
 # Importar vistas MapGIS
 from .mapgis_views import (
@@ -22,19 +16,17 @@ from .mapgis_views import (
     health_mapgis,
 )
 
-# Importar vistas de pruebas MapGIS
-from .test_mapgis_views import (
-    test_mapgis_session,
-    test_mapgis_real_connection,
-    investigate_mapgis_endpoints,
-    test_mapgis_complete_data,
-)
+# Importar vistas públicas de MapGIS
+from .public_mapgis_views import PublicCBMLView, PublicMatriculaView, PublicDireccionView
 
 # Importar vistas de tratamientos
 from .tratamientos_views import listar_tratamientos
 
-# Exportamos las vistas públicas
-from .public_mapgis_views import PublicCBMLView, PublicMatriculaView, PublicDireccionView
+# Importar vistas de favoritos
+from .favorites_views import FavoriteViewSet
+
+# Importar vistas de usuarios
+from .user_lotes import UserLotesView, my_lotes, user_lote_stats
 
 # Definir qué símbolos exporta este módulo
 __all__ = [
@@ -45,13 +37,15 @@ __all__ = [
     'scrap_cbml', 'scrap_matricula', 'scrap_direccion',
     'consultar_restricciones_completas', 'health_mapgis',
     
-    # Testing MapGIS
-    'test_mapgis_session', 'test_mapgis_real_connection',
-    'investigate_mapgis_endpoints', 'test_mapgis_complete_data',
-    
     # Tratamientos
     'listar_tratamientos',
 
     # Vistas públicas
     'PublicCBMLView', 'PublicMatriculaView', 'PublicDireccionView',
+    
+    # Favoritos
+    'FavoriteViewSet',
+    
+    # Usuarios
+    'UserLotesView', 'my_lotes', 'user_lote_stats',
 ]

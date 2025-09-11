@@ -45,7 +45,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
         const [lotesResponse, statsResponse, userStatsResponse] = await Promise.all([
             getMisLotes(request),
             getUserLotesStats(request),
-            getUserActivity(request).catch(err => {
+            getUserActivity(request, 30).catch(err => {
                 console.error("Error obteniendo actividad del usuario:", err);
                 return { activity: null, headers: new Headers() };
             })
@@ -75,6 +75,24 @@ export async function loader({ request }: LoaderFunctionArgs) {
         }));
 
 
+        // Combinar headers correctamente
+        const combinedHeaders = new Headers();
+        if (lotesResponse.headers) {
+            for (const [key, value] of lotesResponse.headers.entries()) {
+                combinedHeaders.append(key, value);
+            }
+        }
+        if (statsResponse.headers) {
+            for (const [key, value] of statsResponse.headers.entries()) {
+                combinedHeaders.append(key, value);
+            }
+        }
+        if (userStatsResponse.headers) {
+            for (const [key, value] of userStatsResponse.headers.entries()) {
+                combinedHeaders.append(key, value);
+            }
+        }
+
         // Enriquecer los datos con la actividad del usuario
         const userActivity = userStatsResponse.activity;
 
@@ -84,19 +102,18 @@ export async function loader({ request }: LoaderFunctionArgs) {
         return json({
             user,
             stats: {
-                ...statsResponse.stats,
+                totalLotes: statsResponse.stats.total || 0,
+                areaTotal: statsResponse.stats.area_total || 0,
                 valorEstimado,
+                lotesActivos: statsResponse.stats.activos || 0,
+                lotesPendientes: statsResponse.stats.pendientes || 0,
                 documentosCompletos: statsResponse.stats.documentacion_completa || 0,
-                documentosPendientes: lotes.length - (statsResponse.stats.documentacion_completa || 0),
+                documentosPendientes: (statsResponse.stats.total || 0) - (statsResponse.stats.documentacion_completa || 0),
                 totalEventos: userActivity?.total_events || 0,
                 ultimaActividad: userActivity?.last_activity?.timestamp || null
             },
             lotes,
-            headers: {
-                ...lotesResponse.headers,
-                ...statsResponse.headers,
-                ...userStatsResponse.headers
-            }
+            headers: combinedHeaders
         });
     } catch (error) {
         console.error("Error cargando datos del dashboard:", error);
@@ -151,7 +168,7 @@ export default function OwnerDashboard() {
                         </div>
                         <div className="ml-4">
                             <h2 className="text-gray-500 text-sm">Total Lotes</h2>
-                            <p className="text-2xl font-bold">{stats.totalLotes}</p>
+                            <p className="text-2xl font-bold">{(stats as any).totalLotes || 0}</p>
                         </div>
                     </div>
                 </div>
@@ -176,7 +193,7 @@ export default function OwnerDashboard() {
                         </div>
                         <div className="ml-4">
                             <h2 className="text-gray-500 text-sm">Área Total</h2>
-                            <p className="text-2xl font-bold">{formatArea(stats.areaTotal)}</p>
+                            <p className="text-2xl font-bold">{formatArea((stats as any).areaTotal)}</p>
                         </div>
                     </div>
                 </div>
@@ -201,7 +218,7 @@ export default function OwnerDashboard() {
                         </div>
                         <div className="ml-4">
                             <h2 className="text-gray-500 text-sm">Valor Estimado</h2>
-                            <p className="text-2xl font-bold">{formatCurrency(stats.valorEstimado)}</p>
+                            <p className="text-2xl font-bold">{formatCurrency((stats as any).valorEstimado || 0)}</p>
                         </div>
                     </div>
                 </div>
@@ -226,7 +243,7 @@ export default function OwnerDashboard() {
                         </div>
                         <div className="ml-4">
                             <h2 className="text-gray-500 text-sm">Docs. Completos</h2>
-                            <p className="text-2xl font-bold">{stats.documentosCompletos}</p>
+                            <p className="text-2xl font-bold">{(stats as any).documentosCompletos || 0}</p>
                         </div>
                     </div>
                 </div>
@@ -251,7 +268,7 @@ export default function OwnerDashboard() {
                         </div>
                         <div className="ml-4">
                             <h2 className="text-gray-500 text-sm">Docs. Pendientes</h2>
-                            <p className="text-2xl font-bold">{stats.documentosPendientes}</p>
+                            <p className="text-2xl font-bold">{(stats as any).documentosPendientes || 0}</p>
                         </div>
                     </div>
                 </div>

@@ -1,12 +1,14 @@
 """
-Vistas comunes para depuración y utilidades
+Vistas comunes para depuración, utilidades y health checks
 """
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
+from rest_framework import status
 from django.middleware.csrf import get_token
 from django.http import JsonResponse
 from django.conf import settings
+from .utils import comprehensive_health_check, check_database_health, check_cache_health
 import logging
 
 logger = logging.getLogger(__name__)
@@ -14,15 +16,44 @@ logger = logging.getLogger(__name__)
 @api_view(['GET'])
 @permission_classes([AllowAny])
 def health_check(request):
-    """Health check general del sistema"""
+    """
+    Health check completo del sistema integrado
+    """
+    health_data = comprehensive_health_check()
+    response_status = status.HTTP_200_OK if health_data['status'] == 'healthy' else status.HTTP_503_SERVICE_UNAVAILABLE
+    return Response(health_data, status=response_status)
+
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def simple_health_check(request):
+    """Health check simple para Docker y load balancers"""
     return Response({
-        'status': 'ok',
+        'status': 'healthy',
         'service': 'lateral360-backend',
-        'version': '1.0.0',
-        'environment': 'development' if settings.DEBUG else 'production',
-        'database': 'connected',
-        'cache': 'active'
+        'message': 'OK'
     })
+
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def database_health_check(request):
+    """Health check específico de base de datos"""
+    db_health = check_database_health()
+    response_status = status.HTTP_200_OK if db_health['status'] == 'healthy' else status.HTTP_503_SERVICE_UNAVAILABLE
+    return Response({
+        'database': db_health,
+        'timestamp': comprehensive_health_check()['timestamp']
+    }, status=response_status)
+
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def cache_health_check(request):
+    """Health check específico de cache/Redis"""
+    cache_health = check_cache_health()
+    response_status = status.HTTP_200_OK if cache_health['status'] == 'healthy' else status.HTTP_503_SERVICE_UNAVAILABLE
+    return Response({
+        'cache': cache_health,
+        'timestamp': comprehensive_health_check()['timestamp']
+    }, status=response_status)
 
 @api_view(['GET'])
 @permission_classes([AllowAny])
@@ -33,8 +64,9 @@ def version_info(request):
         'django_version': '4.2+',
         'python_version': '3.11+',
         'apps': [
-            'users', 'lotes', 'documents', 'stats', 'common'
-        ]
+            'authentication', 'users', 'lotes', 'documents', 'stats', 'pot', 'common'
+        ],
+        'environment': 'development' if settings.DEBUG else 'production'
     })
 
 @api_view(['GET'])
@@ -46,7 +78,8 @@ def system_status(request):
         'cache': 'active',
         'middleware': 'loaded',
         'apps_loaded': len(settings.INSTALLED_APPS),
-        'debug_mode': settings.DEBUG
+        'debug_mode': settings.DEBUG,
+        'environment': 'development' if settings.DEBUG else 'production'
     })
 
 @api_view(['GET'])

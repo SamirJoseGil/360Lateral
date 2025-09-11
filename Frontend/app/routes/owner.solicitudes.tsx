@@ -3,9 +3,10 @@ import type { LoaderFunctionArgs, ActionFunctionArgs } from "@remix-run/node";
 import { useLoaderData, useNavigation, Link, useFetcher } from "@remix-run/react";
 import { useState, useEffect } from "react";
 import { getUser } from "~/utils/auth.server";
-import { API_URL, fetchWithAuth } from "~/utils/api.server";
+import { fetchWithAuth } from "~/utils/auth.server";
 
-// Definimos interfaces para nuestros datos y respuestas
+// Definir constante para la URL base de la API
+const API_URL = process.env.API_URL || "http://localhost:8000";
 interface RequestSummary {
     total: number;
     pending: number;

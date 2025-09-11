@@ -4,9 +4,9 @@ Serializadores para la aplicación de documentos.
 from rest_framework import serializers
 from .models import Document
 from django.contrib.auth import get_user_model
-from apps.lotes.models import Lote
 
 User = get_user_model()
+
 
 class DocumentSerializer(serializers.ModelSerializer):
     """Serializador básico para el modelo Document"""
@@ -42,6 +42,7 @@ class DocumentSerializer(serializers.ModelSerializer):
             return obj.user.get_full_name() or obj.user.username
         return None
 
+
 class DocumentUploadSerializer(serializers.ModelSerializer):
     """Serializador para subir documentos"""
     class Meta:
@@ -54,14 +55,13 @@ class DocumentUploadSerializer(serializers.ModelSerializer):
         if 'file' not in data:
             raise serializers.ValidationError({"file": "Debe proporcionar un archivo para subir."})
         
-        # Verificar que se asocie con un lote
+        # Verificar que se asocie con un lote (opcional)
         lote = data.get('lote')
-        
-        # Si se proporciona un lote, verificar que exista
         if lote:
             try:
+                from apps.lotes.models import Lote
                 Lote.objects.get(pk=lote.pk)
-            except Lote.DoesNotExist:
+            except:
                 raise serializers.ValidationError({"lote": "El lote especificado no existe."})
         
         return data
@@ -76,10 +76,9 @@ class DocumentUploadSerializer(serializers.ModelSerializer):
         # Crear el documento
         return Document.objects.create(**validated_data)
 
+
 class DocumentValidationSerializer(serializers.ModelSerializer):
-    """
-    Serializer for document validation operations.
-    """
+    """Serializador para operaciones de validación de documentos."""
     lote_nombre = serializers.SerializerMethodField()
     solicitante_nombre = serializers.SerializerMethodField()
     tipo_documento = serializers.CharField(source='document_type', read_only=True)
@@ -131,9 +130,7 @@ class DocumentValidationSerializer(serializers.ModelSerializer):
 
 
 class DocumentValidateActionSerializer(serializers.Serializer):
-    """
-    Serializer for document validation action.
-    """
+    """Serializador para acciones de validación de documentos."""
     action = serializers.ChoiceField(choices=['validar', 'rechazar'])
     comments = serializers.CharField(required=False, allow_blank=True)
     
@@ -144,9 +141,7 @@ class DocumentValidateActionSerializer(serializers.Serializer):
 
 
 class DocumentListSerializer(serializers.ModelSerializer):
-    """
-    Simplified serializer for document listings.
-    """
+    """Serializador simplificado para listados de documentos."""
     tipo = serializers.CharField(source='document_type')
     estado = serializers.SerializerMethodField()
     fecha_subida = serializers.DateTimeField(source='created_at')

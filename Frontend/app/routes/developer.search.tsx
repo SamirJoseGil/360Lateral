@@ -1,679 +1,459 @@
-import { json } from "@remix-run/node";
-import { Form, Link, useLoaderData, useSearchParams } from "@remix-run/react";
-import type { LoaderFunctionArgs } from "@remix-run/node";
+import { json, redirect } from "@remix-run/node";
+import type { LoaderFunctionArgs, ActionFunctionArgs } from "@remix-run/node";
+import { Form, useLoaderData, useActionData, useNavigation } from "@remix-run/react";
+import { useState } from "react";
 import { getUser } from "~/utils/auth.server";
-import { useState, useEffect } from "react";
-import { recordEvent } from "~/services/stats.server";
-import { fetchWithAuth } from "~/utils/auth.server";
-// Importamos la versión segura para cliente de API_BASE_URL
-import { API_BASE_URL } from "~/utils/api.config";
-
-// Tipos para los filtros y resultados
-type SearchFilter = {
-    area: { min?: number; max?: number };
-    price: { min?: number; max?: number };
-    zone: string[];
-    treatment: string[];
-};
-
-type SearchLotResult = {
-    id: number;
-    name: string;
-    address: string;
-    area: number;
-    price: number;
-    zone: string;
-    treatment: string;
-    potentialValue: number;
-    isFavorite: boolean;
-};
-
-type SavedCriteria = {
-    id: number;
-    name: string;
-    area: string;
-    zone: string;
-    budget: string;
-    treatment: string;
-};
-
-type LoaderData = {
-    searchResults: SearchLotResult[];
-    savedCriteria: SavedCriteria[];
-    filterOptions: {
-        zones: string[];
-        treatments: string[];
-        minArea: number;
-        maxArea: number;
-        minPrice: number;
-        maxPrice: number;
-    };
-    selectedCriteria: number | null;
-    query: string | null;
-    error?: string;
-};
+import { searchLotes, addLoteToFavorites, removeLoteFromFavorites } from "~/services/lotes.server";
+import { getNormativaPorCBML } from "~/services/pot.server";
+import POTInfo from "~/components/POTInfo";
 
 export async function loader({ request }: LoaderFunctionArgs) {
-    // El usuario ya ha sido verificado en el layout padre
+    // Verificar que el usuario esté autenticado y sea developer
     const user = await getUser(request);
+    if (!user) {
+        return redirect("/login");
+    }
+
+    if (user.role !== "developer") {
+        return redirect(`/${user.role}`);
+    }
 
     const url = new URL(request.url);
-    const criteriaId = url.searchParams.get("criteria");
-    const query = url.searchParams.get("q") || "";
-
-    // Parámetros de filtro
-    const minArea = url.searchParams.get("minArea");
-    const maxArea = url.searchParams.get("maxArea");
-    const minPrice = url.searchParams.get("minPrice");
-    const maxPrice = url.searchParams.get("maxPrice");
-    const zones = url.searchParams.getAll("zone");
-    const treatments = url.searchParams.getAll("treatment");
+    const searchParams = {
+        search: url.searchParams.get("q") || "",
+        area_min: url.searchParams.get("area_min") ? parseFloat(url.searchParams.get("area_min")!) : undefined,
+        area_max: url.searchParams.get("area_max") ? parseFloat(url.searchParams.get("area_max")!) : undefined,
+        estrato: url.searchParams.get("estrato") ? parseInt(url.searchParams.get("estrato")!) : undefined,
+        barrio: url.searchParams.get("zona") || "",
+        tratamiento_pot: url.searchParams.get("tratamiento_pot") || "",
+        limit: parseInt(url.searchParams.get("page_size") || "12"),
+        offset: (parseInt(url.searchParams.get("page") || "1") - 1) * parseInt(url.searchParams.get("page_size") || "12")
+    };
 
     try {
-        // Registrar evento de búsqueda
-        await recordEvent(request, {
-            type: "search",
-            name: "developer_lot_search",
-            value: {
-                user_id: user.id,
-                criteria_id: criteriaId,
-                query,
-                filters: {
-                    area: { min: minArea, max: maxArea },
-                    price: { min: minPrice, max: maxPrice },
-                    zones,
-                    treatments
-                }
-            }
-        });
+        // Realizar búsqueda de lotes con filtros
+        const searchResponse = await searchLotes(request, searchParams);
 
-        // Obtener criterios de búsqueda guardados del usuario
-        const { res: criteriaResponse } = await fetchWithAuth(
-            request,
-            `${API_BASE_URL}/api/developer/search-criteria/`
+        // Para cada lote que tenga CBML, intentar obtener información POT
+        const lotesConPOT = await Promise.all(
+            searchResponse.lotes.map(async (lote: any) => {
+                let potData = null;
+
+                if (lote.cbml) {
+                    try {
+                        const potResponse = await getNormativaPorCBML(request, lote.cbml);
+                        potData = potResponse.normativa;
+                    } catch (potError) {
+                        console.error(`Error obteniendo POT para lote ${lote.id}:`, potError);
+                    }
+                }
+
+                return {
+                    ...lote,
+                    potData
+                };
+            })
         );
 
-        let savedCriteria = [];
-        if (criteriaResponse.ok) {
-            const criteriaData = await criteriaResponse.json();
-            savedCriteria = criteriaData.results || [];
-        } else {
-            console.error("Error obteniendo criterios guardados:", criteriaResponse.statusText);
-            // Usar criterios por defecto si falla
-            savedCriteria = [
-                { id: 1, name: "Criterio residencial", area: "300-500", zone: "Norte", budget: "200M-400M", treatment: "Residencial" },
-                { id: 2, name: "Criterio comercial", area: "400-800", zone: "Centro", budget: "500M-800M", treatment: "Comercial" }
-            ];
-        }
+        const currentPage = parseInt(url.searchParams.get("page") || "1");
+        const pageSize = parseInt(url.searchParams.get("page_size") || "12");
+        const totalPages = Math.ceil(searchResponse.count / pageSize);
 
-        // Construir URL de búsqueda con filtros
-        let searchUrl = `${API_BASE_URL}/api/lotes/?`;
-        const searchParams = new URLSearchParams();
-
-        if (query) searchParams.append("search", query);
-        if (minArea) searchParams.append("min_area", minArea);
-        if (maxArea) searchParams.append("max_area", maxArea);
-        if (minPrice) searchParams.append("min_price", minPrice);
-        if (maxPrice) searchParams.append("max_price", maxPrice);
-
-        // Añadir zonas y tratamientos como filtros múltiples
-        zones.forEach(zone => searchParams.append("zone", zone));
-        treatments.forEach(treatment => searchParams.append("treatment", treatment));
-
-        // Si hay un criterio seleccionado, añadir sus filtros
-        if (criteriaId) {
-            const selectedCriteria = savedCriteria.find((c: SavedCriteria) => c.id.toString() === criteriaId);
-            if (selectedCriteria) {
-                // Añadir filtros del criterio seleccionado
-                if (selectedCriteria.zone) searchParams.append("zone", selectedCriteria.zone);
-                if (selectedCriteria.treatment) searchParams.append("treatment", selectedCriteria.treatment);
-
-                // Procesar área (formato: "300-500")
-                if (selectedCriteria.area) {
-                    const [minCriteriaArea, maxCriteriaArea] = selectedCriteria.area.split("-");
-                    if (minCriteriaArea && !minArea) searchParams.append("min_area", minCriteriaArea);
-                    if (maxCriteriaArea && !maxArea) searchParams.append("max_area", maxCriteriaArea);
-                }
-
-                // Procesar presupuesto (formato: "200M-400M")
-                if (selectedCriteria.budget) {
-                    const [minBudget, maxBudget] = selectedCriteria.budget.split("-");
-                    const minValue = minBudget?.replace("M", "000000");
-                    const maxValue = maxBudget?.replace("M", "000000");
-
-                    if (minValue && !minPrice) searchParams.append("min_price", minValue);
-                    if (maxValue && !maxPrice) searchParams.append("max_price", maxValue);
-                }
+        return json({
+            user,
+            lotes: lotesConPOT,
+            totalCount: searchResponse.count,
+            pagination: {
+                page: currentPage,
+                totalPages,
+                next: searchResponse.next,
+                previous: searchResponse.previous
+            },
+            filters: {
+                q: url.searchParams.get("q") || "",
+                area_min: url.searchParams.get("area_min") || "",
+                area_max: url.searchParams.get("area_max") || "",
+                estrato: url.searchParams.get("estrato") || "",
+                zona: url.searchParams.get("zona") || "",
+                tratamiento_pot: url.searchParams.get("tratamiento_pot") || ""
             }
-        }
-
-        searchUrl += searchParams.toString();
-
-        // Realizar búsqueda de lotes
-        const { res: lotesResponse } = await fetchWithAuth(request, searchUrl);
-
-        let searchResults: SearchLotResult[] = [];
-        if (lotesResponse.ok) {
-            const lotesData = await lotesResponse.json();
-
-            // Transformar los datos al formato esperado
-            searchResults = (lotesData.results || []).map((lote: any) => ({
-                id: lote.id,
-                name: lote.nombre || `Lote ${lote.cbml}`,
-                address: lote.direccion || "Dirección no disponible",
-                area: lote.area || 0,
-                price: lote.price || lote.valor_estimado || 0,
-                zone: lote.barrio || lote.zona || "No especificado",
-                treatment: lote.tratamiento_pot || "No especificado",
-                potentialValue: lote.valor_potencial || lote.price * 1.25 || 0, // Estimación si no hay valor potencial
-                isFavorite: lote.favorito || false
-            }));
-        } else {
-            console.error("Error en búsqueda de lotes:", lotesResponse.statusText);
-        }
-
-        // Obtener opciones para filtros (zonas, tratamientos, rangos)
-        const { res: filtersResponse } = await fetchWithAuth(
-            request,
-            `${API_BASE_URL}/api/lotes/filter-options/`
-        );
-
-        let filterOptions = {
-            zones: ["Norte", "Sur", "Este", "Oeste", "Centro"],
-            treatments: ["Residencial", "Comercial", "Industrial", "Mixto"],
-            minArea: 200,
-            maxArea: 2000,
-            minPrice: 100000000,
-            maxPrice: 2000000000
-        };
-
-        if (filtersResponse.ok) {
-            const filtersData = await filtersResponse.json();
-            filterOptions = {
-                zones: filtersData.zones || filterOptions.zones,
-                treatments: filtersData.treatments || filterOptions.treatments,
-                minArea: filtersData.area_range?.min || filterOptions.minArea,
-                maxArea: filtersData.area_range?.max || filterOptions.maxArea,
-                minPrice: filtersData.price_range?.min || filterOptions.minPrice,
-                maxPrice: filtersData.price_range?.max || filterOptions.maxPrice
-            };
-        } else {
-            console.error("Error obteniendo opciones de filtro:", filtersResponse.statusText);
-        }
-
-        return json<LoaderData>({
-            searchResults,
-            savedCriteria,
-            filterOptions,
-            selectedCriteria: criteriaId ? parseInt(criteriaId) : null,
-            query
+        }, {
+            headers: searchResponse.headers
         });
     } catch (error) {
         console.error("Error en búsqueda de lotes:", error);
-        return json<LoaderData>({
-            searchResults: [],
-            savedCriteria: [],
-            filterOptions: {
-                zones: [],
-                treatments: [],
-                minArea: 0,
-                maxArea: 0,
-                minPrice: 0,
-                maxPrice: 0
+        return json({
+            user,
+            lotes: [],
+            totalCount: 0,
+            pagination: { page: 1, totalPages: 0 },
+            filters: {
+                q: "",
+                area_min: "",
+                area_max: "",
+                estrato: "",
+                zona: "",
+                tratamiento_pot: ""
             },
-            selectedCriteria: null,
-            query: null,
-            error: "Error al cargar resultados de búsqueda"
+            error: "Error al realizar la búsqueda"
         });
     }
 }
 
-// Formateador de moneda para COP
-const formatCurrency = (value: number): string => {
-    return new Intl.NumberFormat("es-CO", {
-        style: "currency",
-        currency: "COP",
-        minimumFractionDigits: 0,
-    }).format(value);
-};
+export async function action({ request }: ActionFunctionArgs) {
+    // Verificar que el usuario esté autenticado y sea developer
+    const user = await getUser(request);
+    if (!user || user.role !== "developer") {
+        return redirect("/");
+    }
 
-export default function DeveloperSearch() {
-    const {
-        searchResults,
-        savedCriteria,
-        filterOptions,
-        selectedCriteria,
-        query: initialQuery,
-        error
-    } = useLoaderData<typeof loader>();
+    const formData = await request.formData();
+    const action = formData.get("action") as string;
+    const loteId = formData.get("loteId") as string;
 
-    const [searchParams, setSearchParams] = useSearchParams();
-    const [searchQuery, setSearchQuery] = useState(initialQuery || "");
-
-    // Estados para filtros
-    const [activeFilters, setActiveFilters] = useState<SearchFilter>({
-        area: {},
-        price: {},
-        zone: [],
-        treatment: []
-    });
-
-    const [filtersOpen, setFiltersOpen] = useState(false);
-
-    // Cargar filtro inicial si hay un criterio seleccionado
-    useEffect(() => {
-        if (selectedCriteria) {
-            const criteria = savedCriteria.find((c: SavedCriteria) => c.id === selectedCriteria);
-            if (criteria) {
-                // Convertir criterios guardados a formato de filtro activo
-                setActiveFilters({
-                    area: {}, // Parsear del string "300-500" a { min: 300, max: 500 }
-                    price: {}, // Parsear del string "200M-400M"
-                    zone: [criteria.zone],
-                    treatment: [criteria.treatment]
+    try {
+        switch (action) {
+            case "add_favorite": {
+                const result = await addLoteToFavorites(request, parseInt(loteId));
+                return json({
+                    success: true,
+                    message: "Lote agregado a favoritos",
+                    isFavorite: true,
+                    loteId
+                }, {
+                    headers: result.headers
                 });
             }
-        }
-    }, [selectedCriteria, savedCriteria]);
 
-    // Manejar búsqueda
-    const handleSearch = (e: React.FormEvent) => {
-        e.preventDefault();
-
-        // Actualizar URL con parámetros de búsqueda
-        const params = new URLSearchParams(searchParams);
-        if (searchQuery) {
-            params.set("q", searchQuery);
-        } else {
-            params.delete("q");
-        }
-
-        setSearchParams(params);
-    };
-
-    // Manejar aplicación de filtros
-    const applyFilters = () => {
-        // Actualizar URL con filtros
-        const params = new URLSearchParams(searchParams);
-
-        // Criterio de búsqueda (si existe)
-        const criteriaParam = searchParams.get("criteria");
-        if (criteriaParam) {
-            params.set("criteria", criteriaParam);
-        }
-
-        // Búsqueda de texto
-        if (searchQuery) {
-            params.set("q", searchQuery);
-        }
-
-        // Cerrar panel de filtros
-        setFiltersOpen(false);
-
-        // Actualizar URL
-        setSearchParams(params);
-    };
-
-    // Función para alternar el estado de favorito
-    const toggleFavorite = async (lotId: number) => {
-        try {
-            // Realizar petición al backend usando el endpoint correcto para alternar favorito
-            const response = await fetch(`${API_BASE_URL}/api/lotes/favorites/toggle/`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${document.cookie.split('=')[1]}` // Obtener token de cookie
-                },
-                body: JSON.stringify({ lote_id: lotId }),
-            });
-
-            if (!response.ok) {
-                throw new Error('Error al actualizar favorito');
+            case "remove_favorite": {
+                const result = await removeLoteFromFavorites(request, parseInt(loteId));
+                return json({
+                    success: true,
+                    message: "Lote removido de favoritos",
+                    isFavorite: false,
+                    loteId
+                }, {
+                    headers: result.headers
+                });
             }
 
-            // Actualizar UI optimísticamente invirtiendo el estado del favorito localmente
-            const updatedResults = searchResults.map(lot =>
-                lot.id === lotId ? { ...lot, isFavorite: !lot.isFavorite } : lot
-            );
-
-            // Forzar recarga de datos
-            setSearchParams(prev => {
-                const newParams = new URLSearchParams(prev);
-                newParams.set('_t', Date.now().toString());
-                return newParams;
-            });
-
-            console.log(`Toggled favorite status for lot ${lotId}`);
-        } catch (error) {
-            console.error('Error toggling favorite:', error);
-            // Aquí se podría mostrar una notificación de error
+            default:
+                return json({
+                    success: false,
+                    message: "Acción no válida"
+                });
         }
+    } catch (error) {
+        console.error(`Error en acción ${action}:`, error);
+        return json({
+            success: false,
+            message: `Error al ${action === "add_favorite" ? "agregar" : "remover"} favorito`
+        });
+    }
+}
+
+export default function DeveloperSearch() {
+    const loaderData = useLoaderData<typeof loader>();
+    const actionData = useActionData<typeof action>();
+    const navigation = useNavigation();
+    const [selectedLote, setSelectedLote] = useState<any>(null);
+    const [showPOTModal, setShowPOTModal] = useState(false);
+
+    const isSearching = navigation.state === "loading";
+
+    // Extraer datos del loader con manejo de errores
+    const user = 'user' in loaderData ? loaderData.user : null;
+    const lotes = 'lotes' in loaderData ? loaderData.lotes : [];
+    const totalCount = 'totalCount' in loaderData ? loaderData.totalCount : 0;
+    const pagination = 'pagination' in loaderData ? loaderData.pagination : { page: 1, totalPages: 0 };
+    const filters = 'filters' in loaderData ? loaderData.filters : { q: "", area_min: "", area_max: "", estrato: "", zona: "", tratamiento_pot: "" };
+    const error = 'error' in loaderData ? loaderData.error : null;
+
+    // Función para abrir modal de información POT
+    const openPOTModal = (lote: any) => {
+        setSelectedLote(lote);
+        setShowPOTModal(true);
+    };
+
+    // Función para formatear filtros activos
+    const getActiveFilters = () => {
+        const active = [];
+        if (filters.q) active.push(`Búsqueda: "${filters.q}"`);
+        if (filters.area_min || filters.area_max) {
+            active.push(`Área: ${filters.area_min || "0"} - ${filters.area_max || "∞"} m²`);
+        }
+        if (filters.estrato) active.push(`Estrato: ${filters.estrato}`);
+        if (filters.zona) active.push(`Zona: ${filters.zona}`);
+        if (filters.tratamiento_pot) active.push(`Tratamiento: ${filters.tratamiento_pot}`);
+        return active;
     };
 
     return (
-        <div>
-            <header className="mb-6">
-                <h1 className="text-2xl font-bold">Búsqueda de Lotes</h1>
-                <p className="text-gray-600 mt-1">
-                    Encuentra lotes disponibles según tus criterios de inversión
+        <div className="p-6">
+            {/* Header */}
+            <div className="mb-8">
+                <h1 className="text-3xl font-bold">Búsqueda de Lotes</h1>
+                <p className="text-gray-600 mt-2">
+                    Encuentra lotes disponibles según tus criterios de desarrollo
                 </p>
-            </header>
+            </div>
 
+            {/* Error message */}
             {error && (
-                <div className="bg-red-100 border-l-4 border-red-500 p-4 mb-6">
+                <div className="mb-6 bg-red-50 border-l-4 border-red-400 p-4">
                     <p className="text-red-700">{error}</p>
                 </div>
             )}
 
-            <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
-                {/* Panel de filtros (móvil: modal, desktop: sidebar) */}
-                <div className={`lg:block ${filtersOpen ? 'fixed inset-0 z-50 bg-black bg-opacity-50 p-4' : 'hidden'}`}>
-                    <div className={`bg-white p-4 rounded-lg shadow ${filtersOpen ? 'max-w-md mx-auto mt-20' : ''}`}>
-                        <div className="flex justify-between items-center mb-4">
-                            <h2 className="text-lg font-semibold">Filtros</h2>
-                            {filtersOpen && (
-                                <button
-                                    onClick={() => setFiltersOpen(false)}
-                                    className="text-gray-500 hover:text-gray-700"
-                                >
-                                    <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
-                                    </svg>
-                                </button>
-                            )}
-                        </div>
+            {/* Action result message */}
+            {actionData?.message && (
+                <div className={`mb-6 p-4 rounded-md ${actionData.success
+                        ? "bg-green-50 border-l-4 border-green-400 text-green-700"
+                        : "bg-red-50 border-l-4 border-red-400 text-red-700"
+                    }`}>
+                    {actionData.message}
+                </div>
+            )}
 
-                        {/* Criterios guardados */}
-                        <div className="mb-6">
-                            <h3 className="text-sm font-medium text-gray-700 mb-2">Mis Criterios</h3>
-                            <div className="space-y-2">
-                                {savedCriteria.map((criteria) => (
-                                    <Link
-                                        key={criteria.id}
-                                        to={`?criteria=${criteria.id}`}
-                                        className={`block p-2 text-sm rounded-md ${selectedCriteria === criteria.id
-                                            ? 'bg-indigo-100 text-indigo-800 font-medium'
-                                            : 'hover:bg-gray-100'
-                                            }`}
-                                    >
-                                        {criteria.name}
-                                    </Link>
-                                ))}
-
-                                <Link
-                                    to="/developer/investment/new"
-                                    className="block p-2 text-sm text-indigo-600 hover:text-indigo-800"
-                                >
-                                    + Crear nuevo criterio
-                                </Link>
-                            </div>
-                        </div>
-
-                        <div className="border-t pt-4 mb-4">
-                            <h3 className="text-sm font-medium text-gray-700 mb-2">Área (m²)</h3>
-                            <div className="grid grid-cols-2 gap-2">
-                                <div>
-                                    <label className="block text-xs text-gray-500">Mínimo</label>
-                                    <input
-                                        type="number"
-                                        className="w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50"
-                                        placeholder="Min"
-                                        value={activeFilters.area.min || ''}
-                                        onChange={(e) => setActiveFilters({
-                                            ...activeFilters,
-                                            area: { ...activeFilters.area, min: parseInt(e.target.value) || undefined }
-                                        })}
-                                    />
-                                </div>
-                                <div>
-                                    <label className="block text-xs text-gray-500">Máximo</label>
-                                    <input
-                                        type="number"
-                                        className="w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50"
-                                        placeholder="Max"
-                                        value={activeFilters.area.max || ''}
-                                        onChange={(e) => setActiveFilters({
-                                            ...activeFilters,
-                                            area: { ...activeFilters.area, max: parseInt(e.target.value) || undefined }
-                                        })}
-                                    />
-                                </div>
-                            </div>
-                        </div>
-
-                        <div className="mb-4">
-                            <h3 className="text-sm font-medium text-gray-700 mb-2">Precio</h3>
-                            <div className="grid grid-cols-2 gap-2">
-                                <div>
-                                    <label className="block text-xs text-gray-500">Mínimo</label>
-                                    <input
-                                        type="number"
-                                        className="w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50"
-                                        placeholder="Min"
-                                        value={activeFilters.price.min || ''}
-                                        onChange={(e) => setActiveFilters({
-                                            ...activeFilters,
-                                            price: { ...activeFilters.price, min: parseInt(e.target.value) || undefined }
-                                        })}
-                                    />
-                                </div>
-                                <div>
-                                    <label className="block text-xs text-gray-500">Máximo</label>
-                                    <input
-                                        type="number"
-                                        className="w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50"
-                                        placeholder="Max"
-                                        value={activeFilters.price.max || ''}
-                                        onChange={(e) => setActiveFilters({
-                                            ...activeFilters,
-                                            price: { ...activeFilters.price, max: parseInt(e.target.value) || undefined }
-                                        })}
-                                    />
-                                </div>
-                            </div>
-                        </div>
-
-                        <div className="mb-4">
-                            <h3 className="text-sm font-medium text-gray-700 mb-2">Zona</h3>
-                            <div className="space-y-2">
-                                {filterOptions.zones.map((zone) => (
-                                    <label key={zone} className="flex items-center">
-                                        <input
-                                            type="checkbox"
-                                            className="rounded border-gray-300 text-indigo-600 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50"
-                                            checked={activeFilters.zone.includes(zone)}
-                                            onChange={(e) => {
-                                                if (e.target.checked) {
-                                                    setActiveFilters({
-                                                        ...activeFilters,
-                                                        zone: [...activeFilters.zone, zone]
-                                                    });
-                                                } else {
-                                                    setActiveFilters({
-                                                        ...activeFilters,
-                                                        zone: activeFilters.zone.filter(z => z !== zone)
-                                                    });
-                                                }
-                                            }}
-                                        />
-                                        <span className="ml-2 text-sm text-gray-700">{zone}</span>
-                                    </label>
-                                ))}
-                            </div>
-                        </div>
-
-                        <div className="mb-6">
-                            <h3 className="text-sm font-medium text-gray-700 mb-2">Tratamiento</h3>
-                            <div className="space-y-2">
-                                {filterOptions.treatments.map((treatment) => (
-                                    <label key={treatment} className="flex items-center">
-                                        <input
-                                            type="checkbox"
-                                            className="rounded border-gray-300 text-indigo-600 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50"
-                                            checked={activeFilters.treatment.includes(treatment)}
-                                            onChange={(e) => {
-                                                if (e.target.checked) {
-                                                    setActiveFilters({
-                                                        ...activeFilters,
-                                                        treatment: [...activeFilters.treatment, treatment]
-                                                    });
-                                                } else {
-                                                    setActiveFilters({
-                                                        ...activeFilters,
-                                                        treatment: activeFilters.treatment.filter(t => t !== treatment)
-                                                    });
-                                                }
-                                            }}
-                                        />
-                                        <span className="ml-2 text-sm text-gray-700">{treatment}</span>
-                                    </label>
-                                ))}
-                            </div>
-                        </div>
-
-                        <div className="flex justify-between">
-                            <button
-                                onClick={() => {
-                                    setActiveFilters({
-                                        area: {},
-                                        price: {},
-                                        zone: [],
-                                        treatment: []
-                                    });
-                                }}
-                                className="text-sm text-gray-600 hover:text-gray-800"
-                            >
-                                Limpiar filtros
-                            </button>
-                            <button
-                                onClick={applyFilters}
-                                className="px-4 py-2 bg-indigo-600 text-white text-sm rounded-md hover:bg-indigo-700"
-                            >
-                                Aplicar filtros
-                            </button>
-                        </div>
+            {/* Basic Search Form */}
+            <div className="mb-8 bg-white rounded-lg shadow p-6">
+                <Form method="get" className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                            Búsqueda general
+                        </label>
+                        <input
+                            type="text"
+                            name="q"
+                            defaultValue={filters.q}
+                            className="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-300 focus:ring focus:ring-blue-200"
+                            placeholder="Dirección, barrio, CBML..."
+                        />
                     </div>
+
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                            Área mínima (m²)
+                        </label>
+                        <input
+                            type="number"
+                            name="area_min"
+                            defaultValue={filters.area_min}
+                            className="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-300 focus:ring focus:ring-blue-200"
+                            placeholder="100"
+                        />
+                    </div>
+
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                            Área máxima (m²)
+                        </label>
+                        <input
+                            type="number"
+                            name="area_max"
+                            defaultValue={filters.area_max}
+                            className="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-300 focus:ring focus:ring-blue-200"
+                            placeholder="1000"
+                        />
+                    </div>
+
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                            Estrato
+                        </label>
+                        <select
+                            name="estrato"
+                            defaultValue={filters.estrato}
+                            className="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-300 focus:ring focus:ring-blue-200"
+                        >
+                            <option value="">Todos</option>
+                            <option value="1">1</option>
+                            <option value="2">2</option>
+                            <option value="3">3</option>
+                            <option value="4">4</option>
+                            <option value="5">5</option>
+                            <option value="6">6</option>
+                        </select>
+                    </div>
+
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                            Zona/Barrio
+                        </label>
+                        <input
+                            type="text"
+                            name="zona"
+                            defaultValue={filters.zona}
+                            className="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-300 focus:ring focus:ring-blue-200"
+                            placeholder="Poblado, Laureles..."
+                        />
+                    </div>
+
+                    <div className="flex items-end">
+                        <button
+                            type="submit"
+                            className="w-full bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700"
+                        >
+                            Buscar
+                        </button>
+                    </div>
+                </Form>
+            </div>
+
+            {/* Results summary */}
+            <div className="mb-6 flex justify-between items-center">
+                <div className="text-sm text-gray-500">
+                    {isSearching ? (
+                        <span className="flex items-center">
+                            <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-gray-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                            </svg>
+                            Buscando...
+                        </span>
+                    ) : (
+                        `Se encontraron ${totalCount.toLocaleString()} lotes`
+                    )}
                 </div>
 
-                {/* Contenido principal */}
-                <div className="lg:col-span-3">
-                    {/* Barra de búsqueda y filtros */}
-                    <div className="bg-white p-4 rounded-lg shadow mb-6">
-                        <Form method="get" onSubmit={handleSearch} className="flex flex-wrap gap-2">
-                            <div className="flex-grow">
-                                <input
-                                    type="text"
-                                    name="q"
-                                    placeholder="Buscar por dirección, nombre, etc."
-                                    className="w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50"
-                                    value={searchQuery}
-                                    onChange={(e) => setSearchQuery(e.target.value)}
-                                />
-                            </div>
-                            <button
-                                type="submit"
-                                className="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700"
-                            >
-                                Buscar
-                            </button>
-                            <button
-                                type="button"
-                                onClick={() => setFiltersOpen(true)}
-                                className="px-4 py-2 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300 lg:hidden"
-                            >
-                                Filtros
-                            </button>
-                        </Form>
-                    </div>
-
-                    {/* Resultados */}
-                    <div>
-                        <div className="mb-4 flex justify-between items-center">
-                            <h2 className="text-lg font-semibold">Resultados ({searchResults.length})</h2>
-                            <div className="text-sm text-gray-500">
-                                Ordenar por:
-                                <select className="ml-2 rounded-md border-gray-300 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50">
-                                    <option>Relevancia</option>
-                                    <option>Precio (menor a mayor)</option>
-                                    <option>Precio (mayor a menor)</option>
-                                    <option>Área (menor a mayor)</option>
-                                    <option>Área (mayor a menor)</option>
-                                </select>
-                            </div>
-                        </div>
-
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            {searchResults.length > 0 ? (
-                                searchResults.map((lot) => (
-                                    <div key={lot.id} className="bg-white rounded-lg shadow overflow-hidden">
-                                        <div className="p-4">
-                                            <div className="flex justify-between items-start">
-                                                <h3 className="text-lg font-semibold">{lot.name}</h3>
-                                                <button
-                                                    onClick={() => toggleFavorite(lot.id)}
-                                                    className={`p-1 rounded-full ${lot.isFavorite ? 'text-red-500' : 'text-gray-400 hover:text-red-500'}`}
-                                                >
-                                                    {lot.isFavorite ? (
-                                                        <svg className="h-6 w-6" fill="currentColor" viewBox="0 0 24 24" stroke="currentColor">
-                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
-                                                        </svg>
-                                                    ) : (
-                                                        <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
-                                                        </svg>
-                                                    )}
-                                                </button>
-                                            </div>
-
-                                            <p className="text-gray-500 text-sm mb-3">{lot.address}</p>
-
-                                            <div className="grid grid-cols-2 gap-3 mb-3">
-                                                <div>
-                                                    <span className="block text-xs text-gray-500">Área</span>
-                                                    <span className="font-medium">{lot.area} m²</span>
-                                                </div>
-                                                <div>
-                                                    <span className="block text-xs text-gray-500">Precio</span>
-                                                    <span className="font-medium">{formatCurrency(lot.price)}</span>
-                                                </div>
-                                                <div>
-                                                    <span className="block text-xs text-gray-500">Zona</span>
-                                                    <span className="font-medium">{lot.zone}</span>
-                                                </div>
-                                                <div>
-                                                    <span className="block text-xs text-gray-500">Tratamiento</span>
-                                                    <span className="font-medium">{lot.treatment}</span>
-                                                </div>
-                                            </div>
-
-                                            <div className="border-t pt-3 flex justify-between items-center">
-                                                <div>
-                                                    <span className="block text-xs text-gray-500">Valor potencial estimado</span>
-                                                    <span className="text-green-600 font-medium">{formatCurrency(lot.potentialValue)}</span>
-                                                </div>
-                                                <Link
-                                                    to={`/developer/lots/${lot.id}`}
-                                                    className="text-indigo-600 hover:text-indigo-800 text-sm font-medium"
-                                                >
-                                                    Ver detalles →
-                                                </Link>
-                                            </div>
-                                        </div>
-                                    </div>
-                                ))
-                            ) : (
-                                <div className="col-span-2 bg-white p-6 rounded-lg shadow text-center">
-                                    <svg className="h-12 w-12 text-gray-400 mx-auto mb-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                                    </svg>
-                                    <p className="text-gray-500 mb-3">No se encontraron resultados para tu búsqueda.</p>
-                                    <p className="text-sm text-gray-500">Intenta con diferentes criterios o filtros.</p>
-                                </div>
-                            )}
-                        </div>
-                    </div>
+                <div className="text-sm text-gray-500">
+                    Página {pagination.page} de {pagination.totalPages}
                 </div>
             </div>
+
+            {/* Results grid */}
+            {lotes.length > 0 ? (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
+                    {lotes.map((lote: any) => (
+                        <div key={lote.id} className="bg-white rounded-lg shadow-md overflow-hidden">
+                            {/* Basic lote info */}
+                            <div className="p-4">
+                                <h3 className="font-semibold text-lg text-gray-900 mb-2">{lote.nombre}</h3>
+                                <p className="text-gray-600 text-sm mb-2">{lote.direccion}</p>
+
+                                <div className="grid grid-cols-2 gap-2 text-sm text-gray-500 mb-3">
+                                    <div>Área: {lote.area ? `${lote.area.toLocaleString()} m²` : 'N/A'}</div>
+                                    <div>Estrato: {lote.estrato || 'N/A'}</div>
+                                    <div>CBML: {lote.cbml ? lote.cbml.substring(0, 10) + '...' : 'N/A'}</div>
+                                    <div>Barrio: {lote.barrio || 'N/A'}</div>
+                                </div>
+                            </div>
+
+                            {/* POT Info preview */}
+                            {lote.potData && lote.potData.codigo_tratamiento && (
+                                <div className="p-4 border-t bg-gray-50">
+                                    <POTInfo
+                                        potData={lote.potData}
+                                        compact={true}
+                                        showMapGisData={false}
+                                    />
+                                    <button
+                                        onClick={() => openPOTModal(lote)}
+                                        className="mt-2 text-xs text-blue-600 hover:text-blue-800"
+                                    >
+                                        Ver normativa completa →
+                                    </button>
+                                </div>
+                            )}
+
+                            {/* Actions */}
+                            <div className="p-4 border-t flex justify-between items-center">
+                                <Form method="post" className="inline">
+                                    <input type="hidden" name="loteId" value={lote.id} />
+                                    <input type="hidden" name="action" value="add_favorite" />
+                                    <button
+                                        type="submit"
+                                        className="text-sm text-gray-600 hover:text-red-600"
+                                    >
+                                        ♥ Favorito
+                                    </button>
+                                </Form>
+
+                                <a
+                                    href={`/developer/lote/${lote.id}`}
+                                    className="text-sm bg-blue-600 text-white px-3 py-1 rounded hover:bg-blue-700"
+                                >
+                                    Ver detalles
+                                </a>
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            ) : (
+                !isSearching && (
+                    <div className="text-center py-12">
+                        <div className="max-w-md mx-auto">
+                            <svg className="mx-auto h-12 w-12 text-gray-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                            </svg>
+                            <h3 className="mt-2 text-sm font-medium text-gray-900">No se encontraron lotes</h3>
+                            <p className="mt-1 text-sm text-gray-500">
+                                Intenta ajustar los filtros de búsqueda para encontrar más resultados.
+                            </p>
+                        </div>
+                    </div>
+                )
+            )}
+
+            {/* Pagination */}
+            {pagination.totalPages > 1 && (
+                <div className="flex justify-center">
+                    <nav className="relative z-0 inline-flex rounded-md shadow-sm -space-x-px">
+                        {pagination.page > 1 && (
+                            <a
+                                href={`?q=${filters.q}&area_min=${filters.area_min}&area_max=${filters.area_max}&estrato=${filters.estrato}&zona=${filters.zona}&page=${pagination.page - 1}`}
+                                className="relative inline-flex items-center px-2 py-2 rounded-l-md border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50"
+                            >
+                                Anterior
+                            </a>
+                        )}
+
+                        <span className="relative inline-flex items-center px-4 py-2 border border-gray-300 bg-white text-sm font-medium text-gray-700">
+                            {pagination.page} de {pagination.totalPages}
+                        </span>
+
+                        {pagination.page < pagination.totalPages && (
+                            <a
+                                href={`?q=${filters.q}&area_min=${filters.area_min}&area_max=${filters.area_max}&estrato=${filters.estrato}&zona=${filters.zona}&page=${pagination.page + 1}`}
+                                className="relative inline-flex items-center px-2 py-2 rounded-r-md border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50"
+                            >
+                                Siguiente
+                            </a>
+                        )}
+                    </nav>
+                </div>
+            )}
+
+            {/* POT Detail Modal */}
+            {showPOTModal && selectedLote && selectedLote.potData && (
+                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+                    <div className="bg-white rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
+                        <div className="px-6 py-4 border-b flex justify-between items-center">
+                            <div>
+                                <h3 className="text-lg font-medium text-gray-900">
+                                    Normativa POT - {selectedLote.nombre}
+                                </h3>
+                                <p className="text-sm text-gray-500">{selectedLote.direccion}</p>
+                            </div>
+                            <button
+                                onClick={() => setShowPOTModal(false)}
+                                className="text-gray-400 hover:text-gray-600"
+                            >
+                                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                </svg>
+                            </button>
+                        </div>
+
+                        <div className="p-6">
+                            <POTInfo
+                                potData={selectedLote.potData}
+                                showMapGisData={true}
+                            />
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }
