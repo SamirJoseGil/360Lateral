@@ -36,7 +36,13 @@ class APILoggingMiddleware(MiddlewareMixin):
             '/api/users/',
             '/api/lotes/',
             '/api/documentos/',
-            '/api/stats/'
+        ]
+        
+        # Paths que solo loggeamos en caso de error
+        self.error_only_paths = [
+            '/api/stats/events/record/',
+            '/api/stats/metrics/',
+            '/api/common/health/',
         ]
         
         # Endpoints sensibles cuyo contenido no debe ser registrado
@@ -49,6 +55,10 @@ class APILoggingMiddleware(MiddlewareMixin):
     def should_log_path(self, path):
         """Determina si la ruta debe ser registrada."""
         return any(path.startswith(monitored) for monitored in self.monitored_paths)
+    
+    def should_log_error_only(self, path):
+        """Determina si la ruta solo debe loggearse en caso de error."""
+        return any(path.startswith(error_only) for error_only in self.error_only_paths)
         
     def is_sensitive_path(self, path):
         """Comprueba si la ruta contiene información sensible."""
@@ -98,7 +108,11 @@ class APILoggingMiddleware(MiddlewareMixin):
     def process_response(self, request, response):
         """Procesa la respuesta después de que la vista la genera."""
         # Solo registrar solicitudes a la API
-        if not self.should_log_path(request.path):
+        if not self.should_log_path(request.path) and not self.should_log_error_only(request.path):
+            return response
+        
+        # Para paths de solo errores, solo loggear si hay problemas
+        if self.should_log_error_only(request.path) and 200 <= response.status_code < 400:
             return response
             
         # Calcular el tiempo de respuesta
@@ -157,7 +171,7 @@ class APILoggingMiddleware(MiddlewareMixin):
     
     def process_exception(self, request, exception):
         """Registra excepciones no manejadas en las vistas."""
-        if not self.should_log_path(request.path):
+        if not self.should_log_path(request.path) and not self.should_log_error_only(request.path):
             return None
             
         # Determinar el usuario

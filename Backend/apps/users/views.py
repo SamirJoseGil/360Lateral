@@ -5,6 +5,7 @@ from rest_framework import generics, status, permissions, viewsets, filters
 from rest_framework.decorators import api_view, permission_classes, action
 from rest_framework.permissions import AllowAny, IsAuthenticated, IsAdminUser
 from rest_framework.response import Response
+from django.http import Http404
 import logging
 
 from .models import User, UserProfile, UserRequest
@@ -73,18 +74,58 @@ class UserDetailView(generics.RetrieveUpdateDestroyAPIView):
     queryset = User.objects.all()
     serializer_class = UserSerializer
     permission_classes = [IsAuthenticated]
+    lookup_field = 'pk'  # Explícitamente usar pk para UUID
     
     def get_permissions(self):
         # Para eliminar usuario, solo admin
         if self.request.method == 'DELETE':
             return [IsAuthenticated(), IsAdminUser()]
-        return super().get_permissions()
+        return [IsAuthenticated()]
+    
+    def get_object(self):
+        """Override get_object para mejor manejo de errores y debugging"""
+        try:
+            # Log del intento de acceso para debugging
+            logger.info(f"Attempting to access user {self.kwargs.get('pk')} by user {getattr(self.request.user, 'username', 'anonymous')}")
+            
+            # Primero verificar si el usuario está autenticado
+            if not self.request.user or not self.request.user.is_authenticated:
+                logger.warning(f"Unauthenticated access attempt to user detail: {self.kwargs.get('pk')}")
+                self.permission_denied(self.request, message="Autenticación requerida para acceder a detalles de usuario")
+            
+            # Obtener el objeto
+            obj = super().get_object()
+            
+            # Verificar permisos de objeto específicos
+            self.check_object_permissions(self.request, obj)
+            
+            logger.info(f"User detail access granted for {obj.username} to {self.request.user.username}")
+            return obj
+            
+        except User.DoesNotExist:
+            logger.warning(f"User with ID {self.kwargs.get('pk')} not found")
+            raise Http404("Usuario no encontrado")
+        except ValueError as e:
+            # Error con formato de UUID
+            logger.warning(f"Invalid UUID format for user ID {self.kwargs.get('pk')}: {str(e)}")
+            raise Http404("Formato de ID de usuario inválido")
+        except Exception as e:
+            logger.error(f"Error retrieving user {self.kwargs.get('pk')}: {str(e)}")
+            raise
     
     def check_object_permissions(self, request, obj):
-        # Solo admin o el propio usuario pueden ver/editar perfil
-        if not (request.user.is_superuser or request.user.role == 'admin' or obj.id == request.user.id):
-            self.permission_denied(request, message="No tienes permiso para ver este usuario")
-        return super().check_object_permissions(request, obj)
+        """Verificar permisos específicos del objeto"""
+        # Admin puede ver a cualquier usuario
+        if request.user.is_superuser or getattr(request.user, 'role', None) == 'admin':
+            return
+        
+        # Usuario puede ver su propio perfil
+        if obj.id == request.user.id:
+            return
+        
+        # Para otros casos, denegar acceso
+        logger.warning(f"Permission denied: User {request.user.username} tried to access user {obj.username}")
+        self.permission_denied(request, message="No tienes permiso para ver este usuario")
 
 # Vista para el usuario actual
 @api_view(['GET'])
@@ -154,6 +195,51 @@ def users_health_check(request):
             'status': 'error',
             'module': 'users',
             'error': str(e)
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+# Debug endpoint para verificar si un usuario existe
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def check_user_exists(request, user_id):
+    """
+    Endpoint de debug para verificar si un usuario existe
+    """
+    try:
+        import uuid
+        # Verificar que el ID es un UUID válido
+        uuid_obj = uuid.UUID(str(user_id))
+        
+        # Verificar si el usuario existe
+        user_exists = User.objects.filter(id=user_id).exists()
+        
+        if user_exists:
+            user = User.objects.get(id=user_id)
+            return Response({
+                'exists': True,
+                'user_id': str(user_id),
+                'username': user.username,
+                'email': user.email,
+                'is_active': user.is_active,
+                'created_at': user.created_at
+            })
+        else:
+            return Response({
+                'exists': False,
+                'user_id': str(user_id),
+                'message': 'Usuario no encontrado'
+            }, status=status.HTTP_404_NOT_FOUND)
+            
+    except ValueError as e:
+        return Response({
+            'error': 'UUID inválido',
+            'user_id': str(user_id),
+            'details': str(e)
+        }, status=status.HTTP_400_BAD_REQUEST)
+    except Exception as e:
+        return Response({
+            'error': 'Error interno',
+            'details': str(e)
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 

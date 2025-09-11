@@ -1,9 +1,9 @@
 import { json, redirect } from "@remix-run/node";
 import type { LoaderFunctionArgs, ActionFunctionArgs } from "@remix-run/node";
-import { useLoaderData, Form, useNavigation, useSubmit } from "@remix-run/react";
+import { useLoaderData, Form, useNavigation, useSubmit, Link } from "@remix-run/react";
 import { useState } from "react";
 import { getUser } from "~/utils/auth.server";
-import { getUsers, deleteUser, updateUserStatus, type User } from "~/services/users.server";
+import { getAllUsers, deleteUser, updateUserStatus, updateUser, type User } from "~/services/users.server";
 
 type LoaderData = {
     user: any;
@@ -23,98 +23,27 @@ export async function loader({ request }: LoaderFunctionArgs): Promise<ReturnTyp
     const searchQuery = url.searchParams.get("search") || "";
 
     try {
-        // En lugar de usar la API real, usar datos mock por ahora
-        // const { users: usersResponse } = await getUsers(request, { search: searchQuery });
+        // Usar la API real del backend
+        const { users: usersList, headers } = await getAllUsers(request, searchQuery);
 
-        // Mock users data para desarrollo
-        const mockUsers: User[] = [
-            {
-                id: "1",
-                name: "Juan Pérez",
-                email: "juan@example.com",
-                role: "owner",
-                status: "active",
-                created_at: "2024-01-15T10:00:00Z",
-                is_verified: true
-            },
-            {
-                id: "2",
-                name: "María García",
-                email: "maria@example.com",
-                role: "developer",
-                status: "active",
-                created_at: "2024-01-10T15:30:00Z",
-                is_verified: true
-            },
-            {
-                id: "3",
-                name: "Carlos López",
-                email: "carlos@example.com",
-                role: "admin",
-                status: "pending",
-                created_at: "2024-01-12T09:15:00Z",
-                is_verified: false
-            },
-            {
-                id: "4",
-                name: "Ana Rodríguez",
-                email: "ana@example.com",
-                role: "owner",
-                status: "inactive",
-                created_at: "2024-01-08T11:45:00Z",
-                is_verified: true
-            },
-            {
-                id: "5",
-                name: "Pedro Martínez",
-                email: "pedro@example.com",
-                role: "developer",
-                status: "active",
-                created_at: "2024-01-14T14:20:00Z",
-                is_verified: true
-            },
-            {
-                id: "6",
-                name: "Laura Sánchez",
-                email: "laura@example.com",
-                role: "owner",
-                status: "active",
-                created_at: "2024-01-11T16:10:00Z",
-                is_verified: true
-            },
-            {
-                id: "7",
-                name: "Diego Torres",
-                email: "diego@example.com",
-                role: "admin",
-                status: "active",
-                created_at: "2024-01-09T13:25:00Z",
-                is_verified: true
-            },
-            {
-                id: "8",
-                name: "Sofia Moreno",
-                email: "sofia@example.com",
-                role: "developer",
-                status: "pending",
-                created_at: "2024-01-13T12:30:00Z",
-                is_verified: false
-            }
-        ];
-
-        const filteredUsers = searchQuery
-            ? mockUsers.filter(user =>
-                user.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                user.email.toLowerCase().includes(searchQuery.toLowerCase())
-            )
-            : mockUsers;
+        // Calcular el nombre completo para cada usuario
+        const processedUsers: User[] = usersList.map((user: any) => ({
+            ...user,
+            name: user.full_name ||
+                (user.first_name && user.last_name ? `${user.first_name} ${user.last_name}` : null) ||
+                user.first_name ||
+                user.username ||
+                user.email?.split('@')[0] ||
+                'Sin nombre',
+            status: user.is_active ? 'active' : 'inactive'
+        }));
 
         return json({
             user,
-            users: filteredUsers,
+            users: processedUsers,
             searchQuery,
             error: undefined
-        });
+        }, { headers });
     } catch (error) {
         console.error("Error loading users:", error);
         return json({
@@ -140,18 +69,17 @@ export async function action({ request }: ActionFunctionArgs) {
     try {
         switch (action) {
             case "delete":
-                // await deleteUser(request, userId);
-                console.log(`Deleting user: ${userId}`);
+                await deleteUser(request, userId);
                 return json({ success: true, message: "Usuario eliminado correctamente" });
 
             case "activate":
-                // await updateUserStatus(request, userId, "active");
-                console.log(`Activating user: ${userId}`);
+                // Activar usuario usando is_active
+                await updateUser(request, userId, { is_active: true });
                 return json({ success: true, message: "Usuario activado correctamente" });
 
             case "deactivate":
-                // await updateUserStatus(request, userId, "inactive");
-                console.log(`Deactivating user: ${userId}`);
+                // Desactivar usuario usando is_active
+                await updateUser(request, userId, { is_active: false });
                 return json({ success: true, message: "Usuario desactivado correctamente" });
 
             default:
@@ -233,11 +161,21 @@ export default function AdminUsers() {
     return (
         <div className="p-6">
             {/* Header */}
-            <div className="mb-8">
-                <h1 className="text-3xl font-bold">Gestión de Usuarios</h1>
-                <p className="text-gray-600 mt-2">
-                    Administra usuarios del sistema 360 Lateral
-                </p>
+            <div className="mb-8 flex flex-col md:flex-row md:items-center md:justify-between">
+                <div>
+                    <h1 className="text-3xl font-bold">Gestión de Usuarios</h1>
+                    <p className="text-gray-600 mt-2">
+                        Administra usuarios del sistema 360 Lateral
+                    </p>
+                </div>
+                <div>
+                    <Link
+                        to="/admin/usuarios/nuevo"
+                        className="bg-green-600 text-white px-6 py-2 rounded-md hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2"
+                    >
+                        + Crear Usuario
+                    </Link>
+                </div>
             </div>
 
             {/* Error message */}
@@ -345,7 +283,7 @@ export default function AdminUsers() {
                                     </span>
                                 </td>
                                 <td className="px-6 py-4 whitespace-nowrap">
-                                    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusColor(userItem.status)}`}>
+                                    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusColor(userItem.status ?? '')}`}>
                                         {userItem.status === 'active' ? 'Activo' :
                                             userItem.status === 'inactive' ? 'Inactivo' : 'Pendiente'}
                                     </span>
@@ -354,27 +292,33 @@ export default function AdminUsers() {
                                     {new Date(userItem.created_at).toLocaleDateString('es-CO')}
                                 </td>
                                 <td className="px-6 py-4 whitespace-nowrap text-sm font-medium space-x-2">
+                                    <Link
+                                        to={`/admin/usuario/${userItem.id}`}
+                                        className="text-blue-600 hover:text-blue-900"
+                                    >
+                                        Ver
+                                    </Link>
+                                    <Link
+                                        to={`/admin/usuarios/${userItem.id}/editar`}
+                                        className="text-indigo-600 hover:text-indigo-900 ml-4"
+                                    >
+                                        Editar
+                                    </Link>
                                     {userItem.status === 'active' ? (
                                         <button
                                             onClick={() => handleUserAction(userItem, 'deactivate')}
-                                            className="text-yellow-600 hover:text-yellow-900"
+                                            className="text-yellow-600 hover:text-yellow-900 ml-4"
                                         >
                                             Desactivar
                                         </button>
                                     ) : (
                                         <button
                                             onClick={() => handleUserAction(userItem, 'activate')}
-                                            className="text-green-600 hover:text-green-900"
+                                            className="text-green-600 hover:text-green-900 ml-4"
                                         >
                                             Activar
                                         </button>
                                     )}
-                                    <button
-                                        onClick={() => handleUserAction(userItem, 'delete')}
-                                        className="text-red-600 hover:text-red-900 ml-4"
-                                    >
-                                        Eliminar
-                                    </button>
                                 </td>
                             </tr>
                         ))}
@@ -423,8 +367,8 @@ export default function AdminUsers() {
                                 onClick={confirmAction}
                                 disabled={isLoading}
                                 className={`px-4 py-2 text-white rounded-md disabled:opacity-50 ${actionType === 'delete'
-                                        ? 'bg-red-600 hover:bg-red-700'
-                                        : 'bg-blue-600 hover:bg-blue-700'
+                                    ? 'bg-red-600 hover:bg-red-700'
+                                    : 'bg-blue-600 hover:bg-blue-700'
                                     }`}
                             >
                                 {isLoading ? 'Procesando...' : 'Confirmar'}

@@ -25,10 +25,13 @@ export async function loader({ request }: LoaderFunctionArgs) {
 
 // Definir interfaces para tipado
 interface UserFormValues {
-    name: string;
+    first_name: string;
+    last_name: string;
     email: string;
+    username?: string;
+    phone?: string;
+    company?: string;
     role: "admin" | "owner" | "developer";
-    status: "active" | "inactive" | "pending";
 }
 
 interface UserActionDataWithErrors {
@@ -60,18 +63,25 @@ export async function action({ request }: ActionFunctionArgs) {
 
     // Procesar los datos del formulario
     const formData = await request.formData();
-    const name = formData.get("name") as string;
+    const first_name = formData.get("first_name") as string;
+    const last_name = formData.get("last_name") as string;
     const email = formData.get("email") as string;
+    const username = formData.get("username") as string;
+    const phone = formData.get("phone") as string;
+    const company = formData.get("company") as string;
     const role = formData.get("role") as "admin" | "owner" | "developer";
-    const status = formData.get("status") as "active" | "inactive" | "pending";
     const password = formData.get("password") as string;
     const confirmPassword = formData.get("confirmPassword") as string;
 
     // Validaciones básicas
     const errors: Record<string, string> = {};
 
-    if (!name || name.trim() === "") {
-        errors.name = "El nombre es obligatorio";
+    if (!first_name || first_name.trim() === "") {
+        errors.first_name = "El nombre es obligatorio";
+    }
+
+    if (!last_name || last_name.trim() === "") {
+        errors.last_name = "El apellido es obligatorio";
     }
 
     if (!email || email.trim() === "") {
@@ -82,10 +92,6 @@ export async function action({ request }: ActionFunctionArgs) {
 
     if (!role) {
         errors.role = "El rol es obligatorio";
-    }
-
-    if (!status) {
-        errors.status = "El estado es obligatorio";
     }
 
     if (!password) {
@@ -101,22 +107,25 @@ export async function action({ request }: ActionFunctionArgs) {
         return json<UserActionDataWithErrors>({
             success: false,
             errors,
-            values: { name, email, role, status }
+            values: { first_name, last_name, email, username, phone, company, role }
         });
     }
 
     try {
         // Crear el usuario
         const { user, headers } = await createUser(request, {
-            name,
+            first_name,
+            last_name,
             email,
+            username,
+            phone,
+            company,
             role,
-            status,
             password
         });
 
         // Redirigir a la página de detalles del nuevo usuario
-        return redirect(`/admin/usuarios/${user.id}`, {
+        return redirect(`/admin/usuario/${user.id}`, {
             headers
         });
     } catch (error) {
@@ -132,7 +141,7 @@ export async function action({ request }: ActionFunctionArgs) {
             success: false,
             message,
             errors: errorMessage.toLowerCase().includes("email") ? { email: message } : {},
-            values: { name, email, role, status }
+            values: { first_name, last_name, email, username, phone, company, role }
         });
     }
 }
@@ -199,20 +208,39 @@ export default function AdminNewUser() {
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                         {/* Nombre */}
                         <div>
-                            <label htmlFor="name" className="block text-sm font-medium text-gray-700 mb-1">
+                            <label htmlFor="first_name" className="block text-sm font-medium text-gray-700 mb-1">
                                 Nombre <span className="text-red-500">*</span>
                             </label>
                             <input
                                 type="text"
-                                name="name"
-                                id="name"
-                                defaultValue={(hasValues(actionData) && actionData.values?.name) || ""}
-                                className={`w-full px-4 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 ${hasErrors(actionData) && actionData.errors?.name ? 'border-red-500' : 'border-gray-300'
+                                name="first_name"
+                                id="first_name"
+                                defaultValue={(hasValues(actionData) && actionData.values?.first_name) || ""}
+                                className={`w-full px-4 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 ${hasErrors(actionData) && actionData.errors?.first_name ? 'border-red-500' : 'border-gray-300'
                                     }`}
                                 required
                             />
-                            {hasErrors(actionData) && actionData.errors?.name && (
-                                <p className="mt-1 text-sm text-red-600">{actionData.errors.name}</p>
+                            {hasErrors(actionData) && actionData.errors?.first_name && (
+                                <p className="mt-1 text-sm text-red-600">{actionData.errors.first_name}</p>
+                            )}
+                        </div>
+
+                        {/* Apellido */}
+                        <div>
+                            <label htmlFor="last_name" className="block text-sm font-medium text-gray-700 mb-1">
+                                Apellido <span className="text-red-500">*</span>
+                            </label>
+                            <input
+                                type="text"
+                                name="last_name"
+                                id="last_name"
+                                defaultValue={(hasValues(actionData) && actionData.values?.last_name) || ""}
+                                className={`w-full px-4 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 ${hasErrors(actionData) && actionData.errors?.last_name ? 'border-red-500' : 'border-gray-300'
+                                    }`}
+                                required
+                            />
+                            {hasErrors(actionData) && actionData.errors?.last_name && (
+                                <p className="mt-1 text-sm text-red-600">{actionData.errors.last_name}</p>
                             )}
                         </div>
 
@@ -235,6 +263,60 @@ export default function AdminNewUser() {
                             )}
                         </div>
 
+                        {/* Username */}
+                        <div>
+                            <label htmlFor="username" className="block text-sm font-medium text-gray-700 mb-1">
+                                Username
+                            </label>
+                            <input
+                                type="text"
+                                name="username"
+                                id="username"
+                                defaultValue={(hasValues(actionData) && actionData.values?.username) || ""}
+                                className={`w-full px-4 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 ${hasErrors(actionData) && actionData.errors?.username ? 'border-red-500' : 'border-gray-300'
+                                    }`}
+                            />
+                            {hasErrors(actionData) && actionData.errors?.username && (
+                                <p className="mt-1 text-sm text-red-600">{actionData.errors.username}</p>
+                            )}
+                        </div>
+
+                        {/* Teléfono */}
+                        <div>
+                            <label htmlFor="phone" className="block text-sm font-medium text-gray-700 mb-1">
+                                Teléfono
+                            </label>
+                            <input
+                                type="tel"
+                                name="phone"
+                                id="phone"
+                                defaultValue={(hasValues(actionData) && actionData.values?.phone) || ""}
+                                className={`w-full px-4 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 ${hasErrors(actionData) && actionData.errors?.phone ? 'border-red-500' : 'border-gray-300'
+                                    }`}
+                            />
+                            {hasErrors(actionData) && actionData.errors?.phone && (
+                                <p className="mt-1 text-sm text-red-600">{actionData.errors.phone}</p>
+                            )}
+                        </div>
+
+                        {/* Empresa */}
+                        <div>
+                            <label htmlFor="company" className="block text-sm font-medium text-gray-700 mb-1">
+                                Empresa
+                            </label>
+                            <input
+                                type="text"
+                                name="company"
+                                id="company"
+                                defaultValue={(hasValues(actionData) && actionData.values?.company) || ""}
+                                className={`w-full px-4 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 ${hasErrors(actionData) && actionData.errors?.company ? 'border-red-500' : 'border-gray-300'
+                                    }`}
+                            />
+                            {hasErrors(actionData) && actionData.errors?.company && (
+                                <p className="mt-1 text-sm text-red-600">{actionData.errors.company}</p>
+                            )}
+                        </div>
+
                         {/* Rol */}
                         <div>
                             <label htmlFor="role" className="block text-sm font-medium text-gray-700 mb-1">
@@ -254,28 +336,6 @@ export default function AdminNewUser() {
                             </select>
                             {hasErrors(actionData) && actionData.errors?.role && (
                                 <p className="mt-1 text-sm text-red-600">{actionData.errors.role}</p>
-                            )}
-                        </div>
-
-                        {/* Estado */}
-                        <div>
-                            <label htmlFor="status" className="block text-sm font-medium text-gray-700 mb-1">
-                                Estado <span className="text-red-500">*</span>
-                            </label>
-                            <select
-                                name="status"
-                                id="status"
-                                defaultValue={(hasValues(actionData) && actionData.values?.status) || "pending"}
-                                className={`w-full px-4 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 ${hasErrors(actionData) && actionData.errors?.status ? 'border-red-500' : 'border-gray-300'
-                                    }`}
-                                required
-                            >
-                                <option value="active">Activo</option>
-                                <option value="inactive">Inactivo</option>
-                                <option value="pending">Pendiente</option>
-                            </select>
-                            {hasErrors(actionData) && actionData.errors?.status && (
-                                <p className="mt-1 text-sm text-red-600">{actionData.errors.status}</p>
                             )}
                         </div>
 

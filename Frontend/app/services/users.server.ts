@@ -6,20 +6,22 @@ const API_URL = process.env.API_URL || "http://localhost:8000";
 // Tipos actualizados según la documentación del API
 export type User = {
   id: string;
-  name?: string; // Agregar name opcional
+  email: string;
+  username?: string;
   first_name?: string;
   last_name?: string;
-  email: string;
-  role: "admin" | "owner" | "developer";
-  status: "active" | "inactive" | "pending";
-  created_at: string;
-  createdAt?: string; // Alias para compatibilidad
+  full_name?: string;
+  name?: string; // Alias calculado
   phone?: string;
   company?: string;
-  avatar?: string;
+  role: "admin" | "owner" | "developer";
+  status?: "active" | "inactive" | "pending";
   is_verified: boolean;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
   last_login?: string;
-  profile?: UserProfile;
+  role_fields?: UserProfile;
 };
 
 export type UserProfile = {
@@ -299,15 +301,16 @@ export async function getUserById(request: Request, userId: string) {
   }
 }
 
-// Crear un nuevo usuario
+// Crear un nuevo usuario (corregido según documentación)
 export async function createUser(request: Request, userData: {
   email: string;
-  username: string;
+  username?: string;
   first_name: string;
   last_name: string;
   phone?: string;
   company?: string;
   role: "admin" | "owner" | "developer";
+  password?: string; // Para creación desde admin
 }) {
   console.log(`[Users] Creating user: ${userData.email}`);
 
@@ -349,6 +352,9 @@ export async function updateUser(request: Request, userId: string, userData: {
   phone?: string;
   company?: string;
   role?: "admin" | "owner" | "developer";
+  email?: string;
+  username?: string;
+  is_active?: boolean; // Agregar is_active
 }) {
   console.log(`[Users] Updating user: ${userId}`);
 

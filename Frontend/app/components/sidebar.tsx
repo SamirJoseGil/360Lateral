@@ -103,7 +103,7 @@ export default function Sidebar({ options, user }: SidebarProps) {
     };
 
     return (
-        <div className="w-64 bg-white shadow-md flex flex-col h-full">
+        <div className="w-64 bg-white shadow-md flex flex-col h-full pt-8">
             <div className="p-4 border-b border-gray-200">
                 <h2 className="text-xl font-semibold text-gray-800">
                     {user.role === "admin" ? "Panel Admin" :
