@@ -100,133 +100,271 @@ export default function NuestroPortfolio() {
     };
 
     return (
-        <div className="pt-16">
-            {/* Hero Section */}
-            <section className="hero-section py-16 md:py-24">
-                <div className="container relative z-10">
-                    <div className="max-w-4xl mx-auto text-center">
-                        <h1 className="text-4xl md:text-5xl font-bold mb-6">
-                            Nuestro Portafolio
+        <div className="pt-16 overflow-hidden">
+            {/* Hero Section - Completamente rediseñado */}
+            <section className="relative min-h-screen flex items-center justify-center bg-gradient-to-br from-lateral-600 via-lateral-700 to-lateral-900">
+                {/* Animaciones de fondo */}
+                <div className="absolute inset-0">
+                    <div className="absolute top-20 left-20 w-96 h-96 bg-naranja-500/10 rounded-full blur-3xl animate-pulse"></div>
+                    <div className="absolute bottom-20 right-20 w-80 h-80 bg-white/5 rounded-full blur-3xl animate-bounce"></div>
+                    <div className="absolute top-1/2 left-1/4 w-64 h-64 bg-naranja-500/5 rounded-full blur-2xl animate-pulse"></div>
+                </div>
+
+                <div className="container relative z-10 text-center text-white">
+                    <div className="max-w-5xl mx-auto">
+                        {/* Badge animado */}
+                        <div className="inline-flex items-center px-6 py-3 bg-white/10 backdrop-blur-sm rounded-full border border-white/20 mb-8">
+                            <svg className="w-5 h-5 mr-3 text-naranja-400" fill="currentColor" viewBox="0 0 20 20">
+                                <path fillRule="evenodd" d="M11.3 1.046A1 1 0 0112 2v5h4a1 1 0 01.82 1.573l-7 10A1 1 0 018 18v-5H4a1 1 0 01-.82-1.573l7-10a1 1 0 011.12-.38z" clipRule="evenodd" />
+                            </svg>
+                            <span className="text-sm font-medium">Soluciones Innovadoras</span>
+                        </div>
+
+                        <h1 className="text-5xl md:text-7xl font-display font-bold mb-8 leading-tight">
+                            Nuestro
+                            <span className="bg-gradient-to-r from-naranja-400 to-naranja-600 bg-clip-text text-transparent block md:inline md:ml-4">
+                                Portafolio
+                            </span>
                         </h1>
-                        <p className="text-xl md:text-2xl mb-8 opacity-90 max-w-3xl mx-auto">
+
+                        <p className="text-xl md:text-2xl mb-12 opacity-90 max-w-4xl mx-auto leading-relaxed">
                             Soluciones integrales y personalizadas para el sector inmobiliario y de construcción
+                            con un enfoque innovador y{" "}
+                            <span className="font-bold text-naranja-400">resultados comprobados</span>.
                         </p>
+
+                        {/* Métricas destacadas */}
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-6 mb-12">
+                            <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-6 border border-white/20">
+                                <div className="text-2xl md:text-3xl font-bold text-naranja-400 mb-1">500+</div>
+                                <div className="text-sm opacity-80">Proyectos</div>
+                            </div>
+                            <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-6 border border-white/20">
+                                <div className="text-2xl md:text-3xl font-bold text-naranja-400 mb-1">$30B</div>
+                                <div className="text-sm opacity-80">Valor generado</div>
+                            </div>
+                            <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-6 border border-white/20">
+                                <div className="text-2xl md:text-3xl font-bold text-naranja-400 mb-1">150+</div>
+                                <div className="text-sm opacity-80">Clientes</div>
+                            </div>
+                            <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-6 border border-white/20">
+                                <div className="text-2xl md:text-3xl font-bold text-naranja-400 mb-1">45+</div>
+                                <div className="text-sm opacity-80">Años exp.</div>
+                            </div>
+                        </div>
+
+                        <Link
+                            to="/contact"
+                            className="bg-naranja-500 hover:bg-naranja-600 text-white px-10 py-4 rounded-full font-bold text-lg transition-all duration-300 hover:scale-105 shadow-xl inline-flex items-center"
+                        >
+                            Trabajemos Juntos
+                            <svg className="w-5 h-5 ml-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 8l4 4m0 0l-4 4m4-4H3" />
+                            </svg>
+                        </Link>
                     </div>
-                </div>
-                {/* Decorative elements */}
-                <div className="absolute top-0 left-0 w-full h-full overflow-hidden">
-                    <div className="absolute top-0 right-0 bg-lateral-400/20 w-96 h-96 rounded-full -translate-y-1/2 translate-x-1/3 blur-3xl"></div>
-                    <div className="absolute bottom-0 left-0 bg-lateral-600/20 w-96 h-96 rounded-full translate-y-1/2 -translate-x-1/3 blur-3xl"></div>
                 </div>
             </section>
 
-            {/* Image Grid Section */}
-            <section className="py-12 bg-gris-100">
+            {/* Image Gallery - Rediseñada */}
+            <section className="py-20 bg-gray-50">
                 <div className="container">
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                        <div className="h-64 bg-lateral-500 rounded-lg shadow-lateral overflow-hidden hover-lift">
-                            <img
-                                src="https://placehold.co/600x400/2E4E9D/FFFFFF/png?text=Proyecto+Inmobiliario"
-                                alt="Proyecto Inmobiliario"
-                                className="w-full h-full object-cover"
-                            />
+                    <div className="max-w-6xl mx-auto">
+                        <div className="text-center mb-16">
+                            <h2 className="text-4xl font-bold mb-6">Proyectos Destacados</h2>
+                            <p className="text-xl text-gray-600">Una muestra de nuestro trabajo en diferentes sectores</p>
                         </div>
-                        <div className="h-64 bg-naranja-500 rounded-lg shadow-lateral overflow-hidden hover-lift">
-                            <img
-                                src="https://placehold.co/600x400/FF6B35/FFFFFF/png?text=Desarrollo+Urbano"
-                                alt="Desarrollo Urbano"
-                                className="w-full h-full object-cover"
-                            />
-                        </div>
-                        <div className="h-64 bg-lateral-700 rounded-lg shadow-lateral overflow-hidden hover-lift">
-                            <img
-                                src="https://placehold.co/600x400/132C70/FFFFFF/png?text=Infraestructura"
-                                alt="Infraestructura"
-                                className="w-full h-full object-cover"
-                            />
-                        </div>
-                    </div>
-                </div>
-            </section>
 
-            {/* Services Section */}
-            <section className="py-16 bg-white">
-                <div className="container">
-                    <div className="text-center mb-16">
-                        <h2 className="text-3xl md:text-4xl font-bold mb-6">
-                            Conectamos con diferentes servicios dependiendo de tus necesidades
-                        </h2>
-                        <p className="text-xl text-gris-600 max-w-3xl mx-auto">
-                            Exploramos soluciones innovadoras y personalizadas que se adaptan a cada
-                            proyecto, garantizando resultados sostenibles y de alto impacto.
-                        </p>
-                    </div>
-
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-10 max-w-5xl mx-auto">
-                        {services.map(service => (
-                            <div key={service.id} className="flex gap-6 items-start">
-                                <div className="bg-lateral-100 p-4 rounded-lg text-lateral-500 flex-shrink-0">
-                                    {renderIcon(service.icon)}
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+                            <div className="group relative overflow-hidden rounded-3xl shadow-2xl hover:shadow-3xl transition-all duration-500 hover:-translate-y-2">
+                                <div className="aspect-[4/3] overflow-hidden">
+                                    <img
+                                        src="https://placehold.co/600x450/2E4E9D/FFFFFF/png?text=Proyecto+Inmobiliario"
+                                        alt="Proyecto Inmobiliario"
+                                        className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500"
+                                    />
                                 </div>
-                                <div>
-                                    <h3 className="text-xl font-bold mb-2">{service.title}</h3>
-                                    <p className="text-gris-600">{service.description}</p>
+                                <div className="absolute inset-0 bg-gradient-to-t from-lateral-900/80 via-lateral-900/20 to-transparent"></div>
+                                <div className="absolute bottom-6 left-6 right-6 text-white">
+                                    <h3 className="text-xl font-bold mb-2">Desarrollo Inmobiliario</h3>
+                                    <p className="text-sm opacity-90">Proyectos residenciales y comerciales de gran escala</p>
+                                </div>
+                                <div className="absolute top-6 right-6 bg-white/20 backdrop-blur-sm rounded-full p-2">
+                                    <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
+                                    </svg>
                                 </div>
                             </div>
-                        ))}
-                    </div>
-                </div>
-            </section>
 
-            {/* We Are "Resultores" Section */}
-            <section className="py-16 bg-lateral-50">
-                <div className="container">
-                    <div className="max-w-4xl mx-auto">
-                        <h2 className="text-3xl font-bold mb-6 text-center">
-                            Somos resultores, enfrentamos todo tipo de retos en el sector de la construcción
-                        </h2>
-                        <p className="text-lg text-gris-700 mb-10 text-center">
-                            En 360 Lateral combinamos experiencia, creatividad y enfoque estratégico para
-                            resolver los desafíos más complejos del sector de la construcción. Transformamos
-                            cada reto en una oportunidad, ofreciendo soluciones efectivas que generan valor,
-                            optimizan recursos y garantizan resultados sostenibles.
-                        </p>
+                            <div className="group relative overflow-hidden rounded-3xl shadow-2xl hover:shadow-3xl transition-all duration-500 hover:-translate-y-2">
+                                <div className="aspect-[4/3] overflow-hidden">
+                                    <img
+                                        src="https://placehold.co/600x450/FF6B35/FFFFFF/png?text=Desarrollo+Urbano"
+                                        alt="Desarrollo Urbano"
+                                        className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500"
+                                    />
+                                </div>
+                                <div className="absolute inset-0 bg-gradient-to-t from-naranja-900/80 via-naranja-900/20 to-transparent"></div>
+                                <div className="absolute bottom-6 left-6 right-6 text-white">
+                                    <h3 className="text-xl font-bold mb-2">Desarrollo Urbano</h3>
+                                    <p className="text-sm opacity-90">Planificación y desarrollo de espacios urbanos sostenibles</p>
+                                </div>
+                                <div className="absolute top-6 right-6 bg-white/20 backdrop-blur-sm rounded-full p-2">
+                                    <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" />
+                                    </svg>
+                                </div>
+                            </div>
 
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                            <div className="bg-white p-6 rounded-lg shadow-lateral hover-lift">
-                                <div className="w-14 h-14 bg-lateral-100 text-lateral-500 rounded-full flex items-center justify-center mb-4">
-                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <div className="group relative overflow-hidden rounded-3xl shadow-2xl hover:shadow-3xl transition-all duration-500 hover:-translate-y-2">
+                                <div className="aspect-[4/3] overflow-hidden">
+                                    <img
+                                        src="https://placehold.co/600x450/132C70/FFFFFF/png?text=Infraestructura"
+                                        alt="Infraestructura"
+                                        className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500"
+                                    />
+                                </div>
+                                <div className="absolute inset-0 bg-gradient-to-t from-lateral-900/80 via-lateral-900/20 to-transparent"></div>
+                                <div className="absolute bottom-6 left-6 right-6 text-white">
+                                    <h3 className="text-xl font-bold mb-2">Infraestructura</h3>
+                                    <p className="text-sm opacity-90">Proyectos de infraestructura crítica y transporte</p>
+                                </div>
+                                <div className="absolute top-6 right-6 bg-white/20 backdrop-blur-sm rounded-full p-2">
+                                    <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
                                     </svg>
                                 </div>
-                                <h3 className="font-bold text-xl mb-3">Eficiencia</h3>
-                                <p className="text-gris-600">
-                                    Optimizamos cada etapa del proyecto para maximizar recursos y tiempo.
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            {/* Services Section - Completamente rediseñada */}
+            <section className="py-20 bg-white">
+                <div className="container">
+                    <div className="max-w-6xl mx-auto">
+                        <div className="text-center mb-16">
+                            <h2 className="text-4xl md:text-5xl font-bold mb-8">
+                                Conectamos con{" "}
+                                <span className="bg-gradient-to-r from-lateral-500 to-naranja-500 bg-clip-text text-transparent">
+                                    diferentes servicios
+                                </span>
+                            </h2>
+                            <p className="text-xl text-gray-600 max-w-4xl mx-auto">
+                                Exploramos soluciones innovadoras y personalizadas que se adaptan a cada
+                                proyecto, garantizando resultados sostenibles y de alto impacto.
+                            </p>
+                        </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-10">
+                            {services.map((service, index) => (
+                                <div key={service.id} className="group bg-gray-50 hover:bg-white rounded-3xl p-8 transition-all duration-500 hover:shadow-2xl hover:-translate-y-2 border border-gray-100">
+                                    <div className="flex items-start space-x-6">
+                                        <div className="w-16 h-16 bg-gradient-to-br from-lateral-400 to-naranja-400 rounded-2xl flex items-center justify-center flex-shrink-0 group-hover:scale-110 transition-transform duration-300">
+                                            <div className="text-white text-2xl">
+                                                {renderIcon(service.icon)}
+                                            </div>
+                                        </div>
+                                        <div>
+                                            <h3 className="text-2xl font-bold mb-4 text-gray-900 group-hover:text-lateral-600 transition-colors duration-300">
+                                                {service.title}
+                                            </h3>
+                                            <p className="text-gray-600 leading-relaxed mb-4">
+                                                {service.description}
+                                            </p>
+                                            <div className="w-12 h-1 bg-gradient-to-r from-lateral-400 to-naranja-400 rounded-full group-hover:w-16 transition-all duration-300"></div>
+                                        </div>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            {/* Resultores Section - Rediseñada */}
+            <section className="py-20 bg-gradient-to-br from-gray-50 to-gray-100">
+                <div className="container">
+                    <div className="max-w-6xl mx-auto">
+                        <div className="text-center mb-16">
+                            <h2 className="text-4xl md:text-5xl font-bold mb-8">
+                                Somos{" "}
+                                <span className="bg-gradient-to-r from-lateral-500 to-naranja-500 bg-clip-text text-transparent">
+                                    Resultores
+                                </span>
+                            </h2>
+                            <p className="text-xl text-gray-600 max-w-4xl mx-auto leading-relaxed">
+                                Enfrentamos todo tipo de retos en el sector de la construcción, transformando
+                                cada desafío en una oportunidad para crear valor y generar impacto positivo.
+                            </p>
+                        </div>
+
+                        {/* Valores principales */}
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-8 mb-16">
+                            <div className="group bg-white rounded-3xl p-8 shadow-xl border border-gray-100 hover:shadow-2xl transition-all duration-500 hover:-translate-y-2">
+                                <div className="w-16 h-16 bg-gradient-to-br from-lateral-400 to-lateral-600 rounded-2xl flex items-center justify-center mb-6 group-hover:scale-110 transition-transform duration-300">
+                                    <svg className="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                                    </svg>
+                                </div>
+                                <h3 className="font-bold text-2xl mb-4 text-gray-900">Eficiencia</h3>
+                                <p className="text-gray-600 leading-relaxed">
+                                    Optimizamos cada etapa del proyecto para maximizar recursos y tiempo,
+                                    garantizando la entrega de resultados excepcionales.
                                 </p>
                             </div>
 
-                            <div className="bg-white p-6 rounded-lg shadow-lateral hover-lift">
-                                <div className="w-14 h-14 bg-lateral-100 text-lateral-500 rounded-full flex items-center justify-center mb-4">
-                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138 3.42 3.42 0 00-.806-1.946 3.42 3.42 0 010-4.438 3.42 3.42 0 00.806-1.946 3.42 3.42 0 013.138-3.138z" />
+                            <div className="group bg-white rounded-3xl p-8 shadow-xl border border-gray-100 hover:shadow-2xl transition-all duration-500 hover:-translate-y-2">
+                                <div className="w-16 h-16 bg-gradient-to-br from-naranja-400 to-naranja-600 rounded-2xl flex items-center justify-center mb-6 group-hover:scale-110 transition-transform duration-300">
+                                    <svg className="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
                                     </svg>
                                 </div>
-                                <h3 className="font-bold text-xl mb-3">Calidad</h3>
-                                <p className="text-gris-600">
-                                    Nos comprometemos con los más altos estándares en cada solución.
+                                <h3 className="font-bold text-2xl mb-4 text-gray-900">Calidad</h3>
+                                <p className="text-gray-600 leading-relaxed">
+                                    Nos comprometemos con los más altos estándares en cada solución,
+                                    manteniendo la excelencia como nuestro sello distintivo.
                                 </p>
                             </div>
 
-                            <div className="bg-white p-6 rounded-lg shadow-lateral hover-lift">
-                                <div className="w-14 h-14 bg-lateral-100 text-lateral-500 rounded-full flex items-center justify-center mb-4">
-                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.828 14.828a4 4 0 01-5.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                            <div className="group bg-white rounded-3xl p-8 shadow-xl border border-gray-100 hover:shadow-2xl transition-all duration-500 hover:-translate-y-2">
+                                <div className="w-16 h-16 bg-gradient-to-br from-lateral-600 to-lateral-800 rounded-2xl flex items-center justify-center mb-6 group-hover:scale-110 transition-transform duration-300">
+                                    <svg className="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
                                     </svg>
                                 </div>
-                                <h3 className="font-bold text-xl mb-3">Compromiso</h3>
-                                <p className="text-gris-600">
-                                    Acompañamiento constante y enfocado al éxito del proyecto.
+                                <h3 className="font-bold text-2xl mb-4 text-gray-900">Compromiso</h3>
+                                <p className="text-gray-600 leading-relaxed">
+                                    Acompañamiento constante y enfocado al éxito del proyecto,
+                                    construyendo relaciones duraderas con nuestros clientes.
                                 </p>
+                            </div>
+                        </div>
+
+                        {/* Descripción detallada */}
+                        <div className="bg-white rounded-3xl p-12 shadow-xl border border-gray-100">
+                            <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 items-center">
+                                <div>
+                                    <h3 className="text-3xl font-bold mb-6 text-gray-900">
+                                        Transformamos retos en oportunidades
+                                    </h3>
+                                    <p className="text-gray-600 mb-6 leading-relaxed">
+                                        En 360 Lateral combinamos experiencia, creatividad y enfoque estratégico para
+                                        resolver los desafíos más complejos del sector de la construcción.
+                                    </p>
+                                    <p className="text-gray-600 leading-relaxed">
+                                        Transformamos cada reto en una oportunidad, ofreciendo soluciones efectivas
+                                        que generan valor, optimizan recursos y garantizan resultados sostenibles.
+                                    </p>
+                                </div>
+                                <div className="relative">
+                                    <div className="w-full h-80 bg-gradient-to-br from-lateral-100 via-gray-100 to-naranja-100 rounded-3xl flex items-center justify-center relative overflow-hidden">
+                                        <div className="text-8xl opacity-20">🎯</div>
+                                        <div className="absolute -bottom-4 -right-4 w-24 h-24 bg-lateral-500 rounded-full opacity-20"></div>
+                                        <div className="absolute -top-4 -left-4 w-16 h-16 bg-naranja-500 rounded-full opacity-15"></div>
+                                    </div>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -371,18 +509,42 @@ export default function NuestroPortfolio() {
                 </div>
             </section>
 
-            {/* Call to Action */}
-            <section className="py-16 bg-white">
-                <div className="container">
-                    <div className="max-w-3xl mx-auto text-center">
-                        <h2 className="text-3xl font-bold mb-6 text-gris-900">¿Tienes un reto? Tomemos un café mientras lo hablamos</h2>
-                        <p className="text-lg mb-8 text-gris-600">
+            {/* Call to Action - Rediseñada */}
+            <section className="py-20 bg-gradient-to-br from-lateral-600 via-lateral-700 to-naranja-500 text-white relative overflow-hidden">
+                {/* Elementos decorativos */}
+                <div className="absolute inset-0">
+                    <div className="absolute top-10 right-10 w-96 h-96 bg-white/10 rounded-full blur-3xl"></div>
+                    <div className="absolute bottom-10 left-10 w-80 h-80 bg-white/5 rounded-full blur-2xl"></div>
+                </div>
+
+                <div className="container relative z-10">
+                    <div className="max-w-4xl mx-auto text-center">
+                        <h2 className="text-4xl md:text-5xl font-bold mb-8 leading-tight">
+                            ¿Tienes un reto?{" "}
+                            <span className="block md:inline">Tomemos un café</span>
+                        </h2>
+                        <p className="text-xl md:text-2xl mb-12 opacity-90 leading-relaxed max-w-3xl mx-auto">
                             A través de una serie de preguntas podemos simplificar las complejas
                             problemáticas de las empresas para comenzar un proceso de cambio estructural.
                         </p>
-                        <Link to="/contact" className="btn btn-primary text-lg px-8 py-3">
-                            Contáctanos
-                        </Link>
+
+                        <div className="flex flex-col sm:flex-row gap-6 justify-center">
+                            <Link
+                                to="/contact"
+                                className="bg-white text-lateral-600 hover:bg-gray-100 px-10 py-4 rounded-full font-bold text-lg transition-all duration-300 hover:scale-105 shadow-xl inline-flex items-center justify-center"
+                            >
+                                Contáctanos
+                                <svg className="w-5 h-5 ml-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 8l4 4m0 0l-4 4m4-4H3" />
+                                </svg>
+                            </Link>
+                            <Link
+                                to="/about"
+                                className="border-2 border-white text-white hover:bg-white hover:text-lateral-600 px-10 py-4 rounded-full font-bold text-lg transition-all duration-300"
+                            >
+                                Conoce Más
+                            </Link>
+                        </div>
                     </div>
                 </div>
             </section>

@@ -313,8 +313,8 @@ export default function AdminSystemMonitoring() {
                                 <dt className="text-gray-500">Entorno:</dt>
                                 <dd className="font-medium">
                                     <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${versionInfo.environment === 'production' ? 'bg-red-100 text-red-800' :
-                                            versionInfo.environment === 'staging' ? 'bg-yellow-100 text-yellow-800' :
-                                                'bg-blue-100 text-blue-800'
+                                        versionInfo.environment === 'staging' ? 'bg-yellow-100 text-yellow-800' :
+                                            'bg-blue-100 text-blue-800'
                                         }`}>
                                         {versionInfo.environment}
                                     </span>
@@ -382,58 +382,6 @@ export default function AdminSystemMonitoring() {
                     </div>
                 )}
             </div>
-
-            {/* Debug Tools */}
-            <div className="bg-white rounded-lg shadow p-6">
-                <h3 className="text-lg font-semibold mb-4 flex items-center">
-                    <svg className="w-5 h-5 mr-2 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z" />
-                    </svg>
-                    Herramientas de Debug
-                </h3>
-
-                <div className="space-y-4">
-                    <div className="flex items-center justify-between">
-                        <div>
-                            <h4 className="font-medium">CORS Debug</h4>
-                            <p className="text-sm text-gray-600">Verificar configuración de CORS y headers</p>
-                        </div>
-                        <button
-                            onClick={fetchCorsDebug}
-                            className="bg-gray-600 text-white px-4 py-2 rounded-md hover:bg-gray-700"
-                        >
-                            Verificar CORS
-                        </button>
-                    </div>
-                </div>
-            </div>
-
-            {/* CORS Debug Modal */}
-            {showCorsDebug && corsDebugInfo && (
-                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-                    <div className="bg-white rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
-                        <div className="px-6 py-4 border-b flex justify-between items-center">
-                            <h3 className="text-lg font-medium text-gray-900">
-                                Información de Debug CORS
-                            </h3>
-                            <button
-                                onClick={() => setShowCorsDebug(false)}
-                                className="text-gray-400 hover:text-gray-600"
-                            >
-                                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                                </svg>
-                            </button>
-                        </div>
-
-                        <div className="p-6">
-                            <pre className="bg-gray-100 p-4 rounded-lg text-sm overflow-x-auto">
-                                {JSON.stringify(corsDebugInfo, null, 2)}
-                            </pre>
-                        </div>
-                    </div>
-                </div>
-            )}
         </div>
     );
 }

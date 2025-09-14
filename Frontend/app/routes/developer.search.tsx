@@ -3,7 +3,7 @@ import type { LoaderFunctionArgs, ActionFunctionArgs } from "@remix-run/node";
 import { Form, useLoaderData, useActionData, useNavigation } from "@remix-run/react";
 import { useState } from "react";
 import { getUser } from "~/utils/auth.server";
-import { searchLotes, addLoteToFavorites, removeLoteFromFavorites } from "~/services/lotes.server";
+import { searchLotes, addLoteToFavorites, removeLoteFromFavorites, getAllLotes } from "~/services/lotes.server";
 import { getNormativaPorCBML } from "~/services/pot.server";
 import POTInfo from "~/components/POTInfo";
 
@@ -30,9 +30,28 @@ export async function loader({ request }: LoaderFunctionArgs) {
         offset: (parseInt(url.searchParams.get("page") || "1") - 1) * parseInt(url.searchParams.get("page_size") || "12")
     };
 
+    // Verificar si hay filtros aplicados
+    const hasFilters = searchParams.search ||
+        searchParams.area_min !== undefined ||
+        searchParams.area_max !== undefined ||
+        searchParams.estrato !== undefined ||
+        searchParams.barrio ||
+        searchParams.tratamiento_pot;
+
     try {
-        // Realizar búsqueda de lotes con filtros
-        const searchResponse = await searchLotes(request, searchParams);
+        let searchResponse;
+
+        if (hasFilters) {
+            // Si hay filtros, usar búsqueda específica
+            searchResponse = await searchLotes(request, searchParams);
+        } else {
+            // Si no hay filtros, mostrar todos los lotes disponibles
+            searchResponse = await getAllLotes(request, {
+                limit: searchParams.limit,
+                offset: searchParams.offset,
+                ordering: '-created_at' // Mostrar los más recientes primero
+            });
+        }
 
         // Para cada lote que tenga CBML, intentar obtener información POT
         const lotesConPOT = await Promise.all(
@@ -63,6 +82,8 @@ export async function loader({ request }: LoaderFunctionArgs) {
             user,
             lotes: lotesConPOT,
             totalCount: searchResponse.count,
+            hasFilters,
+            isInitialLoad: !hasFilters && currentPage === 1,
             pagination: {
                 page: currentPage,
                 totalPages,
@@ -86,6 +107,8 @@ export async function loader({ request }: LoaderFunctionArgs) {
             user,
             lotes: [],
             totalCount: 0,
+            hasFilters,
+            isInitialLoad: false,
             pagination: { page: 1, totalPages: 0 },
             filters: {
                 q: "",
@@ -95,7 +118,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
                 zona: "",
                 tratamiento_pot: ""
             },
-            error: "Error al realizar la búsqueda"
+            error: hasFilters ? "Error al realizar la búsqueda" : "Error al cargar los lotes disponibles"
         });
     }
 }
@@ -165,6 +188,8 @@ export default function DeveloperSearch() {
     const user = 'user' in loaderData ? loaderData.user : null;
     const lotes = 'lotes' in loaderData ? loaderData.lotes : [];
     const totalCount = 'totalCount' in loaderData ? loaderData.totalCount : 0;
+    const hasFilters = 'hasFilters' in loaderData ? loaderData.hasFilters : false;
+    const isInitialLoad = 'isInitialLoad' in loaderData ? loaderData.isInitialLoad : false;
     const pagination = 'pagination' in loaderData ? loaderData.pagination : { page: 1, totalPages: 0 };
     const filters = 'filters' in loaderData ? loaderData.filters : { q: "", area_min: "", area_max: "", estrato: "", zona: "", tratamiento_pot: "" };
     const error = 'error' in loaderData ? loaderData.error : null;
@@ -194,7 +219,10 @@ export default function DeveloperSearch() {
             <div className="mb-8">
                 <h1 className="text-3xl font-bold">Búsqueda de Lotes</h1>
                 <p className="text-gray-600 mt-2">
-                    Encuentra lotes disponibles según tus criterios de desarrollo
+                    {hasFilters
+                        ? "Encuentra lotes disponibles según tus criterios de desarrollo"
+                        : "Explora todos los lotes disponibles en el sistema"
+                    }
                 </p>
             </div>
 
@@ -208,8 +236,8 @@ export default function DeveloperSearch() {
             {/* Action result message */}
             {actionData?.message && (
                 <div className={`mb-6 p-4 rounded-md ${actionData.success
-                        ? "bg-green-50 border-l-4 border-green-400 text-green-700"
-                        : "bg-red-50 border-l-4 border-red-400 text-red-700"
+                    ? "bg-green-50 border-l-4 border-green-400 text-green-700"
+                    : "bg-red-50 border-l-4 border-red-400 text-red-700"
                     }`}>
                     {actionData.message}
                 </div>
@@ -294,10 +322,32 @@ export default function DeveloperSearch() {
                             type="submit"
                             className="w-full bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700"
                         >
-                            Buscar
+                            {hasFilters ? "Buscar" : "Filtrar"}
                         </button>
                     </div>
                 </Form>
+
+                {/* Mostrar filtros activos */}
+                {hasFilters && getActiveFilters().length > 0 && (
+                    <div className="mt-4 pt-4 border-t">
+                        <div className="flex items-center justify-between">
+                            <div className="flex flex-wrap gap-2">
+                                <span className="text-sm text-gray-600 mr-2">Filtros activos:</span>
+                                {getActiveFilters().map((filter, index) => (
+                                    <span key={index} className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                                        {filter}
+                                    </span>
+                                ))}
+                            </div>
+                            <a
+                                href="/developer/search"
+                                className="text-sm text-gray-500 hover:text-gray-700"
+                            >
+                                Limpiar filtros
+                            </a>
+                        </div>
+                    </div>
+                )}
             </div>
 
             {/* Results summary */}
@@ -309,15 +359,22 @@ export default function DeveloperSearch() {
                                 <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                                 <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                             </svg>
-                            Buscando...
+                            {hasFilters ? "Buscando..." : "Cargando lotes..."}
                         </span>
                     ) : (
-                        `Se encontraron ${totalCount.toLocaleString()} lotes`
+                        <span>
+                            {hasFilters
+                                ? `Se encontraron ${totalCount.toLocaleString()} lotes que coinciden con tu búsqueda`
+                                : isInitialLoad
+                                    ? `Mostrando ${totalCount.toLocaleString()} lotes disponibles`
+                                    : `${totalCount.toLocaleString()} lotes en total`
+                            }
+                        </span>
                     )}
                 </div>
 
                 <div className="text-sm text-gray-500">
-                    Página {pagination.page} de {pagination.totalPages}
+                    {pagination.totalPages > 0 && `Página ${pagination.page} de ${pagination.totalPages}`}
                 </div>
             </div>
 
@@ -370,7 +427,7 @@ export default function DeveloperSearch() {
                                 </Form>
 
                                 <a
-                                    href={`/developer/lote/${lote.id}`}
+                                    href={`/developer/lots/${lote.id}`}
                                     className="text-sm bg-blue-600 text-white px-3 py-1 rounded hover:bg-blue-700"
                                 >
                                     Ver detalles
@@ -383,13 +440,40 @@ export default function DeveloperSearch() {
                 !isSearching && (
                     <div className="text-center py-12">
                         <div className="max-w-md mx-auto">
-                            <svg className="mx-auto h-12 w-12 text-gray-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                            </svg>
-                            <h3 className="mt-2 text-sm font-medium text-gray-900">No se encontraron lotes</h3>
-                            <p className="mt-1 text-sm text-gray-500">
-                                Intenta ajustar los filtros de búsqueda para encontrar más resultados.
-                            </p>
+                            {hasFilters ? (
+                                // Mensaje cuando hay filtros pero no resultados
+                                <>
+                                    <svg className="mx-auto h-12 w-12 text-gray-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                                    </svg>
+                                    <h3 className="mt-2 text-sm font-medium text-gray-900">No se encontraron lotes</h3>
+                                    <p className="mt-1 text-sm text-gray-500">
+                                        No hay lotes que coincidan con los filtros aplicados.
+                                    </p>
+                                    <div className="mt-6">
+                                        <a
+                                            href="/developer/search"
+                                            className="inline-flex items-center px-4 py-2 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                                        >
+                                            Ver todos los lotes
+                                        </a>
+                                    </div>
+                                </>
+                            ) : (
+                                // Mensaje cuando no hay filtros y no hay lotes en el sistema
+                                <>
+                                    <svg className="mx-auto h-12 w-12 text-gray-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
+                                    </svg>
+                                    <h3 className="mt-2 text-sm font-medium text-gray-900">No hay lotes disponibles</h3>
+                                    <p className="mt-1 text-sm text-gray-500">
+                                        Actualmente no hay lotes registrados en el sistema.
+                                    </p>
+                                    <p className="mt-1 text-sm text-gray-500">
+                                        Los propietarios pueden registrar nuevos lotes que aparecerán aquí.
+                                    </p>
+                                </>
+                            )}
                         </div>
                     </div>
                 )

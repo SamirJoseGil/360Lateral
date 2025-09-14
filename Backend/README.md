@@ -52,6 +52,57 @@ API REST desarrollada con Django para la gestión de lotes inmobiliarios, usuari
 
 ---
 
+## 🔐 Validaciones de Integridad
+
+### Validación de Duplicados
+
+El sistema implementa validaciones estrictas para evitar duplicados:
+
+#### Usuarios
+- **Email único**: No se permite registrar usuarios con emails duplicados
+- **Validación en creación y actualización**: Se verifica en tiempo real
+- **Mensajes claros**: Respuestas específicas indicando el conflicto
+
+```json
+// Error de email duplicado
+{
+  "success": false,
+  "error": "Ya existe un usuario registrado con el email: usuario@ejemplo.com"
+}
+```
+
+#### Lotes
+- **CBML único**: Cada lote debe tener un Código Básico Municipal de Lote único
+- **Matrícula única**: No se permiten matrículas duplicadas
+- **Validación obligatoria**: Al menos uno de estos campos debe proporcionarse
+- **Validación en todas las operaciones**: Creación, actualización y importación desde MapGIS
+
+```json
+// Error de CBML duplicado
+{
+  "error": "Ya existe un lote registrado con el CBML: 05001010203040506"
+}
+
+// Error de matrícula duplicada
+{
+  "error": "Ya existe un lote registrado con la matrícula: 123-456789"
+}
+
+// Error por falta de identificadores
+{
+  "error": "Debe proporcionar al menos el CBML o la matrícula del lote"
+}
+```
+
+### Manejo de Errores
+
+- **IntegrityError**: Captura errores de base de datos por restricciones
+- **Logging detallado**: Registro de todos los intentos de duplicación
+- **Respuestas consistentes**: Formato uniforme en mensajes de error
+- **Códigos HTTP apropiados**: 400 para errores de validación, 500 para errores internos
+
+---
+
 ## 📋 Tabla de Contenidos
 
 - [🚀 Inicio Rápido](#-inicio-rápido)
@@ -217,7 +268,7 @@ python manage.py dbshell
 #### Usuario (User)
 ```python
 # Campos principales
-- email (único)
+- email (único) # ✅ Validación implementada
 - first_name, last_name
 - role (admin, owner, developer)
 - phone, company
@@ -228,6 +279,8 @@ python manage.py dbshell
 ```python
 # Campos principales
 - nombre, descripcion
+- cbml (único) # ✅ Validación implementada
+- matricula (único) # ✅ Validación implementada
 - precio, area
 - ubicacion (coordenadas)
 - estado (disponible, vendido, reservado)
@@ -398,3 +451,4 @@ python manage.py shell
 
 - Asegúrate de tener PostgreSQL y Redis corriendo si no usas Docker.
 - Configura correctamente el archivo `.env` antes de iniciar el servidor.
+- **Nuevas validaciones**: El sistema ahora previene duplicados automáticamente.

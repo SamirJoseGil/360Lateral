@@ -68,44 +68,30 @@ export default function Navbar({ user }: NavbarProps) {
         });
     };
 
-    // Enlaces de navegación según el rol del usuario
+    // Enlaces de navegación simplificados y fijos
     const getNavLinks = () => {
-        if (!user) return [];
-
-        switch (user.role) {
-            case "admin":
-                return [
-                    { to: "/admin", label: "Dashboard" },
-                    { to: "/admin/usuarios", label: "Usuarios" },
-                    { to: "/admin/validacion", label: "Validación" },
-                    { to: "/admin/pot", label: "POT" },
-                    { to: "/admin/system", label: "Sistema" },
-                ];
-            case "owner":
-                return [
-                    { to: "/owner", label: "Dashboard" },
-                    { to: "/owner/lotes", label: "Mis Lotes" },
-                    { to: "/owner/documentos", label: "Documentos" },
-                    {/*{ to: "/owner/ofertas", label: "Ofertas" }, */ }
-                ];
-            case "developer":
-                return [
-                    { to: "/developer", label: "Dashboard" },
-                    { to: "/developer/search", label: "Búsqueda" },
-                    { to: "/developer/favorites", label: "Favoritos" },
-                    {/* { to: "/developer/analysis", label: "Análisis" }, */ }
-                ];
-            default:
-                return [];
+        if (!user) {
+            // Si no hay usuario, mostrar enlaces públicos
+            return [
+                { to: "/about", label: "Acerca de" },
+                { to: "/portfolio", label: "Portfolio" },
+            ];
         }
+
+        // Si hay usuario autenticado, mostrar enlaces comunes más el dashboard específico
+        return [
+            { to: `/${user.role}`, label: "Dashboard" },
+            { to: "/about", label: "Acerca de" },
+            { to: "/portfolio", label: "Portfolio" },
+        ];
     };
 
-    const navLinks = getNavLinks().filter((link) => typeof link.to === "string");
+    const navLinks = getNavLinks();
 
     return (
         <nav className={`navbar-lateral w-full fixed top-0 z-50 transition-all duration-300 ${isScrolled ? 'shadow-lateral py-2' : 'py-4'}`}>
             <div className="container mx-auto px-4 sm:px-6 lg:px-8">
-                <div className="relative flex items-center justify-between h-16">
+                <div className="relative flex items-center justify-between h-12">
                     {/* Botón de menú móvil */}
                     <div className="absolute inset-y-0 left-0 flex items-center sm:hidden">
                         <button
@@ -144,56 +130,19 @@ export default function Navbar({ user }: NavbarProps) {
                         </div>
                         <div className="hidden sm:ml-8 sm:block">
                             <div className="flex space-x-4">
-                                {user ? (
-                                    // Si hay usuario autenticado, mostrar los enlaces según su rol
-                                    navLinks.map((link) => (
-                                        <NavLink
-                                            key={link.to}
-                                            to={link.to}
-                                            className={({ isActive }) =>
-                                                isActive
-                                                    ? "nav-link-active"
-                                                    : "nav-link"
-                                            }
-                                        >
-                                            {link.label}
-                                        </NavLink>
-                                    ))
-                                ) : (
-                                    // Si no hay usuario, mostrar enlaces públicos
-                                    <>
-                                        <NavLink
-                                            to="/about"
-                                            className={({ isActive }) =>
-                                                isActive
-                                                    ? "nav-link-active"
-                                                    : "nav-link"
-                                            }
-                                        >
-                                            Acerca de
-                                        </NavLink>
-                                        <NavLink
-                                            to="/nuestro-portfolio"
-                                            className={({ isActive }) =>
-                                                isActive
-                                                    ? "nav-link-active"
-                                                    : "nav-link"
-                                            }
-                                        >
-                                            Nuestro Portafolio
-                                        </NavLink>
-                                        <NavLink
-                                            to="/nosotros"
-                                            className={({ isActive }) =>
-                                                isActive
-                                                    ? "nav-link-active"
-                                                    : "nav-link"
-                                            }
-                                        >
-                                            Nosotros
-                                        </NavLink>
-                                    </>
-                                )}
+                                {navLinks.map((link) => (
+                                    <NavLink
+                                        key={link.to}
+                                        to={link.to}
+                                        className={({ isActive }) =>
+                                            isActive
+                                                ? "nav-link-active"
+                                                : "nav-link"
+                                        }
+                                    >
+                                        {link.label}
+                                    </NavLink>
+                                ))}
                             </div>
                         </div>
                     </div>
@@ -211,7 +160,7 @@ export default function Navbar({ user }: NavbarProps) {
                                 >
                                     <span className="sr-only">Abrir menú de usuario</span>
                                     <div className="h-9 w-9 rounded-full bg-lateral-500 flex items-center justify-center text-white font-medium">
-                                        {user.name ? user.name.charAt(0) : "U"}
+                                        {user.name ? user.name.charAt(0) : user.email ? user.email.charAt(0).toUpperCase() : "U"}
                                     </div>
                                 </button>
 
@@ -223,8 +172,15 @@ export default function Navbar({ user }: NavbarProps) {
                                         aria-labelledby="user-menu-button"
                                     >
                                         <div className="px-4 py-2 text-sm text-gris-900 border-b">
-                                            <div className="font-medium">{user.name}</div>
+                                            <div className="font-medium">
+                                                {user.name || user.first_name || user.email?.split('@')[0] || 'Usuario'}
+                                            </div>
                                             <div className="text-gris-500 text-xs">{user.email}</div>
+                                            <div className="text-gris-400 text-xs capitalize">
+                                                {user.role === 'admin' ? 'Administrador' :
+                                                    user.role === 'owner' ? 'Propietario' :
+                                                        user.role === 'developer' ? 'Desarrollador' : user.role}
+                                            </div>
                                         </div>
                                         <Link
                                             to="/profile"
@@ -234,14 +190,6 @@ export default function Navbar({ user }: NavbarProps) {
                                         >
                                             Mi Perfil
                                         </Link>
-                                        {/* <Link
-                                            to="/settings"
-                                            className="block px-4 py-2 text-sm text-gris-700 hover:bg-gris-50 hover:text-lateral-500"
-                                            role="menuitem"
-                                            onClick={() => setIsProfileOpen(false)}
-                                        >
-                                            Ajustes
-                                        </Link> */}
                                         <logoutFetcher.Form method="post" action="/api/auth/logout">
                                             <button
                                                 type="submit"
@@ -277,64 +225,26 @@ export default function Navbar({ user }: NavbarProps) {
             </div>
 
             {/* Menú móvil */}
-            {
-                isMenuOpen && (
-                    <div className="sm:hidden border-t border-gris-200 bg-white shadow-lg">
-                        <div className="space-y-1 px-4 py-3">
-                            {user ? (
-                                // Si hay usuario autenticado, mostrar los enlaces según su rol
-                                navLinks.map((link) => (
-                                    <NavLink
-                                        key={link.to}
-                                        to={link.to}
-                                        className={({ isActive }) =>
-                                            isActive
-                                                ? "block py-2 font-medium text-lateral-500"
-                                                : "block py-2 text-gris-700 hover:text-lateral-500"
-                                        }
-                                        onClick={() => setIsMenuOpen(false)}
-                                    >
-                                        {link.label}
-                                    </NavLink>
-                                ))
-                            ) : (
-                                // Si no hay usuario, mostrar enlaces públicos
-                                <>
-                                    <NavLink
-                                        to="/about"
-                                        className={({ isActive }) =>
-                                            isActive
-                                                ? "block py-2 font-medium text-lateral-500"
-                                                : "block py-2 text-gris-700 hover:text-lateral-500"
-                                        }
-                                        onClick={() => setIsMenuOpen(false)}
-                                    >
-                                        Acerca de
-                                    </NavLink>
-                                    <NavLink
-                                        to="/contact"
-                                        className={({ isActive }) =>
-                                            isActive
-                                                ? "block py-2 font-medium text-lateral-500"
-                                                : "block py-2 text-gris-700 hover:text-lateral-500"
-                                        }
-                                        onClick={() => setIsMenuOpen(false)}
-                                    >
-                                        Contacto
-                                    </NavLink>
-                                </>
-                            )}
-                        </div>
+            {isMenuOpen && (
+                <div className="sm:hidden border-t border-gris-200 bg-white shadow-lg">
+                    <div className="space-y-1 px-4 py-3">
+                        {navLinks.map((link) => (
+                            <NavLink
+                                key={link.to}
+                                to={link.to}
+                                className={({ isActive }) =>
+                                    isActive
+                                        ? "block py-2 font-medium text-lateral-500"
+                                        : "block py-2 text-gris-700 hover:text-lateral-500"
+                                }
+                                onClick={() => setIsMenuOpen(false)}
+                            >
+                                {link.label}
+                            </NavLink>
+                        ))}
                     </div>
-                )
-            }
-
-            {/* Mostrar estado del logout para depuración */}
-            {
-                logoutFetcher.state !== "idle" && (
-                    <div className="hidden">Cerrando sesión: {logoutFetcher.state}</div>
-                )
-            }
+                </div>
+            )}
         </nav >
     );
 }

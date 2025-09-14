@@ -60,7 +60,7 @@ export default function LoteFormFields({
     // Cargar los tratamientos al montar el componente
     useEffect(() => {
         // Fetchear los tratamientos POT disponibles
-        dataFetcher.load("/owner/lote/nuevo");
+        dataFetcher.load("/owner/lotes/nuevo");
     }, []);
 
     // Procesar los datos recibidos

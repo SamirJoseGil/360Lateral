@@ -97,3 +97,29 @@ h1, h2, h3, h4, h5, h6 {
   position: relative;
   overflow: hidden;
 }
+
+/* Estilos adicionales para formularios */
+.form-input:focus {
+  outline: none;
+  ring: 2px;
+  ring-color: theme('colors.lateral.500');
+  border-color: theme('colors.lateral.500');
+}
+
+/* Animaciones suaves para elementos interactivos */
+.transition-colors {
+  transition-property: background-color, border-color, color, fill, stroke;
+  transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+  transition-duration: 200ms;
+}
+
+/* Estados de validación */
+.input-error {
+  border-color: theme('colors.red.300');
+  box-shadow: 0 0 0 1px theme('colors.red.300');
+}
+
+.input-success {
+  border-color: theme('colors.green.300');
+  box-shadow: 0 0 0 1px theme('colors.green.300');
+}

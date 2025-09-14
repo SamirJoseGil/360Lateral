@@ -5,7 +5,7 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework import status
-from django.db import models
+from django.db import models, IntegrityError
 import logging
 
 from ..models import Lote
@@ -116,7 +116,7 @@ def lote_detail(request, pk):
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def lote_create(request):
-    """Crear un nuevo lote"""
+    """Crear un nuevo lote con validación de duplicados"""
     try:
         # Validar datos mínimos
         if not request.data.get('nombre'):
@@ -124,6 +124,28 @@ def lote_create(request):
                 {"error": "El nombre del lote es requerido"}, 
                 status=status.HTTP_400_BAD_REQUEST
             )
+        
+        # Validar unicidad de CBML si se proporciona
+        cbml = request.data.get('cbml')
+        if cbml:
+            if Lote.objects.filter(cbml=cbml).exists():
+                return Response({
+                    "error": f"Ya existe un lote registrado con el CBML: {cbml}"
+                }, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Validar unicidad de matrícula si se proporciona
+        matricula = request.data.get('matricula')
+        if matricula:
+            if Lote.objects.filter(matricula=matricula).exists():
+                return Response({
+                    "error": f"Ya existe un lote registrado con la matrícula: {matricula}"
+                }, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Validar que al menos uno de los identificadores únicos esté presente
+        if not cbml and not matricula:
+            return Response({
+                "error": "Debe proporcionar al menos el CBML o la matrícula del lote"
+            }, status=status.HTTP_400_BAD_REQUEST)
         
         # Preparar datos para crear el lote
         lote_data = {
@@ -150,7 +172,7 @@ def lote_create(request):
         # Crear el lote
         lote = Lote.objects.create(**lote_data)
         
-        logger.info(f"Lote creado: ID={lote.id}, Nombre={lote.nombre}, Usuario={request.user.username}")
+        logger.info(f"Lote creado: ID={lote.id}, Nombre={lote.nombre}, CBML={cbml}, Matrícula={matricula}, Usuario={request.user.username}")
         
         serializer = LoteSerializer(lote)
         return Response({
@@ -159,6 +181,11 @@ def lote_create(request):
             'lote': serializer.data
         }, status=status.HTTP_201_CREATED)
         
+    except IntegrityError as e:
+        logger.error(f"Error de integridad al crear lote: {str(e)}")
+        return Response({
+            "error": "Error de integridad: Ya existe un lote con esos identificadores"
+        }, status=status.HTTP_400_BAD_REQUEST)
     except Exception as e:
         logger.exception(f"Error creando lote: {e}")
         return Response(
@@ -170,7 +197,7 @@ def lote_create(request):
 @api_view(['PUT', 'PATCH'])
 @permission_classes([IsAuthenticated])
 def lote_update(request, pk):
-    """Actualizar un lote existente"""
+    """Actualizar un lote existente con validación de duplicados"""
     try:
         lote = Lote.objects.get(pk=pk)
         
@@ -181,9 +208,28 @@ def lote_update(request, pk):
                 status=status.HTTP_403_FORBIDDEN
             )
         
+        # Validar unicidad de CBML si se está actualizando
+        new_cbml = request.data.get('cbml')
+        if new_cbml and new_cbml != lote.cbml:
+            if Lote.objects.filter(cbml=new_cbml).exclude(id=lote.id).exists():
+                return Response({
+                    "error": f"Ya existe otro lote registrado con el CBML: {new_cbml}"
+                }, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Validar unicidad de matrícula si se está actualizando
+        new_matricula = request.data.get('matricula')
+        if new_matricula and new_matricula != lote.matricula:
+            if Lote.objects.filter(matricula=new_matricula).exclude(id=lote.id).exists():
+                return Response({
+                    "error": f"Ya existe otro lote registrado con la matrícula: {new_matricula}"
+                }, status=status.HTTP_400_BAD_REQUEST)
+        
         serializer = LoteDetailSerializer(lote, data=request.data, partial=True)
         if serializer.is_valid():
             serializer.save()
+            
+            logger.info(f"Lote actualizado: ID={lote.id}, Usuario={request.user.username}")
+            
             return Response({
                 'id': lote.id,
                 'mensaje': 'Lote actualizado exitosamente',
@@ -196,6 +242,11 @@ def lote_update(request, pk):
             {"error": "Lote no encontrado"}, 
             status=status.HTTP_404_NOT_FOUND
         )
+    except IntegrityError as e:
+        logger.error(f"Error de integridad al actualizar lote: {str(e)}")
+        return Response({
+            "error": "Error de integridad: Ya existe un lote con esos identificadores"
+        }, status=status.HTTP_400_BAD_REQUEST)
     except Exception as e:
         logger.exception(f"Error actualizando lote: {e}")
         return Response(
@@ -232,7 +283,7 @@ def lote_delete(request, pk):
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def lote_create_from_mapgis(request):
-    """Crear un nuevo lote importando datos desde MapGIS usando CBML"""
+    """Crear un nuevo lote importando datos desde MapGIS usando CBML con validación de duplicados"""
     try:
         cbml = request.data.get('cbml')
         if not cbml:
@@ -240,6 +291,12 @@ def lote_create_from_mapgis(request):
                 {"error": "CBML es requerido"}, 
                 status=status.HTTP_400_BAD_REQUEST
             )
+        
+        # Validar que no exista un lote con ese CBML
+        if Lote.objects.filter(cbml=cbml).exists():
+            return Response({
+                "error": f"Ya existe un lote registrado con el CBML: {cbml}"
+            }, status=status.HTTP_400_BAD_REQUEST)
         
         # Importar servicio MapGIS
         from ..services.mapgis_service import MapGISService
@@ -292,6 +349,11 @@ def lote_create_from_mapgis(request):
             'datos_mapgis': datos_mapgis
         }, status=status.HTTP_201_CREATED)
         
+    except IntegrityError as e:
+        logger.error(f"Error de integridad al crear lote desde MapGIS: {str(e)}")
+        return Response({
+            "error": "Error de integridad: Ya existe un lote con ese CBML"
+        }, status=status.HTTP_400_BAD_REQUEST)
     except Exception as e:
         logger.exception(f"Error creando lote desde MapGIS: {e}")
         return Response(

@@ -48,7 +48,7 @@ export default function DeveloperLayout() {
         { to: "/developer/search", label: "Buscar Lotes", icon: "search" },
         { to: "/developer/favorites", label: "Favoritos", icon: "heart" },
         // { to: "/developer/analysis", label: "Análisis Urbanístico", icon: "chart-bar" }, // commented out option
-        { to: "/developer/investment", label: "Criterios de Inversión", icon: "document-text" },
+        // { to: "/developer/investment", label: "Criterios de Inversión", icon: "document-text" },
     ];
 
     return (
@@ -61,7 +61,7 @@ export default function DeveloperLayout() {
 
             {/* Contenido principal */}
             <div className="flex-1 overflow-auto">
-                <div className="container mx-auto p-4">
+                <div className="container mx-auto py-16">
                     <Outlet />
                 </div>
             </div>

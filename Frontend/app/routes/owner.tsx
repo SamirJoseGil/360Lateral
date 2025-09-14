@@ -1,7 +1,9 @@
 import { json, redirect } from "@remix-run/node";
-import { Link, Outlet, useLoaderData } from "@remix-run/react";
+import { Outlet, useLoaderData } from "@remix-run/react";
 import type { LoaderFunctionArgs } from "@remix-run/node";
 import { getUser } from "~/utils/auth.server";
+import Sidebar from "~/components/sidebar";
+import { PageViewTracker } from "~/components/StatsTracker";
 
 export async function loader({ request }: LoaderFunctionArgs) {
     // Verificar que el usuario esté autenticado y sea propietario
@@ -24,88 +26,31 @@ export async function loader({ request }: LoaderFunctionArgs) {
 export default function OwnerLayout() {
     const { user } = useLoaderData<typeof loader>();
 
-    return (
-        <div className="flex h-screen bg-gray-50">
-            {/* Sidebar / Menú lateral */}
-            <div className="w-64 bg-white shadow-md">
-                <div className="p-4 border-b border-gray-200">
-                    <h2 className="text-xl font-semibold text-gray-800">Panel Propietario</h2>
-                    <p className="text-sm text-gray-500 mt-1">Bienvenido, {user.name}</p>
-                </div>
+    // Opciones del sidebar para el propietario
+    const sidebarOptions = [
+        { to: "/owner", label: "Dashboard", icon: "dashboard" },
+        { to: "/owner/lotes", label: "Mis Lotes", icon: "map" },
+        { to: "/owner/documentos", label: "Documentos", icon: "check-circle" },
+        { to: "/owner/solicitudes", label: "Solicitudes", icon: "users" },
+        { to: "/owner/analisis/solicitar", label: "Análisis Urbanístico", icon: "chart-bar" },
+    ];
 
-                <nav className="p-4">
-                    <ul className="space-y-1">
-                        <li>
-                            <Link
-                                to="/owner"
-                                className="block px-4 py-2 text-gray-700 rounded hover:bg-indigo-50 hover:text-indigo-700"
-                            >
-                                Dashboard
-                            </Link>
-                        </li>
-                        <li>
-                            <Link
-                                to="/owner/lotes"
-                                className="block px-4 py-2 text-gray-700 rounded hover:bg-indigo-50 hover:text-indigo-700"
-                            >
-                                Mis Lotes
-                            </Link>
-                        </li>
-                        <li>
-                            <Link
-                                to="/lotes/nuevo"
-                                className="block px-4 py-2 text-gray-700 rounded hover:bg-indigo-50 hover:text-indigo-700"
-                            >
-                                Registrar Lote
-                            </Link>
-                        </li>
-                        <li>
-                            <Link
-                                to="/owner/documentos"
-                                className="block px-4 py-2 text-gray-700 rounded hover:bg-indigo-50 hover:text-indigo-700"
-                            >
-                                Documentos
-                            </Link>
-                        </li>
-                        <li>
-                            <Link
-                                to="/owner/solicitudes"
-                                className="block px-4 py-2 text-gray-700 rounded hover:bg-indigo-50 hover:text-indigo-700"
-                            >
-                                Solicitudes
-                            </Link>
-                        </li>
-                        <li>
-                            <Link
-                                to="/owner/analisis/solicitar"
-                                className="block px-4 py-2 text-gray-700 rounded hover:bg-indigo-50 hover:text-indigo-700"
-                            >
-                                Análisis Urbanístico
-                            </Link>
-                        </li>
-                        <li className="pt-4 mt-4 border-t border-gray-200">
-                            <Link
-                                to="/profile"
-                                className="block px-4 py-2 text-gray-700 rounded hover:bg-indigo-50 hover:text-indigo-700"
-                            >
-                                Mi Perfil
-                            </Link>
-                        </li>
-                        <li>
-                            <Link
-                                to="/api/auth/logout"
-                                className="block px-4 py-2 text-gray-700 rounded hover:bg-indigo-50 hover:text-indigo-700"
-                            >
-                                Cerrar Sesión
-                            </Link>
-                        </li>
-                    </ul>
-                </nav>
-            </div>
+    return (
+        <div className="flex h-screen bg-gray-100">
+            {/* Tracking de estadísticas para el panel owner */}
+            <PageViewTracker pageName="owner_layout" additionalData={{ user_id: user.id, role: user.role }} />
+
+            {/* Sidebar */}
+            <Sidebar
+                options={sidebarOptions}
+                user={user}
+            />
 
             {/* Contenido principal */}
             <div className="flex-1 overflow-auto">
-                <Outlet />
+                <div className="container mx-auto p-4">
+                    <Outlet />
+                </div>
             </div>
         </div>
     );

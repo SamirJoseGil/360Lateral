@@ -71,7 +71,7 @@ export default function LoteSearchSection({ onDataReceived, onDireccionSelect }:
                 { searchType, searchValue: value },
                 {
                     method: 'get',
-                    action: `/owner/lote/nuevo?searchType=${searchType}&searchValue=${encodeURIComponent(value)}`
+                    action: `/owner/lotes/nuevo?searchType=${searchType}&searchValue=${encodeURIComponent(value)}`
                 }
             );
 

@@ -270,14 +270,6 @@ export default function AdminValidacion() {
                 </div>
             )}
 
-            {realData && (
-                <div className="mb-6 bg-blue-50 border-l-4 border-blue-400 p-4">
-                    <p className="text-sm text-blue-700">
-                        ✓ Mostrando datos reales de validaciones del sistema
-                    </p>
-                </div>
-            )}
-
             {/* Encabezado */}
             <div className="mb-8">
                 <h1 className="text-3xl font-bold">Validación de Documentos</h1>

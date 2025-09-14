@@ -278,7 +278,7 @@ export default function OwnerDashboard() {
             <h2 className="text-xl font-bold mb-4">Acciones Rápidas</h2>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
                 <Link
-                    to="/owner/lote/nuevo"
+                    to="/owner/lotes/nuevo"
                     className="bg-white rounded-lg shadow hover:shadow-md transition-shadow p-6 flex flex-col items-center text-center"
                 >
                     <div className="p-3 rounded-full bg-green-100 text-green-800 mb-4">

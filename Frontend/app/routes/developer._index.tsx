@@ -1,9 +1,10 @@
 import { json, redirect } from "@remix-run/node";
 import { Link, useLoaderData } from "@remix-run/react";
 import type { LoaderFunctionArgs } from "@remix-run/node";
-import { getUser, getAccessTokenFromCookies } from "~/utils/auth.server";
+import { getUser } from "~/utils/auth.server";
 import { getUserActivity, recordEvent } from "~/services/stats.server";
 import { fetchWithAuth } from "~/utils/auth.server";
+import { getFavoriteLotes } from "~/services/lotes.server";
 
 // Constante para la URL base de la API
 const API_URL = process.env.API_URL || "http://localhost:8000";
@@ -42,15 +43,21 @@ export async function loader({ request }: LoaderFunctionArgs) {
             }
         });
 
-        // Obtener la actividad del usuario
-        const { activity, headers } = await getUserActivity(request, 30);
+        // Obtener la actividad del usuario de forma paralela
+        const [activityResponse, favoritesResponse] = await Promise.allSettled([
+            getUserActivity(request, 30),
+            getFavoriteLotes(request, { limit: 3 })
+        ]);
 
-        // Intentar obtener criterios reales desde la API
+        const activity = activityResponse.status === 'fulfilled' ? activityResponse.value.activity : null;
+        const favoritesData = favoritesResponse.status === 'fulfilled' ? favoritesResponse.value : { favorites: [] };
+
+        // Intentar obtener criterios de inversión reales desde la API
         let searchCriteria: SearchCriteria[] = [];
         try {
             const { res: criteriaResponse } = await fetchWithAuth(
                 request,
-                `${API_URL}/api/developer/search-criteria/`
+                `${API_URL}/api/developer/investment-criteria/`
             );
 
             if (criteriaResponse.ok) {
@@ -58,79 +65,52 @@ export async function loader({ request }: LoaderFunctionArgs) {
                 searchCriteria = (criteriaData.results || []).map((item: any) => ({
                     id: item.id,
                     name: item.name || `Criterio ${item.id}`,
-                    area: item.area_range ? `${item.area_range.min}-${item.area_range.max}` : "300-500",
-                    zone: item.zone || "No especificada",
-                    budget: item.budget_range ? `${Math.round(item.budget_range.min / 1000000)}M-${Math.round(item.budget_range.max / 1000000)}M` : "200M-400M",
-                    treatment: item.treatment || "No especificado"
+                    area: item.area_range ? `${item.area_range.min}-${item.area_range.max}` : "N/A",
+                    zone: Array.isArray(item.zones) ? item.zones.join(", ") : item.zone || "No especificada",
+                    budget: item.budget_range ?
+                        `${Math.round(item.budget_range.min / 1000000)}M-${Math.round(item.budget_range.max / 1000000)}M` :
+                        "N/A",
+                    treatment: Array.isArray(item.treatments) ? item.treatments.join(", ") : item.treatment || "No especificado"
                 }));
             }
         } catch (error) {
             console.error("Error obteniendo criterios desde API:", error);
         }
 
-        // Si no hay criterios reales, usar datos de ejemplo
-        if (searchCriteria.length === 0) {
-            searchCriteria = [
-                { id: 1, name: "Criterio residencial", area: "300-500", zone: "Norte", budget: "200M-400M", treatment: "Residencial" },
-                { id: 2, name: "Criterio comercial", area: "400-800", zone: "Centro", budget: "500M-800M", treatment: "Comercial" }
-            ];
-        }
+        // Procesar lotes favoritos desde la API
+        const favoriteLots: FavoriteLot[] = favoritesData.favorites.map((item: any) => ({
+            id: item.id || item.lote?.id,
+            name: item.lote?.nombre || item.name || `Lote ${item.lote?.cbml || item.id}`,
+            area: item.lote?.area || 0,
+            price: item.lote?.precio_estimado || item.price || 0,
+            address: item.lote?.direccion || item.address || "Dirección no disponible",
+            owner: item.lote?.owner_name || item.owner || "No especificado",
+            potentialValue: item.lote?.valor_potencial || item.potentialValue || (item.price * 1.25) || 0
+        }));
 
-        // Intentar obtener lotes favoritos reales
-        let favoriteLots: FavoriteLot[] = [];
-        try {
-            const { res: favoritesResponse } = await fetchWithAuth(
-                request,
-                `${API_URL}/api/developer/favorites/`
-            );
-
-            if (favoritesResponse.ok) {
-                const favoritesData = await favoritesResponse.json();
-                favoriteLots = (favoritesData.results || []).slice(0, 3).map((item: any) => ({
-                    id: item.id,
-                    name: item.nombre || item.name || `Lote ${item.cbml || item.id}`,
-                    area: item.area || 0,
-                    price: item.price || item.valor_estimado || 0,
-                    address: item.direccion || item.address || "Dirección no disponible",
-                    owner: item.propietario || item.owner || "No especificado",
-                    potentialValue: item.valor_potencial || item.potentialValue || (item.price * 1.25) || 0
-                }));
-            }
-        } catch (error) {
-            console.error("Error obteniendo favoritos desde API:", error);
-        }
-
-        // Si no hay favoritos reales, usar datos de ejemplo
-        if (favoriteLots.length === 0) {
-            favoriteLots = [
-                { id: 1, name: "Lote Residencial Norte", area: 350, price: 320000000, address: "Calle 123 #45-67", owner: "Juan Pérez", potentialValue: 400000000 },
-                { id: 2, name: "Lote Comercial Centro", area: 520, price: 650000000, address: "Carrera 7 #25-30", owner: "Inversiones XYZ", potentialValue: 800000000 },
-                { id: 3, name: "Lote Mixto Oeste", area: 420, price: 480000000, address: "Avenida 80 #65-43", owner: "María Rodríguez", potentialValue: 600000000 }
-            ];
-        }
-
-        // Utilizar datos reales de la API para estadísticas
+        // Calcular estadísticas reales basadas en datos de la API
         const stats = {
             searches: activity?.events_by_type?.search || 0,
             favorites: favoriteLots.length,
             offers: activity?.events_by_type?.action || 0,
-            matches: 12,
-            analyses: activity?.events_by_type?.view || 0,
+            matches: activity?.events_by_type?.match || 0,
+            analyses: activity?.events_by_type?.analysis || activity?.events_by_type?.view || 0,
             savedSearches: searchCriteria.length,
-            contacts: activity?.events_by_type?.other || 0,
+            contacts: activity?.events_by_type?.contact || 0,
             totalEvents: activity?.total_events || 0
         };
 
         return json({
             user,
-            token: await getAccessTokenFromCookies(request),
             searchCriteria,
             favoriteLots,
             stats,
             activity
-        }, { headers });
+        }, {
+            headers: activityResponse.status === 'fulfilled' ? activityResponse.value.headers : new Headers()
+        });
     } catch (error) {
-        console.error("Error cargando actividad del usuario:", error);
+        console.error("Error cargando dashboard:", error);
 
         // Datos de respaldo en caso de error
         const stats = {
@@ -146,10 +126,10 @@ export async function loader({ request }: LoaderFunctionArgs) {
 
         return json({
             user,
-            token: await getAccessTokenFromCookies(request),
             searchCriteria: [],
             favoriteLots: [],
-            stats
+            stats,
+            activity: null
         });
     }
 }
@@ -354,7 +334,7 @@ export default function DeveloperDashboard() {
                     <p className="text-gray-500 text-sm">Accede a tus lotes guardados</p>
                 </Link>
 
-                <Link
+                {/* <Link
                     to="/developer/investment"
                     className="bg-white rounded-lg shadow hover:shadow-md transition-shadow p-6 flex flex-col items-center text-center"
                 >
@@ -376,10 +356,10 @@ export default function DeveloperDashboard() {
                     </div>
                     <h3 className="font-semibold mb-1">Criterios de Inversión</h3>
                     <p className="text-gray-500 text-sm">Configura tu tesis de inversión</p>
-                </Link>
+                </Link> */}
             </div>
 
-            {/* Mi Tesis de Inversión */}
+            {/* Mi Tesis de Inversión
             <h2 className="text-xl font-bold mb-4">Mi Tesis de Inversión</h2>
             <div className="bg-white rounded-lg shadow p-6 mb-8">
                 <div className="mb-4">
@@ -495,7 +475,7 @@ export default function DeveloperDashboard() {
                         Crear nuevo criterio
                     </Link>
                 </div>
-            </div>
+            </div> */}
 
             {/* Lotes Favoritos */}
             <h2 className="text-xl font-bold mb-4">Lotes Favoritos</h2>

@@ -6,6 +6,7 @@ from rest_framework.decorators import api_view, permission_classes, action
 from rest_framework.permissions import AllowAny, IsAuthenticated, IsAdminUser
 from rest_framework.response import Response
 from django.http import Http404
+from django.db import IntegrityError
 import logging
 
 from .models import User, UserProfile, UserRequest
@@ -63,6 +64,57 @@ class UserListCreateView(generics.ListCreateAPIView):
         # Propietarios solo se ven a sí mismos
         else:
             return User.objects.filter(pk=user.pk)
+
+    def create(self, request, *args, **kwargs):
+        """Crear usuario con validación de email único"""
+        try:
+            # Validar que el email no exista
+            email = request.data.get('email')
+            if not email:
+                return Response({
+                    'success': False,
+                    'error': 'El email es requerido'
+                }, status=status.HTTP_400_BAD_REQUEST)
+            
+            # Verificar si ya existe un usuario con ese email
+            if User.objects.filter(email=email).exists():
+                return Response({
+                    'success': False,
+                    'error': f'Ya existe un usuario registrado con el email: {email}'
+                }, status=status.HTTP_400_BAD_REQUEST)
+            
+            # Continuar con la creación normal
+            serializer = self.get_serializer(data=request.data)
+            serializer.is_valid(raise_exception=True)
+            self.perform_create(serializer)
+            headers = self.get_success_headers(serializer.data)
+            
+            # Log de creación exitosa
+            audit_log(
+                action='USER_CREATED',
+                user=request.user,
+                details={'created_user_email': email},
+                ip_address=get_client_ip(request)
+            )
+            
+            return Response({
+                'success': True,
+                'message': 'Usuario creado exitosamente',
+                'user': serializer.data
+            }, status=status.HTTP_201_CREATED, headers=headers)
+            
+        except IntegrityError as e:
+            logger.error(f"Error de integridad al crear usuario: {str(e)}")
+            return Response({
+                'success': False,
+                'error': 'Error de integridad: El email ya está registrado'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        except Exception as e:
+            logger.error(f"Error inesperado al crear usuario: {str(e)}")
+            return Response({
+                'success': False,
+                'error': f'Error interno del servidor: {str(e)}'
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 # Vista basada en clase para detalles de usuario
 class UserDetailView(generics.RetrieveUpdateDestroyAPIView):
@@ -140,37 +192,61 @@ def me(request):
 @api_view(['PUT', 'PATCH'])
 @permission_classes([IsAuthenticated])
 def update_profile(request):
-    """Actualizar perfil del usuario autenticado"""
-    serializer = UpdateProfileSerializer(
-        request.user, 
-        data=request.data, 
-        partial=True,
-        context={'request': request}
-    )
-    
-    if serializer.is_valid():
-        user = serializer.save()
+    """Actualizar perfil del usuario autenticado con validación de email único"""
+    try:
+        # Validar email único si se está actualizando
+        new_email = request.data.get('email')
+        if new_email and new_email != request.user.email:
+            # Verificar si ya existe otro usuario con ese email
+            if User.objects.filter(email=new_email).exclude(id=request.user.id).exists():
+                return Response({
+                    'success': False,
+                    'error': f'Ya existe otro usuario registrado con el email: {new_email}'
+                }, status=status.HTTP_400_BAD_REQUEST)
         
-        # Log de actualización
-        audit_log(
-            action='PROFILE_UPDATED',
-            user=request.user,
-            details={'updated_fields': list(serializer.validated_data.keys())},
-            ip_address=get_client_ip(request)
+        serializer = UpdateProfileSerializer(
+            request.user, 
+            data=request.data, 
+            partial=True,
+            context={'request': request}
         )
         
-        # Retornar datos actualizados
-        response_serializer = UserSerializer(user)
+        if serializer.is_valid():
+            user = serializer.save()
+            
+            # Log de actualización
+            audit_log(
+                action='PROFILE_UPDATED',
+                user=request.user,
+                details={'updated_fields': list(serializer.validated_data.keys())},
+                ip_address=get_client_ip(request)
+            )
+            
+            # Retornar datos actualizados
+            response_serializer = UserSerializer(user)
+            return Response({
+                'success': True,
+                'message': 'Perfil actualizado correctamente',
+                'user': response_serializer.data
+            })
+        
         return Response({
-            'success': True,
-            'message': 'Perfil actualizado correctamente',
-            'user': response_serializer.data
-        })
-    
-    return Response({
-        'success': False,
-        'errors': serializer.errors
-    }, status=status.HTTP_400_BAD_REQUEST)
+            'success': False,
+            'errors': serializer.errors
+        }, status=status.HTTP_400_BAD_REQUEST)
+        
+    except IntegrityError as e:
+        logger.error(f"Error de integridad al actualizar perfil: {str(e)}")
+        return Response({
+            'success': False,
+            'error': 'Error de integridad: El email ya está registrado'
+        }, status=status.HTTP_400_BAD_REQUEST)
+    except Exception as e:
+        logger.error(f"Error inesperado al actualizar perfil: {str(e)}")
+        return Response({
+            'success': False,
+            'error': f'Error interno del servidor: {str(e)}'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 # Función utilitaria para que las URLs funcionen con las vistas basadas en funciones o clases
 user_list_create = UserListCreateView.as_view()

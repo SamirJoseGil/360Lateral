@@ -1,48 +1,17 @@
-import { json } from "@remix-run/node";
-import { Link, useLoaderData } from "@remix-run/react";
-import type { LoaderFunctionArgs } from "@remix-run/node";
+import { json, redirect } from "@remix-run/node";
+import { Link, useLoaderData, useFetcher } from "@remix-run/react";
+import type { LoaderFunctionArgs, ActionFunctionArgs } from "@remix-run/node";
 import { getUser } from "~/utils/auth.server";
 import { useState } from "react";
 import { recordEvent } from "~/services/stats.server";
-
-type Lot = {
-    id: number;
-    name: string;
-    address: string;
-    area: number;
-    price: number;
-    zone: string;
-    treatment: string;
-    potentialValue: number;
-    isFavorite: boolean;
-    owner: {
-        name: string;
-        contactInfo: string;
-        verified: boolean;
-    };
-    coordinates: {
-        lat: number;
-        lng: number;
-    };
-    description: string;
-    documents: {
-        id: string;
-        name: string;
-        type: string;
-        url: string;
-    }[];
-    images: string[];
-    details: {
-        yearBuilt?: number;
-        zoning: string;
-        landUse: string;
-        buildingHeight: string;
-        amenities: string[];
-    };
-};
+import { getLoteById, toggleLoteFavorite, checkLoteIsFavorite } from "~/services/lotes.server";
+import { getNormativaPorCBML } from "~/services/pot.server";
 
 type LoaderData = {
-    lot: Lot;
+    lote: any;
+    potData?: any;
+    isFavorite: boolean;
+    favoriteId?: number;
     error?: string;
 };
 
@@ -53,7 +22,8 @@ export async function loader({ params, request }: LoaderFunctionArgs) {
 
     if (!lotId) {
         return json<LoaderData>({
-            lot: {} as Lot,
+            lote: null,
+            isFavorite: false,
             error: "ID de lote inválido"
         }, { status: 400 });
     }
@@ -69,54 +39,83 @@ export async function loader({ params, request }: LoaderFunctionArgs) {
             }
         });
 
-        // En una aplicación real, estos datos vendrían de una API
-        // Datos de ejemplo para el lote
-        const lot: Lot = {
-            id: parseInt(lotId),
-            name: `Lote ${lotId}`,
-            address: "Calle 123 #45-67, Comuna 2",
-            area: 450,
-            price: 520000000,
-            zone: "Norte",
-            treatment: "Residencial",
-            potentialValue: 650000000,
-            isFavorite: true,
-            owner: {
-                name: "Juan Pérez",
-                contactInfo: "juan.perez@ejemplo.com",
-                verified: true
-            },
-            coordinates: {
-                lat: 6.2476,
-                lng: -75.5658
-            },
-            description: "Excelente lote ubicado en zona residencial con potencial para desarrollo de vivienda multifamiliar. Cuenta con todos los servicios públicos y fácil acceso a transporte público.",
-            documents: [
-                { id: "doc1", name: "Escritura Pública", type: "pdf", url: "#" },
-                { id: "doc2", name: "Certificado Catastral", type: "pdf", url: "#" },
-                { id: "doc3", name: "Plano Topográfico", type: "dwg", url: "#" }
-            ],
-            images: [
-                "https://via.placeholder.com/800x600?text=Lote+1",
-                "https://via.placeholder.com/800x600?text=Lote+2",
-                "https://via.placeholder.com/800x600?text=Lote+3"
-            ],
-            details: {
-                yearBuilt: 0, // Sin construcción
-                zoning: "R-4 Residencial de Alta Densidad",
-                landUse: "Vivienda multifamiliar",
-                buildingHeight: "Hasta 8 pisos",
-                amenities: ["Servicios públicos", "Acceso pavimentado", "Transporte público cercano"]
-            }
-        };
+        // Obtener datos del lote desde la API
+        const { lote, headers } = await getLoteById(request, lotId);
 
-        return json<LoaderData>({ lot });
+        // Verificar si el lote es favorito
+        let isFavorite = false;
+        let favoriteId = undefined;
+        try {
+            const favoriteCheck = await checkLoteIsFavorite(request, parseInt(lotId));
+            isFavorite = favoriteCheck.isFavorite;
+            favoriteId = favoriteCheck.favoriteId;
+        } catch (error) {
+            console.log("Error verificando favorito:", error);
+        }
+
+        // Obtener información POT si el lote tiene CBML
+        let potData = null;
+        if (lote.cbml) {
+            try {
+                const potResponse = await getNormativaPorCBML(request, lote.cbml);
+                potData = potResponse.normativa;
+            } catch (potError) {
+                console.log("Error obteniendo datos POT:", potError);
+            }
+        }
+
+        return json<LoaderData>({
+            lote,
+            potData,
+            isFavorite,
+            favoriteId
+        }, { headers });
 
     } catch (error) {
         console.error(`Error cargando detalles del lote ${lotId}:`, error);
         return json<LoaderData>({
-            lot: {} as Lot,
+            lote: null,
+            isFavorite: false,
             error: "Error al cargar los detalles del lote"
+        }, { status: 500 });
+    }
+}
+
+export async function action({ params, request }: ActionFunctionArgs) {
+    const user = await getUser(request);
+    if (!user || user.role !== "developer") {
+        return redirect("/");
+    }
+
+    const lotId = params.lotId;
+    if (!lotId) {
+        return json({ success: false, message: "ID de lote inválido" }, { status: 400 });
+    }
+
+    const formData = await request.formData();
+    const action = formData.get("action");
+
+    try {
+        switch (action) {
+            case "toggle_favorite":
+                const result = await toggleLoteFavorite(request, parseInt(lotId));
+                return json({
+                    success: true,
+                    isFavorite: result.isFavorite,
+                    message: result.message
+                });
+
+            default:
+                return json({
+                    success: false,
+                    message: "Acción no válida"
+                }, { status: 400 });
+        }
+    } catch (error) {
+        console.error("Error en acción:", error);
+        return json({
+            success: false,
+            message: "Error al procesar la acción"
         }, { status: 500 });
     }
 }
@@ -130,14 +129,21 @@ const formatCurrency = (value: number): string => {
     }).format(value);
 };
 
+type FetcherData = {
+    success?: boolean;
+    isFavorite?: boolean;
+    message?: string;
+};
+
 export default function LotDetail() {
-    const { lot, error } = useLoaderData<typeof loader>();
+    const { lote, potData, isFavorite, error } = useLoaderData<typeof loader>();
+    const fetcher = useFetcher<FetcherData>();
     const [activeImage, setActiveImage] = useState(0);
 
-    // Calcular ROI
-    const roi = ((lot.potentialValue - lot.price) / lot.price) * 100;
+    // Usar estado del fetcher si está disponible, sino usar el del loader
+    const currentFavoriteStatus = fetcher.data?.isFavorite !== undefined ? fetcher.data.isFavorite : isFavorite;
 
-    if (error) {
+    if (error || !lote) {
         return (
             <div className="bg-red-50 p-4 rounded-md">
                 <div className="flex">
@@ -162,205 +168,211 @@ export default function LotDetail() {
         );
     }
 
+    const toggleFavorite = () => {
+        fetcher.submit(
+            { action: "toggle_favorite" },
+            { method: "post" }
+        );
+    };
+
     return (
         <div>
             <div className="mb-6 flex justify-between items-center">
                 <div>
-                    <h1 className="text-3xl font-bold">{lot.name}</h1>
-                    <p className="text-gray-600">{lot.address}</p>
+                    <h1 className="text-3xl font-bold">{lote.nombre}</h1>
+                    <p className="text-gray-600">{lote.direccion}</p>
+                    {lote.cbml && (
+                        <p className="text-sm text-gray-500">CBML: {lote.cbml}</p>
+                    )}
                 </div>
                 <div className="flex space-x-2">
-                    <button className={`p-2 rounded-full ${lot.isFavorite ? 'text-red-500 bg-red-50' : 'text-gray-400 bg-gray-50 hover:text-red-500'}`}>
-                        <svg className="h-6 w-6" fill={lot.isFavorite ? "currentColor" : "none"} viewBox="0 0 24 24" stroke="currentColor">
+                    <button
+                        onClick={toggleFavorite}
+                        disabled={fetcher.state === "submitting"}
+                        className={`p-2 rounded-full ${currentFavoriteStatus
+                            ? 'text-red-500 bg-red-50'
+                            : 'text-gray-400 bg-gray-50 hover:text-red-500'
+                            }`}
+                    >
+                        <svg className="h-6 w-6" fill={currentFavoriteStatus ? "currentColor" : "none"} viewBox="0 0 24 24" stroke="currentColor">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
                         </svg>
                     </button>
-                    <Link to={`/developer/analysis/${lot.id}`} className="px-4 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700">
+                    <Link to={`/developer/analysis/${lote.id}`} className="px-4 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700">
                         Análisis Urbanístico
                     </Link>
                 </div>
             </div>
 
+            {/* Mostrar mensaje de éxito/error */}
+            {fetcher.data?.message && (
+                <div className={`mb-6 p-4 rounded-md ${fetcher.data.success
+                    ? "bg-green-50 border-l-4 border-green-400 text-green-700"
+                    : "bg-red-50 border-l-4 border-red-400 text-red-700"
+                    }`}>
+                    {fetcher.data.message}
+                </div>
+            )}
+
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
                 <div className="lg:col-span-2">
-                    {/* Galería de imágenes */}
-                    <div className="bg-white rounded-lg shadow mb-8">
-                        <div className="p-4">
-                            <div className="relative h-96 mb-2 bg-gray-200 rounded overflow-hidden">
-                                {lot.images && lot.images.length > 0 ? (
-                                    <img
-                                        src={lot.images[activeImage]}
-                                        alt={`Vista de ${lot.name}`}
-                                        className="absolute inset-0 w-full h-full object-cover"
-                                    />
-                                ) : (
-                                    <div className="flex items-center justify-center h-full text-gray-500">
-                                        No hay imágenes disponibles
-                                    </div>
-                                )}
-                            </div>
-                            <div className="flex overflow-x-auto space-x-2 py-2">
-                                {lot.images && lot.images.map((image, index) => (
-                                    <button
-                                        key={index}
-                                        onClick={() => setActiveImage(index)}
-                                        className={`flex-shrink-0 h-16 w-16 rounded overflow-hidden ${activeImage === index ? 'ring-2 ring-indigo-500' : ''}`}
-                                    >
-                                        <img src={image} alt={`Miniatura ${index + 1}`} className="h-full w-full object-cover" />
-                                    </button>
-                                ))}
-                            </div>
-                        </div>
-                    </div>
-
                     {/* Descripción y detalles */}
                     <div className="bg-white rounded-lg shadow mb-8">
                         <div className="p-6">
-                            <h2 className="text-xl font-bold mb-4">Descripción</h2>
-                            <p className="text-gray-700 mb-6">
-                                {lot.description}
-                            </p>
+                            <h2 className="text-xl font-bold mb-4">Información del Lote</h2>
 
-                            <h2 className="text-xl font-bold mb-4">Detalles del Lote</h2>
+                            {lote.descripcion && (
+                                <>
+                                    <h3 className="text-lg font-semibold mb-2">Descripción</h3>
+                                    <p className="text-gray-700 mb-6">{lote.descripcion}</p>
+                                </>
+                            )}
+
                             <div className="grid grid-cols-2 gap-4">
                                 <div>
-                                    <h3 className="text-sm text-gray-500">Zonificación</h3>
-                                    <p className="font-medium">{lot.details.zoning}</p>
+                                    <h3 className="text-sm text-gray-500">Área</h3>
+                                    <p className="font-medium">{lote.area ? `${lote.area.toLocaleString()} m²` : 'N/A'}</p>
                                 </div>
                                 <div>
-                                    <h3 className="text-sm text-gray-500">Uso de Suelo</h3>
-                                    <p className="font-medium">{lot.details.landUse}</p>
+                                    <h3 className="text-sm text-gray-500">Barrio</h3>
+                                    <p className="font-medium">{lote.barrio || 'N/A'}</p>
                                 </div>
                                 <div>
-                                    <h3 className="text-sm text-gray-500">Altura Permitida</h3>
-                                    <p className="font-medium">{lot.details.buildingHeight}</p>
+                                    <h3 className="text-sm text-gray-500">Estrato</h3>
+                                    <p className="font-medium">{lote.estrato || 'N/A'}</p>
                                 </div>
                                 <div>
-                                    <h3 className="text-sm text-gray-500">Tratamiento</h3>
-                                    <p className="font-medium">{lot.treatment}</p>
+                                    <h3 className="text-sm text-gray-500">Matrícula</h3>
+                                    <p className="font-medium">{lote.matricula || 'N/A'}</p>
                                 </div>
-                            </div>
-
-                            <h3 className="text-sm font-medium text-gray-700 mt-4 mb-2">Características</h3>
-                            <div className="flex flex-wrap gap-2">
-                                {lot.details.amenities.map((amenity, index) => (
-                                    <span key={index} className="px-2 py-1 bg-gray-100 text-gray-700 text-xs rounded-md">
-                                        {amenity}
-                                    </span>
-                                ))}
-                            </div>
-                        </div>
-                    </div>
-
-                    {/* Documentos */}
-                    <div className="bg-white rounded-lg shadow">
-                        <div className="p-6">
-                            <h2 className="text-xl font-bold mb-4">Documentos Disponibles</h2>
-
-                            <div className="space-y-2">
-                                {lot.documents && lot.documents.length > 0 ? (
-                                    lot.documents.map(doc => (
-                                        <div key={doc.id} className="flex items-center justify-between p-3 bg-gray-50 rounded">
-                                            <div className="flex items-center">
-                                                <svg className="h-6 w-6 text-gray-500 mr-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
-                                                </svg>
-                                                <div>
-                                                    <p className="font-medium">{doc.name}</p>
-                                                    <p className="text-xs text-gray-500 uppercase">{doc.type}</p>
-                                                </div>
-                                            </div>
-                                            <a
-                                                href={doc.url}
-                                                className="text-indigo-600 hover:text-indigo-900 font-medium text-sm"
-                                                target="_blank"
-                                                rel="noopener noreferrer"
-                                            >
-                                                Ver
-                                            </a>
-                                        </div>
-                                    ))
-                                ) : (
-                                    <p className="text-gray-500">No hay documentos disponibles</p>
+                                {lote.uso_suelo && (
+                                    <div>
+                                        <h3 className="text-sm text-gray-500">Uso de Suelo</h3>
+                                        <p className="font-medium">{lote.uso_suelo}</p>
+                                    </div>
+                                )}
+                                {lote.clasificacion_suelo && (
+                                    <div>
+                                        <h3 className="text-sm text-gray-500">Clasificación</h3>
+                                        <p className="font-medium">{lote.clasificacion_suelo}</p>
+                                    </div>
                                 )}
                             </div>
                         </div>
                     </div>
+
+                    {/* Información POT */}
+                    {potData && (
+                        <div className="bg-white rounded-lg shadow mb-8">
+                            <div className="p-6">
+                                <h2 className="text-xl font-bold mb-4">Información POT</h2>
+                                <div className="grid grid-cols-2 gap-4">
+                                    {potData.codigo_tratamiento && (
+                                        <div>
+                                            <h3 className="text-sm text-gray-500">Tratamiento</h3>
+                                            <p className="font-medium">{potData.codigo_tratamiento}</p>
+                                        </div>
+                                    )}
+                                    {potData.nombre_tratamiento && (
+                                        <div>
+                                            <h3 className="text-sm text-gray-500">Nombre Tratamiento</h3>
+                                            <p className="font-medium">{potData.nombre_tratamiento}</p>
+                                        </div>
+                                    )}
+                                    {potData.indice_ocupacion && (
+                                        <div>
+                                            <h3 className="text-sm text-gray-500">Índice Ocupación</h3>
+                                            <p className="font-medium">{potData.indice_ocupacion}</p>
+                                        </div>
+                                    )}
+                                    {potData.indice_construccion && (
+                                        <div>
+                                            <h3 className="text-sm text-gray-500">Índice Construcción</h3>
+                                            <p className="font-medium">{potData.indice_construccion}</p>
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Coordenadas si están disponibles */}
+                    {(lote.latitud || lote.longitud) && (
+                        <div className="bg-white rounded-lg shadow">
+                            <div className="p-6">
+                                <h2 className="text-xl font-bold mb-4">Ubicación</h2>
+                                <div className="grid grid-cols-2 gap-4">
+                                    {lote.latitud && (
+                                        <div>
+                                            <h3 className="text-sm text-gray-500">Latitud</h3>
+                                            <p className="font-medium">{lote.latitud}</p>
+                                        </div>
+                                    )}
+                                    {lote.longitud && (
+                                        <div>
+                                            <h3 className="text-sm text-gray-500">Longitud</h3>
+                                            <p className="font-medium">{lote.longitud}</p>
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        </div>
+                    )}
                 </div>
 
-                {/* Sidebar con información resumida y contacto */}
+                {/* Sidebar con información resumida */}
                 <div className="lg:col-span-1 space-y-6">
                     {/* Información principal */}
                     <div className="bg-white rounded-lg shadow p-6">
                         <h2 className="text-xl font-bold mb-4">Resumen</h2>
                         <div className="space-y-3">
                             <div className="flex justify-between">
+                                <span className="text-gray-500">CBML</span>
+                                <span className="font-medium text-xs">{lote.cbml || 'N/A'}</span>
+                            </div>
+                            <div className="flex justify-between">
                                 <span className="text-gray-500">Área</span>
-                                <span className="font-medium">{lot.area} m²</span>
+                                <span className="font-medium">{lote.area ? `${lote.area.toLocaleString()} m²` : 'N/A'}</span>
                             </div>
                             <div className="flex justify-between">
-                                <span className="text-gray-500">Precio</span>
-                                <span className="font-medium">{formatCurrency(lot.price)}</span>
+                                <span className="text-gray-500">Estado</span>
+                                <span className={`font-medium ${lote.status === 'active' ? 'text-green-600' :
+                                    lote.status === 'pending' ? 'text-yellow-600' : 'text-gray-600'
+                                    }`}>
+                                    {lote.status === 'active' ? 'Activo' :
+                                        lote.status === 'pending' ? 'Pendiente' : 'Archivado'}
+                                </span>
                             </div>
-                            <div className="flex justify-between">
-                                <span className="text-gray-500">Precio por m²</span>
-                                <span className="font-medium">{formatCurrency(lot.price / lot.area)}</span>
-                            </div>
-                            <div className="flex justify-between">
-                                <span className="text-gray-500">Zona</span>
-                                <span className="font-medium">{lot.zone}</span>
-                            </div>
-                            <div className="flex justify-between">
-                                <span className="text-gray-500">Tratamiento</span>
-                                <span className="font-medium">{lot.treatment}</span>
-                            </div>
-                            <div className="border-t pt-3 mt-3">
+                            {lote.tratamiento_pot && (
                                 <div className="flex justify-between">
-                                    <span className="text-gray-500">Valor Potencial</span>
-                                    <span className="font-medium text-green-600">{formatCurrency(lot.potentialValue)}</span>
+                                    <span className="text-gray-500">Tratamiento POT</span>
+                                    <span className="font-medium">{lote.tratamiento_pot}</span>
                                 </div>
-                                <div className="flex justify-between">
-                                    <span className="text-gray-500">ROI Estimado</span>
-                                    <span className="font-medium text-green-600">{roi.toFixed(1)}%</span>
-                                </div>
-                            </div>
+                            )}
                         </div>
                     </div>
 
-                    {/* Información del propietario */}
+                    {/* Fechas del sistema */}
                     <div className="bg-white rounded-lg shadow p-6">
-                        <h2 className="text-xl font-bold mb-4">Propietario</h2>
-                        <div className="flex items-center mb-4">
-                            <div className="h-12 w-12 rounded-full bg-gray-200 flex items-center justify-center text-gray-600 mr-3">
-                                {lot.owner.name.charAt(0)}
-                            </div>
+                        <h2 className="text-xl font-bold mb-4">Información del Sistema</h2>
+                        <div className="space-y-2">
                             <div>
-                                <div className="font-medium flex items-center">
-                                    {lot.owner.name}
-                                    {lot.owner.verified && (
-                                        <svg className="h-4 w-4 text-blue-500 ml-1" fill="currentColor" viewBox="0 0 20 20">
-                                            <path fillRule="evenodd" d="M6.267 3.455a3.066 3.066 0 001.745-.723 3.066 3.066 0 013.976 0 3.066 3.066 0 001.745.723 3.066 3.066 0 012.812 2.812c.051.643.304 1.254.723 1.745a3.066 3.066 0 010 3.976 3.066 3.066 0 00-.723 1.745 3.066 3.066 0 01-2.812 2.812 3.066 3.066 0 00-1.745.723 3.066 3.066 0 01-3.976 0 3.066 3.066 0 00-1.745-.723 3.066 3.066 0 01-2.812-2.812 3.066 3.066 0 00-.723-1.745 3.066 3.066 0 010-3.976 3.066 3.066 0 00.723-1.745 3.066 3.066 0 012.812-2.812zm7.44 5.252a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
-                                        </svg>
-                                    )}
+                                <span className="text-gray-500 text-sm">ID</span>
+                                <div className="font-medium">{lote.id}</div>
+                            </div>
+                            {lote.created_at && (
+                                <div>
+                                    <span className="text-gray-500 text-sm">Fecha de Registro</span>
+                                    <div className="text-sm">{new Date(lote.created_at).toLocaleDateString('es-CO')}</div>
                                 </div>
-                                <div className="text-sm text-gray-500">{lot.owner.verified ? 'Propietario verificado' : 'Propietario'}</div>
-                            </div>
+                            )}
+                            {lote.updated_at && (
+                                <div>
+                                    <span className="text-gray-500 text-sm">Última Actualización</span>
+                                    <div className="text-sm">{new Date(lote.updated_at).toLocaleDateString('es-CO')}</div>
+                                </div>
+                            )}
                         </div>
-                        <button className="w-full bg-indigo-600 text-white py-2 rounded hover:bg-indigo-700">
-                            Contactar Propietario
-                        </button>
-                    </div>
-
-                    {/* Ubicación */}
-                    <div className="bg-white rounded-lg shadow p-6">
-                        <h2 className="text-xl font-bold mb-4">Ubicación</h2>
-                        <div className="h-48 bg-gray-200 rounded mb-3">
-                            {/* Aquí iría el mapa */}
-                            <div className="flex items-center justify-center h-full text-gray-500">
-                                Mapa no disponible
-                            </div>
-                        </div>
-                        <p className="text-gray-700">{lot.address}</p>
                     </div>
                 </div>
             </div>
