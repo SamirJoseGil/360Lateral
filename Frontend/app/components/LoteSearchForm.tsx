@@ -11,10 +11,40 @@ export default function LoteSearchForm({ onSearch, isSearching }: LoteSearchForm
     const [searchType, setSearchType] = useState<'cbml' | 'matricula' | 'direccion'>('cbml');
     const [searchValue, setSearchValue] = useState('');
 
+    // Function to sanitize input based on search type
+    const sanitizeInput = (value: string, type: 'cbml' | 'matricula' | 'direccion'): string => {
+        if (type === 'cbml' || type === 'matricula') {
+            // Remove all non-numeric characters for CBML and matricula
+            return value.replace(/[^0-9]/g, '');
+        } else {
+            // For direccion, keep alphanumeric characters, spaces, and basic punctuation
+            return value.replace(/[^a-zA-Z0-9\s\-#]/g, '');
+        }
+    };
+
+    const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const rawValue = e.target.value;
+        const sanitizedValue = sanitizeInput(rawValue, searchType);
+        setSearchValue(sanitizedValue);
+    };
+
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         if (searchValue.trim()) {
             await onSearch(searchType, searchValue.trim());
+        }
+    };
+
+    const getPlaceholder = (type: 'cbml' | 'matricula' | 'direccion'): string => {
+        switch (type) {
+            case 'cbml':
+                return 'Ingrese el código CBML';
+            case 'matricula':
+                return 'Ingrese la matrícula inmobiliaria';
+            case 'direccion':
+                return 'Ingrese la dirección del lote';
+            default:
+                return '';
         }
     };
 
@@ -24,7 +54,6 @@ export default function LoteSearchForm({ onSearch, isSearching }: LoteSearchForm
             <p className="text-sm text-gray-600 mb-4">
                 Busque un lote existente por CBML, matrícula inmobiliaria o dirección para autocompletar la información.
             </p>
-
             <form onSubmit={handleSubmit} className="flex flex-col space-y-4 sm:flex-row sm:space-y-0 sm:space-x-4">
                 <div className="flex-1">
                     <label htmlFor="searchType" className="sr-only">
@@ -33,7 +62,12 @@ export default function LoteSearchForm({ onSearch, isSearching }: LoteSearchForm
                     <select
                         id="searchType"
                         value={searchType}
-                        onChange={(e) => setSearchType(e.target.value as any)}
+                        onChange={(e) => {
+                            const newType = e.target.value as 'cbml' | 'matricula' | 'direccion';
+                            setSearchType(newType);
+                            // Clear and re-sanitize current value for new search type
+                            setSearchValue(sanitizeInput(searchValue, newType));
+                        }}
                         className="block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md"
                     >
                         <option value="cbml">CBML</option>
@@ -50,14 +84,8 @@ export default function LoteSearchForm({ onSearch, isSearching }: LoteSearchForm
                         type="text"
                         id="searchValue"
                         value={searchValue}
-                        onChange={(e) => setSearchValue(e.target.value)}
-                        placeholder={
-                            searchType === 'cbml'
-                                ? 'Ej: 04050010105'
-                                : searchType === 'matricula'
-                                    ? 'Ej: 12345678'
-                                    : 'Ej: Calle 50 #45-67'
-                        }
+                        onChange={handleInputChange}
+                        placeholder={getPlaceholder(searchType)}
                         className="block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
                     />
                 </div>

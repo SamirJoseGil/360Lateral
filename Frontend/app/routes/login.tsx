@@ -1,4 +1,4 @@
-import { Form, useActionData, useLoaderData, Link } from "@remix-run/react";
+import { Form, useActionData, useLoaderData, Link, useNavigation } from "@remix-run/react";
 import { ActionFunctionArgs, LoaderFunctionArgs, json, redirect } from "@remix-run/node";
 import { useState } from "react";
 import { getUser } from "~/utils/auth.server";
@@ -107,12 +107,10 @@ export async function action({ request }: ActionFunctionArgs) {
 
 export default function Login() {
     const actionData = useActionData<typeof action>();
-    const [isLoading, setIsLoading] = useState(false);
+    const navigation = useNavigation();
     const [showPassword, setShowPassword] = useState(false);
 
-    const handleSubmit = () => {
-        setIsLoading(true);
-    };
+    const isLoading = navigation.state === "submitting";
 
     return (
         <div className="min-h-screen flex">
@@ -185,7 +183,7 @@ export default function Login() {
                     </div>
 
                     {/* Formulario */}
-                    <Form method="post" className="mt-8 space-y-6" onSubmit={handleSubmit}>
+                    <Form method="post" className="mt-8 space-y-6">
                         {/* Error general */}
                         {actionData?.errors && 'general' in actionData.errors && (
                             <div className="bg-red-50 border-l-4 border-red-400 p-4 rounded-md">
