@@ -14,9 +14,24 @@ import django
 django.setup()
 
 from apps.users.models import User
+from django.db import connection
+
+def check_database_connection():
+    """Verificar conexión a la base de datos"""
+    try:
+        connection.ensure_connection()
+        print("[INFO] ✅ Conexión a base de datos establecida")
+        return True
+    except Exception as e:
+        print(f"[ERROR] ❌ Error de conexión a base de datos: {e}")
+        return False
 
 def create_users():
     """Crear usuarios con roles específicos"""
+    
+    # Verificar conexión antes de continuar
+    if not check_database_connection():
+        return
     
     users_data = [
         {
@@ -69,20 +84,26 @@ def create_users():
         # Extraer contraseña antes de crear el usuario
         password = user_data.pop('password')
         
-        # Crear usuario
-        user = User.objects.create_user(**user_data)
-        user.set_password(password)
-        user.is_verified = True
-        user.save()
-        
-        print(f"[SUCCESS] Usuario {email} creado con rol {user.role}")
+        try:
+            # Crear usuario
+            user = User.objects.create_user(**user_data)
+            user.set_password(password)
+            user.is_verified = True
+            user.save()
+            
+            print(f"[SUCCESS] Usuario {email} creado con rol {user.role}")
+        except Exception as e:
+            print(f"[ERROR] Error creando usuario {email}: {e}")
     
     print("\n[COMPLETE] Proceso de creación de usuarios finalizado")
     
     # Listar todos los usuarios
     print("\n[INFO] Usuarios en el sistema:")
-    for user in User.objects.all():
-        print(f"  - {user.email} ({user.role}) - Activo: {user.is_active}")
+    try:
+        for user in User.objects.all():
+            print(f"  - {user.email} ({user.role}) - Activo: {user.is_active}")
+    except Exception as e:
+        print(f"[ERROR] Error listando usuarios: {e}")
 
 if __name__ == "__main__":
     create_users()

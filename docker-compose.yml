@@ -1,26 +1,28 @@
-version: '3.8'
+# ==============================================
+# 🐳 DOCKER COMPOSE - LATERAL 360°
+# ==============================================
 
 services:
   # Base de datos PostgreSQL
   db:
-    image: postgres:14-alpine
+    image: postgres:15-alpine
     container_name: lateral360_db
     restart: unless-stopped
     volumes:
       - postgres_data:/var/lib/postgresql/data/
-    env_file:
-      - .env
     environment:
       - POSTGRES_PASSWORD=${DB_PASSWORD:-postgres}
       - POSTGRES_USER=${DB_USER:-postgres}
       - POSTGRES_DB=${DB_NAME:-lateral360}
+      - POSTGRES_INITDB_ARGS=--encoding=UTF-8 --lc-collate=C --lc-ctype=C
     ports:
-      - "5432:5432"
+      - "${DB_PORT:-5432}:5432"
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-postgres} -d ${DB_NAME:-lateral360}"]
       interval: 10s
       timeout: 5s
       retries: 5
+      start_period: 30s
     networks:
       - lateral360_network
 
@@ -30,14 +32,16 @@ services:
     container_name: lateral360_redis
     restart: unless-stopped
     ports:
-      - "6379:6379"
+      - "${REDIS_PORT:-6379}:6379"
     volumes:
       - redis_data:/data
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
       timeout: 5s
       retries: 5
+      start_period: 30s
     networks:
       - lateral360_network
 
@@ -46,61 +50,110 @@ services:
     build:
       context: ./Backend
       dockerfile: Dockerfile
+      target: development
     container_name: lateral360_backend
     restart: unless-stopped
     volumes:
-      - ./Backend:/app
+      - ./Backend:/app:cached
       - static_volume:/app/static
       - media_volume:/app/media
+      - backend_logs:/app/logs
     ports:
-      - "8000:8000"
-    env_file:
-      - .env
+      - "${BACKEND_PORT:-8000}:8000"
     environment:
+      # Database
+      - DB_NAME=${DB_NAME:-lateral360}
+      - DB_USER=${DB_USER:-postgres}
+      - DB_PASSWORD=${DB_PASSWORD:-postgres}
       - DB_HOST=db
+      - DB_PORT=5432
+      # Redis
       - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      # Django
       - DJANGO_SETTINGS_MODULE=config.settings.development
-      - DEBUG=1
-      - ALLOWED_HOSTS=localhost,127.0.0.1,0.0.0.0,backend
+      - DEBUG=${DEBUG:-1}
+      - SECRET_KEY=${SECRET_KEY:-dev-secret-key-change-in-production}
+      - ALLOWED_HOSTS=localhost,127.0.0.1,0.0.0.0,backend,lateral360_backend,${BACKEND_DOMAIN:-}
+      # CORS expandido para Docker
+      - CORS_ALLOWED_ORIGINS=http://localhost:3000,http://127.0.0.1:3000,http://frontend:3000,http://lateral360_frontend:3000,http://0.0.0.0:3000
+      - CSRF_TRUSTED_ORIGINS=http://localhost:3000,http://127.0.0.1:3000,http://frontend:3000,http://lateral360_frontend:3000
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/"]
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 40s
+      start_period: 60s
     depends_on:
       db:
         condition: service_healthy
       redis:
         condition: service_healthy
     networks:
-      - lateral360_network
+      lateral360_network:
+        aliases:
+          - backend
+          - api
 
   # Frontend Remix
   frontend:
     build:
       context: ./Frontend
       dockerfile: Dockerfile
+      target: development
     container_name: lateral360_frontend
     restart: unless-stopped
+    volumes:
+      - ./Frontend:/app:cached
+      - /app/node_modules
+      - frontend_logs:/app/logs
     ports:
-      - "3000:3000"  # Remix directamente en puerto 3000
-    depends_on:
-      - backend
-    env_file:
-      - .env
+      - "${FRONTEND_PORT:-3000}:3000"
     environment:
-      - VITE_API_URL=http://localhost:8000/api
       - NODE_ENV=development
+      # URLs para SSR (internas del contenedor)
+      - VITE_API_URL=http://backend:8000/api
+      # URLs para cliente (externas)
+      - VITE_API_URL_EXTERNAL=http://localhost:${BACKEND_PORT:-8000}/api
+      # Configuración del backend
+      - VITE_BACKEND_HOST=backend
+      - VITE_BACKEND_PORT=8000
+      - VITE_APP_NAME=${APP_NAME:-Lateral 360°}
+      # Desarrollo
+      - CHOKIDAR_USEPOLLING=true
+      - PORT=3000
+      - HOST=0.0.0.0
+      # Debug
+      - DEBUG=1
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    depends_on:
+      backend:
+        condition: service_healthy
     networks:
-      - lateral360_network
+      lateral360_network:
+        aliases:
+          - frontend
+          - web
 
 # Volúmenes persistentes
 volumes:
   postgres_data:
+    driver: local
   redis_data:
+    driver: local
   static_volume:
+    driver: local
   media_volume:
+    driver: local
+  backend_logs:
+    driver: local
+  frontend_logs:
+    driver: local
 
 # Red personalizada
 networks:
