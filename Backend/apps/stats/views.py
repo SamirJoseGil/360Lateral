@@ -447,3 +447,68 @@ def record_user_event(request):
             {"error": "Ocurrió un error al registrar el evento."},
             status=status.HTTP_500_INTERNAL_SERVER_ERROR
         )
+
+
+class RecordEventView(APIView):
+    """Vista para registrar eventos de usuario - TODOS LOS ROLES"""
+    permission_classes = [IsAuthenticated]  # Solo autenticación, sin restricción de rol
+    
+    def post(self, request):
+        try:
+            user = request.user
+            
+            # ✅ NO HAY VERIFICACIÓN DE ROL - Todos los usuarios autenticados pueden registrar eventos
+            
+            event_type = request.data.get('type')
+            event_name = request.data.get('name')
+            event_value = request.data.get('value', {})
+            
+            if not event_type or not event_name:
+                return Response({
+                    'error': True,
+                    'message': 'type y name son requeridos',
+                    'details': None,
+                    'status_code': 400
+                }, status=status.HTTP_400_BAD_REQUEST)
+            
+            # ✅ CRÍTICO: Usar campo 'user' (ForeignKey) en lugar de 'user_id'
+            stat = Stat.objects.create(
+                user=user,  # ✅ Usar ForeignKey directamente
+                session_id=request.session.session_key or f"session_{user.id}",
+                event_type=event_type,
+                event_name=event_name,
+                event_value=event_value,
+                user_agent=request.META.get('HTTP_USER_AGENT', ''),
+                ip_address=self._get_client_ip(request)
+            )
+            
+            logger.info(f"✅ Evento registrado: {event_type}:{event_name} por {user.email} (rol: {user.role})")
+            
+            return Response({
+                'success': True,
+                'message': 'Evento registrado exitosamente',
+                'data': {
+                    'id': str(stat.id),
+                    'type': stat.event_type,
+                    'name': stat.event_name,
+                    'timestamp': stat.timestamp.isoformat()
+                }
+            }, status=status.HTTP_201_CREATED)
+            
+        except Exception as e:
+            logger.error(f"Error registrando evento: {str(e)}")
+            return Response({
+                'error': True,
+                'message': 'Error al registrar evento',
+                'details': str(e),
+                'status_code': 500
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    
+    def _get_client_ip(self, request):
+        """Obtener IP del cliente"""
+        x_forwarded_for = request.META.get('HTTP_X_FORWARDED_FOR')
+        if x_forwarded_for:
+            ip = x_forwarded_for.split(',')[0]
+        else:
+            ip = request.META.get('REMOTE_ADDR')
+        return ip

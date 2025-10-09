@@ -22,28 +22,54 @@ ALLOWED_HOSTS = os.environ.get('ALLOWED_HOSTS', '*').split(',')
 # DATABASES already configured in base.py with environment variables
 
 # =============================================================================
-# CORS CONFIGURATION FOR DEVELOPMENT - MUY IMPORTANTE
+# CORS CONFIGURATION - MUY IMPORTANTE
 # =============================================================================
 
 # Lista expandida de orígenes permitidos para desarrollo
 # Asegúrate de incluir TODOS los puertos y dominios que tu frontend usa
-CORS_ALLOWED_ORIGINS = os.environ.get('CORS_ALLOWED_ORIGINS', 
-    'http://localhost:3000,http://127.0.0.1:3000,' + 
-    'http://localhost:8002,http://127.0.0.1:8002,' +
-    'http://localhost:5173,http://127.0.0.1:5173,' +
-    'http://localhost:4173,http://127.0.0.1:4173,' +
-    'http://localhost:3000,http://10.161.47.233:3000'
-).split(',')
+CORS_ALLOWED_ORIGINS = [
+    'http://localhost:3000',
+    'http://127.0.0.1:3000',
+    'http://localhost:5173',
+    'http://127.0.0.1:5173',
+]
 
 # Orígenes confiables para CSRF
-CSRF_TRUSTED_ORIGINS = CORS_ALLOWED_ORIGINS
+CSRF_TRUSTED_ORIGINS = CORS_ALLOWED_ORIGINS.copy()
 
 # Configuración más permisiva para desarrollo
 CORS_ALLOW_CREDENTIALS = True
-CORS_ALLOW_ALL_ORIGINS = False  # Mantener False para mejor seguridad
+CORS_ALLOW_ALL_ORIGINS = False
 
-# Habilitar cabeceras de depuración para desarrollo
-CORS_EXPOSE_HEADERS = ['Content-Length', 'Content-Type', 'X-Frame-Options']
+# Logging mejorado para debugging
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'formatters': {
+        'verbose': {
+            'format': '[{levelname}] {asctime} {module} {message}',
+            'style': '{',
+        },
+    },
+    'handlers': {
+        'console': {
+            'level': 'DEBUG',
+            'class': 'logging.StreamHandler',
+            'formatter': 'verbose',
+        },
+    },
+    'root': {
+        'handlers': ['console'],
+        'level': 'INFO',
+    },
+    'loggers': {
+        'apps.authentication': {
+            'handlers': ['console'],
+            'level': 'DEBUG',
+            'propagate': False,
+        },
+    },
+}
 
 # =============================================================================
 # CACHE CONFIGURATION FOR DEVELOPMENT

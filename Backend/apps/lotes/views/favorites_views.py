@@ -1,84 +1,163 @@
-from rest_framework import viewsets, status, permissions, generics
-from rest_framework.response import Response
+"""
+Vistas para gestión de lotes favoritos
+"""
+from rest_framework import viewsets, status
 from rest_framework.decorators import action
-from django.db import IntegrityError
-from django.shortcuts import get_object_or_404
-from ..models import Favorite, Lote
-from ..serializers import FavoriteSerializer
+from rest_framework.response import Response
+from rest_framework.permissions import IsAuthenticated
+import logging
+
+from ..models import Lote, Favorite
+from ..serializers import FavoriteSerializer, LoteSerializer
+
+logger = logging.getLogger(__name__)
 
 
 class FavoriteViewSet(viewsets.ModelViewSet):
-    """
-    ViewSet for managing user favorites.
-    """
+    """ViewSet para gestión de favoritos"""
     serializer_class = FavoriteSerializer
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [IsAuthenticated]
     
     def get_queryset(self):
-        """
-        Return only favorites for the current user.
-        """
-        return Favorite.objects.filter(user=self.request.user)
+        """Obtener favoritos del usuario actual"""
+        return Favorite.objects.filter(usuario=self.request.user).select_related('lote')
     
     def create(self, request, *args, **kwargs):
-        """
-        Add a lot to the user's favorites.
-        """
+        """Agregar lote a favoritos"""
         try:
-            serializer = self.get_serializer(data=request.data)
-            serializer.is_valid(raise_exception=True)
-            serializer.save()
-            return Response(serializer.data, status=status.HTTP_201_CREATED)
-        except IntegrityError:
-            return Response(
-                {"detail": "Este lote ya está en tus favoritos."},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-    
-    @action(detail=False, methods=['post'])
-    def toggle(self, request):
-        """
-        Toggle favorite status for a lot. If it's already a favorite, remove it,
-        otherwise add it to favorites.
-        """
-        lote_id = request.data.get('lote_id')
-        if not lote_id:
-            return Response(
-                {"detail": "Se requiere el ID del lote."},
-                status=status.HTTP_400_BAD_REQUEST
+            lote_id = request.data.get('lote')
+            
+            if not lote_id:
+                return Response({
+                    'success': False,
+                    'message': 'ID del lote es requerido'
+                }, status=status.HTTP_400_BAD_REQUEST)
+            
+            # Verificar que el lote existe y está visible
+            try:
+                lote = Lote.objects.get(id=lote_id)
+            except Lote.DoesNotExist:
+                return Response({
+                    'success': False,
+                    'message': 'Lote no encontrado'
+                }, status=status.HTTP_404_NOT_FOUND)
+            
+            # Verificar que el lote está activo y verificado
+            if lote.estado != 'active' or not lote.is_verified:
+                return Response({
+                    'success': False,
+                    'message': 'Este lote no está disponible'
+                }, status=status.HTTP_400_BAD_REQUEST)
+            
+            # Verificar si ya existe el favorito
+            favorite, created = Favorite.objects.get_or_create(
+                usuario=request.user,
+                lote=lote,
+                defaults={
+                    'notas': request.data.get('notas', '')
+                }
             )
             
-        lote = get_object_or_404(Lote, pk=lote_id)
-        favorite = Favorite.objects.filter(user=request.user, lote=lote).first()
-        
-        if favorite:
-            # If already a favorite, remove it
-            favorite.delete()
-            return Response(
-                {"detail": "Lote eliminado de favoritos."},
-                status=status.HTTP_200_OK
-            )
-        else:
-            # Otherwise, add it to favorites
-            favorite = Favorite.objects.create(user=request.user, lote=lote)
+            if not created:
+                return Response({
+                    'success': False,
+                    'message': 'Este lote ya está en tus favoritos'
+                }, status=status.HTTP_400_BAD_REQUEST)
+            
+            logger.info(f"Usuario {request.user.email} agregó lote {lote.id} a favoritos")
+            
             serializer = self.get_serializer(favorite)
-            return Response(serializer.data, status=status.HTTP_201_CREATED)
+            return Response({
+                'success': True,
+                'message': 'Lote agregado a favoritos',
+                'data': serializer.data
+            }, status=status.HTTP_201_CREATED)
+            
+        except Exception as e:
+            logger.error(f"Error agregando favorito: {str(e)}")
+            return Response({
+                'success': False,
+                'message': 'Error al agregar a favoritos'
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    
+    def destroy(self, request, *args, **kwargs):
+        """Remover lote de favoritos"""
+        try:
+            instance = self.get_object()
+            lote_nombre = instance.lote.nombre
+            
+            self.perform_destroy(instance)
+            
+            logger.info(f"Usuario {request.user.email} removió lote {instance.lote.id} de favoritos")
+            
+            return Response({
+                'success': True,
+                'message': f'Lote "{lote_nombre}" removido de favoritos'
+            }, status=status.HTTP_200_OK)
+            
+        except Exception as e:
+            logger.error(f"Error removiendo favorito: {str(e)}")
+            return Response({
+                'success': False,
+                'message': 'Error al remover de favoritos'
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    
+    @action(detail=False, methods=['post'])
+    def remove_by_lote(self, request):
+        """Remover favorito por ID de lote"""
+        try:
+            lote_id = request.data.get('lote_id')
+            
+            if not lote_id:
+                return Response({
+                    'success': False,
+                    'message': 'ID del lote es requerido'
+                }, status=status.HTTP_400_BAD_REQUEST)
+            
+            try:
+                favorite = Favorite.objects.get(
+                    usuario=request.user,
+                    lote_id=lote_id
+                )
+                favorite.delete()
+                
+                logger.info(f"Usuario {request.user.email} removió lote {lote_id} de favoritos")
+                
+                return Response({
+                    'success': True,
+                    'message': 'Lote removido de favoritos'
+                }, status=status.HTTP_200_OK)
+                
+            except Favorite.DoesNotExist:
+                return Response({
+                    'success': False,
+                    'message': 'Este lote no está en tus favoritos'
+                }, status=status.HTTP_404_NOT_FOUND)
+                
+        except Exception as e:
+            logger.error(f"Error removiendo favorito: {str(e)}")
+            return Response({
+                'success': False,
+                'message': 'Error al remover de favoritos'
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
     
     @action(detail=False, methods=['get'])
     def check(self, request):
-        """
-        Check if a specific lot is in the user's favorites.
-        """
+        """Verificar si un lote es favorito"""
         lote_id = request.query_params.get('lote_id')
+        
         if not lote_id:
-            return Response(
-                {"detail": "Se requiere el ID del lote."},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-            
+            return Response({
+                'success': False,
+                'message': 'ID del lote es requerido'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
         is_favorite = Favorite.objects.filter(
-            user=request.user, 
+            usuario=request.user,
             lote_id=lote_id
         ).exists()
         
-        return Response({"is_favorite": is_favorite})
+        return Response({
+            'success': True,
+            'is_favorite': is_favorite
+        })

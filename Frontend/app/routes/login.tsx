@@ -1,4 +1,4 @@
-import { Form, useActionData, useLoaderData, Link, useNavigation } from "@remix-run/react";
+import { Form, useActionData, Link, useNavigation } from "@remix-run/react";
 import { ActionFunctionArgs, LoaderFunctionArgs, json, redirect } from "@remix-run/node";
 import { useState } from "react";
 import { getUser } from "~/utils/auth.server";
@@ -6,6 +6,13 @@ import { recordEvent } from "~/services/stats.server";
 
 // Loader para redirigir si ya está autenticado
 export async function loader({ request }: LoaderFunctionArgs) {
+    const url = new URL(request.url);
+
+    // Si viene de logout, no verificar usuario
+    if (url.searchParams.has('logout')) {
+        return json({});
+    }
+
     const user = await getUser(request);
 
     // Si el usuario ya está autenticado, redirigir según su rol
@@ -14,15 +21,18 @@ export async function loader({ request }: LoaderFunctionArgs) {
         return redirect(dashboardRoute);
     }
 
-    // Registrar vista de página de login para estadísticas
+    // Registrar vista de página de login para estadísticas (sin fallar si hay error)
     try {
         await recordEvent(request, {
             type: "view",
             name: "login_page",
-            value: {}
+            value: {
+                timestamp: new Date().toISOString(),
+                user_agent: request.headers.get('user-agent') || 'unknown'
+            }
         });
     } catch (error) {
-        console.error("Error registrando vista de login:", error);
+        console.warn("Error registrando vista de login:", error);
     }
 
     return json({});
@@ -42,20 +52,19 @@ function getDashboardRoute(role: string): string {
     }
 }
 
-// Acción de login usando el nuevo sistema de sesiones
+// Acción de login CORREGIDA
 export async function action({ request }: ActionFunctionArgs) {
-    console.log("loginAction - starting");
+    console.log("=== LOGIN ACTION START ===");
     const formData = await request.formData();
 
-    const email = formData.get("email") as string;
+    const email = (formData.get("email") as string)?.trim().toLowerCase();
     const password = formData.get("password") as string;
-    const redirectTo = formData.get("redirectTo") as string;
 
-    console.log(`loginAction - attempting login for: ${email}`);
+    console.log(`Login attempt for: ${email}`);
 
     if (!email || !password) {
         return json(
-            { errors: { email: "Email is required", password: "Password is required" } },
+            { errors: { general: "Email y contraseña son requeridos" } },
             { status: 400 }
         );
     }
@@ -63,43 +72,92 @@ export async function action({ request }: ActionFunctionArgs) {
     try {
         const response = await fetch("http://localhost:8000/api/auth/login/", {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
+            headers: {
+                "Content-Type": "application/json",
+                "Accept": "application/json"
+            },
             body: JSON.stringify({ email, password }),
         });
 
-        console.log("loginAction - API response status:", response.status);
-        const data = await response.json();
-        console.log("loginAction - received data:", data);
+        console.log(`API response status: ${response.status}`);
+
+        // Leer respuesta una sola vez
+        const responseText = await response.text();
+        console.log("API raw response:", responseText);
+
+        let data;
+        try {
+            data = responseText ? JSON.parse(responseText) : {};
+        } catch (parseError) {
+            console.error("JSON parse error:", parseError);
+            return json(
+                { errors: { general: "Error en la respuesta del servidor" } },
+                { status: 500 }
+            );
+        }
 
         if (!response.ok) {
+            console.error("Login failed:", data);
+
+            const errorMessage = data.message || data.detail || "Error de autenticación";
+
             return json(
-                { errors: { general: data.message || "Error de autenticación" } },
+                { errors: { general: errorMessage } },
                 { status: response.status }
             );
         }
 
-        // Si llegamos aquí, el login fue exitoso
-        const { refresh, access, user } = data.data;
-
-        // Determinar la ruta de redirección basada en el rol del usuario
-        let finalRedirectTo = redirectTo;
-        if (!finalRedirectTo || finalRedirectTo === "/") {
-            finalRedirectTo = getDashboardRoute(user.role);
+        // Verificar estructura de respuesta
+        if (!data.success || !data.data) {
+            console.error("Invalid response structure:", data);
+            return json(
+                { errors: { general: "Respuesta inválida del servidor" } },
+                { status: 500 }
+            );
         }
 
-        // Crear cookies de sesión y redirigir
-        console.log(`loginAction - creating user session and redirecting to: ${finalRedirectTo}`);
+        const { refresh, access, user } = data.data;
 
+        // Validar que tenemos todo lo necesario
+        if (!refresh || !access || !user) {
+            console.error("Missing required data:", { refresh: !!refresh, access: !!access, user: !!user });
+            return json(
+                { errors: { general: "Datos incompletos en la respuesta" } },
+                { status: 500 }
+            );
+        }
+
+        console.log(`Login successful for user: ${user.email} (role: ${user.role})`);
+
+        // Determinar ruta de redirección
+        const dashboardRoute = getDashboardRoute(user.role);
+
+        // Crear cookies con configuración correcta
         const headers = new Headers();
-        headers.append("Set-Cookie", `l360_access=${encodeURIComponent(access)}; Path=/; HttpOnly; SameSite=Strict; Secure=${process.env.NODE_ENV === 'production'}`);
-        headers.append("Set-Cookie", `l360_refresh=${encodeURIComponent(refresh)}; Path=/; HttpOnly; SameSite=Strict; Secure=${process.env.NODE_ENV === 'production'}`);
-        headers.append("Set-Cookie", `l360_user=${encodeURIComponent(JSON.stringify(user))}; Path=/; HttpOnly; SameSite=Strict; Secure=${process.env.NODE_ENV === 'production'}`);
+        const isProduction = process.env.NODE_ENV === 'production';
+        const cookieOptions = `Path=/; HttpOnly; SameSite=Lax${isProduction ? '; Secure' : ''}; Max-Age=604800`;
 
-        return redirect(finalRedirectTo, { headers });
+        headers.append("Set-Cookie", `l360_access=${encodeURIComponent(access)}; ${cookieOptions}`);
+        headers.append("Set-Cookie", `l360_refresh=${encodeURIComponent(refresh)}; ${cookieOptions}`);
+        headers.append("Set-Cookie", `l360_user=${encodeURIComponent(JSON.stringify(user))}; ${cookieOptions}`);
+
+        console.log(`Redirecting to: ${dashboardRoute}`);
+        console.log("=== LOGIN ACTION END (SUCCESS) ===");
+
+        return redirect(dashboardRoute, { headers });
+
     } catch (error) {
-        console.error("loginAction - error:", error);
+        console.error("Login error:", error);
+        console.log("=== LOGIN ACTION END (ERROR) ===");
+
+        let errorMessage = "Error de conexión al servidor";
+
+        if (error instanceof TypeError && error.message.includes('fetch')) {
+            errorMessage = "No se pudo conectar al servidor. Verifica tu conexión.";
+        }
+
         return json(
-            { errors: { general: "Error de conexión al servidor" } },
+            { errors: { general: errorMessage } },
             { status: 500 }
         );
     }

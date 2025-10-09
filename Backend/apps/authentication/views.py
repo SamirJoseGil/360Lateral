@@ -1,5 +1,5 @@
 """
-Vistas para autenticación
+Vistas para autenticación - CORREGIDO
 """
 from rest_framework import generics, status
 from rest_framework.views import APIView
@@ -41,57 +41,140 @@ class RegisterView(generics.CreateAPIView):
     permission_classes = [AllowAny]
     
     def create(self, request, *args, **kwargs):
-        serializer = self.get_serializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        user = serializer.save()
-        
-        # Log del registro
-        audit_log(
-            action='USER_REGISTERED',
-            user=user,
-            details={'email': user.email},
-            ip_address=get_client_ip(request)
-        )
-        
-        # Generar tokens
-        tokens = TokenSerializer.get_token_for_user(user)
-        
-        return Response({
-            'success': True,
-            'message': 'Usuario registrado exitosamente',
-            'data': tokens
-        }, status=status.HTTP_201_CREATED)
+        try:
+            logger.info(f"Registration attempt for email: {request.data.get('email')}")
+            
+            serializer = self.get_serializer(data=request.data)
+            
+            if not serializer.is_valid():
+                logger.error(f"Registration validation errors: {serializer.errors}")
+                return Response({
+                    'success': False,
+                    'message': 'Datos de registro inválidos',
+                    'errors': serializer.errors
+                }, status=status.HTTP_400_BAD_REQUEST)
+            
+            # Verificar duplicados explícitamente
+            email = serializer.validated_data.get('email')
+            if User.objects.filter(email=email).exists():
+                logger.warning(f"Registration attempt with duplicate email: {email}")
+                return Response({
+                    'success': False,
+                    'message': 'El correo electrónico ya está registrado',
+                    'errors': {'email': ['Ya existe un usuario con este correo electrónico.']}
+                }, status=status.HTTP_400_BAD_REQUEST)
+            
+            # Crear usuario
+            user = serializer.save()
+            logger.info(f"User registered successfully: {user.email} (ID: {user.id})")
+            
+            # Log del registro
+            try:
+                audit_log(
+                    action='USER_REGISTERED',
+                    user=user,
+                    details={'email': user.email, 'role': user.role},
+                    ip_address=get_client_ip(request)
+                )
+            except Exception as audit_error:
+                logger.warning(f"Audit log failed: {audit_error}")
+            
+            # Generar tokens
+            tokens = TokenSerializer.get_token_for_user(user)
+            
+            # RESPUESTA CONSISTENTE CON LOGIN
+            return Response({
+                'success': True,
+                'message': 'Usuario registrado exitosamente',
+                'data': {
+                    'refresh': tokens['refresh'],
+                    'access': tokens['access'],
+                    'user': tokens['user']
+                }
+            }, status=status.HTTP_201_CREATED)
+            
+        except Exception as e:
+            logger.error(f"Unexpected error during registration: {str(e)}", exc_info=True)
+            return Response({
+                'success': False,
+                'message': 'Error interno del servidor',
+                'errors': {'general': 'Por favor, intenta de nuevo más tarde.'}
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 class LoginView(APIView):
-    """Vista para inicio de sesión"""
+    """Vista para inicio de sesión - CORREGIDO"""
     permission_classes = [AllowAny]
     
     def post(self, request):
-        serializer = LoginSerializer(data=request.data, context={'request': request})
-        serializer.is_valid(raise_exception=True)
-        
-        user = serializer.validated_data['user']
-        
-        # Log del login
-        audit_log(
-            action='USER_LOGIN',
-            user=user,
-            details={'email': user.email},
-            ip_address=get_client_ip(request)
-        )
-        
-        # Generar tokens
-        tokens = TokenSerializer.get_token_for_user(user)
-        
-        # Agregar log temporal para ver qué se envía realmente
-        logger.info(f"FRONTEND RESPONSE: {tokens}")
-        
-        return Response({
-            'success': True,
-            'message': 'Login exitoso',
-            'data': tokens
-        }, status=status.HTTP_200_OK)
+        try:
+            logger.info(f"Login attempt from IP: {get_client_ip(request)} for email: {request.data.get('email')}")
+            
+            serializer = LoginSerializer(data=request.data, context={'request': request})
+            
+            if not serializer.is_valid():
+                logger.warning(f"Login validation failed: {serializer.errors}")
+                
+                # Extraer mensaje de error específico
+                error_message = "Credenciales inválidas"
+                
+                if 'password' in serializer.errors:
+                    error_message = serializer.errors['password'][0] if isinstance(serializer.errors['password'], list) else serializer.errors['password']
+                elif 'email' in serializer.errors:
+                    error_message = serializer.errors['email'][0] if isinstance(serializer.errors['email'], list) else serializer.errors['email']
+                elif 'non_field_errors' in serializer.errors:
+                    error_message = serializer.errors['non_field_errors'][0] if isinstance(serializer.errors['non_field_errors'], list) else serializer.errors['non_field_errors']
+                
+                return Response({
+                    'success': False,
+                    'message': error_message,
+                    'errors': serializer.errors
+                }, status=status.HTTP_400_BAD_REQUEST)
+            
+            user = serializer.validated_data['user']
+            
+            # Verificar usuario activo
+            if not user.is_active:
+                logger.warning(f"Login attempt for inactive user: {user.email}")
+                return Response({
+                    'success': False,
+                    'message': 'Cuenta desactivada. Contacta al administrador.'
+                }, status=status.HTTP_403_FORBIDDEN)
+            
+            logger.info(f"Successful login for user: {user.email} (ID: {user.id})")
+            
+            # Log del login
+            try:
+                audit_log(
+                    action='USER_LOGIN',
+                    user=user,
+                    details={'email': user.email},
+                    ip_address=get_client_ip(request)
+                )
+            except Exception as audit_error:
+                logger.warning(f"Audit log failed: {audit_error}")
+            
+            # Generar tokens
+            tokens = TokenSerializer.get_token_for_user(user)
+            
+            # RESPUESTA CONSISTENTE
+            return Response({
+                'success': True,
+                'message': 'Login exitoso',
+                'data': {
+                    'refresh': tokens['refresh'],
+                    'access': tokens['access'],
+                    'user': tokens['user']
+                }
+            }, status=status.HTTP_200_OK)
+            
+        except Exception as e:
+            logger.error(f"Unexpected error during login: {str(e)}", exc_info=True)
+            return Response({
+                'success': False,
+                'message': 'Error interno del servidor',
+                'errors': {'general': 'Por favor, intenta de nuevo más tarde.'}
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 class LogoutView(APIView):

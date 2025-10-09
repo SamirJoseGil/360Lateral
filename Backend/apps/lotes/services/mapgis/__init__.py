@@ -1,7 +1,8 @@
 """
-Paquete para los servicios relacionados con MapGIS.
-Este módulo contiene clases y funciones para interactuar con el servicio MapGIS de Medellín.
+Módulo MapGIS para integración con servicios de Medellín
 """
 
-from .client import MapGISClient
-from .service import MapGISService
+from .core import MapGISCore
+from .queries import MapGISQueries
+
+__all__ = ['MapGISCore', 'MapGISQueries']

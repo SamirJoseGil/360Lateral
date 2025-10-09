@@ -11,6 +11,8 @@ from django.core.cache import cache
 from django.conf import settings
 
 from .client import MapGISClient
+from .utils import MapGISDataProcessor
+
 # Configuración del logger
 logger = logging.getLogger(__name__)
 
@@ -23,6 +25,7 @@ class MapGISService:
     def __init__(self):
         """Inicializa el servicio con un cliente de MapGIS"""
         self.client = MapGISClient()
+        self.processor = MapGISDataProcessor()
     
     def _get_cached_response(self, cache_key: str) -> Optional[Dict[str, Any]]:
         """
@@ -53,7 +56,7 @@ class MapGISService:
         cache.set(cache_key, data, timeout)
         logger.debug(f"Datos guardados en cache: {cache_key}")
     
-    def buscar_por_cbml(self, cbml: str) -> Dict:
+    def buscar_por_cbml(self, cbml: str) -> Dict[str, Any]:
         """
         Busca información de un lote por su código CBML.
         
@@ -510,4 +513,16 @@ class MapGISService:
         Returns:
             Dict: Estado del servicio
         """
-        return self.client.health_check()
+        try:
+            return self.client.health_check()
+        except Exception as e:
+            return {
+                'status': 'error',
+                'error': str(e),
+                'timestamp': self._get_timestamp()
+            }
+    
+    def _get_timestamp(self) -> str:
+        """Obtener timestamp actual"""
+        from datetime import datetime
+        return datetime.now().isoformat()

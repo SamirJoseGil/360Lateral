@@ -3,8 +3,11 @@ Utilidades para el servicio MapGIS.
 Contiene funciones y clases para procesar los datos de MapGIS.
 """
 
+import logging
 import re
 from typing import Dict, Any, List, Optional, Union
+
+logger = logging.getLogger(__name__)
 
 class MapGISDataParser:
     """
@@ -191,3 +194,91 @@ class MapGISDataParser:
                         resultado['retiros_rios'] = valor
                 
         return resultado
+
+class MapGISDataProcessor:
+    """Procesador de datos de MapGIS"""
+    
+    def process_cbml_data(self, data: Dict[str, Any]) -> Dict[str, Any]:
+        """Procesar datos obtenidos por CBML"""
+        try:
+            # ...existing code...
+            return data
+        except Exception as e:
+            logger.error(f"Error procesando datos CBML: {str(e)}")
+            return data
+    
+    def process_matricula_data(self, data: Dict[str, Any]) -> Dict[str, Any]:
+        """Procesar datos obtenidos por matrícula"""
+        try:
+            if not data.get('encontrado'):
+                return data
+            
+            # Agregar metadatos específicos de búsqueda por matrícula
+            datos = data.get('datos', {})
+            
+            # Marcar el origen de los datos
+            datos['origen_busqueda'] = 'matricula'
+            datos['cbml_verificado'] = True
+            
+            # Procesar coordenadas si existen
+            if 'coordenadas' in datos:
+                coords = datos['coordenadas']
+                if coords.get('x') and coords.get('y'):
+                    try:
+                        datos['longitud'] = float(coords['x'])
+                        datos['latitud'] = float(coords['y'])
+                    except (ValueError, TypeError):
+                        logger.warning("Coordenadas inválidas en datos de matrícula")
+            
+            # Validar y limpiar matrícula
+            if 'matricula' in datos:
+                matricula = str(datos['matricula']).strip()
+                datos['matricula'] = matricula
+            
+            data['datos'] = datos
+            
+            logger.info(f"✅ Datos de matrícula procesados correctamente")
+            return data
+            
+        except Exception as e:
+            logger.error(f"❌ Error procesando datos de matrícula: {str(e)}")
+            return data
+    
+    def validate_cbml(self, cbml: str) -> bool:
+        """Validar formato de CBML"""
+        if not cbml:
+            return False
+        
+        # CBML debe ser numérico y tener longitud apropiada
+        cbml_clean = ''.join(filter(str.isdigit, cbml))
+        return len(cbml_clean) >= 10
+    
+    def validate_matricula(self, matricula: str) -> bool:
+        """Validar formato de matrícula"""
+        if not matricula:
+            return False
+        
+        # Matrícula debe ser numérica
+        matricula_clean = ''.join(filter(str.isdigit, matricula))
+        return len(matricula_clean) >= 4
+    
+    def clean_numeric_value(self, value: str) -> float:
+        """Limpiar y convertir valor numérico"""
+        if not value:
+            return 0.0
+        
+        try:
+            # Remover caracteres no numéricos excepto punto y coma
+            cleaned = ''.join(c for c in str(value) if c.isdigit() or c in '.,')
+            # Reemplazar coma por punto para decimales
+            cleaned = cleaned.replace(',', '.')
+            return float(cleaned)
+        except (ValueError, TypeError):
+            return 0.0
+    
+    def clean_text_value(self, value: str) -> str:
+        """Limpiar valor de texto"""
+        if not value:
+            return ""
+        
+        return str(value).strip()

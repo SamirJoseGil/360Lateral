@@ -17,17 +17,15 @@ from .views import (
     # Vistas de MapGIS
     scrap_cbml,
     scrap_matricula,
-    scrap_direccion,
     consultar_restricciones_completas,
     health_mapgis,
     
     # Vistas de tratamientos
     listar_tratamientos,
     
-    # Vistas públicas de MapGIS
+    # Vistas públicas de MapGIS - CORREGIDO
     PublicCBMLView,
     PublicMatriculaView,
-    PublicDireccionView,
     
     # Vistas de usuarios
     UserLotesView,
@@ -42,6 +40,18 @@ from .views.tratamientos_views import (
     obtener_tratamiento_por_cbml
 )
 
+# Importar vistas de verificación
+from .views.verification_views import (
+    verify_lote,
+    reject_lote,
+    archive_lote,
+    reactivate_lote,
+    lotes_pending_verification
+)
+
+# Importar vista de lotes disponibles
+from .views.public_lotes import available_lotes
+
 app_name = 'lotes'
 
 # Router para favoritos
@@ -49,8 +59,8 @@ favorites_router = DefaultRouter()
 favorites_router.register(r'favorites', FavoriteViewSet, basename='favorite')
 
 urlpatterns = [
-    # Rutas para lotes por usuario
-    path('lotes/', my_lotes, name='my-lotes'),
+    # ✅ CORREGIDO: Cambiar de 'lotes/' a 'my-lotes/'
+    path('my-lotes/', my_lotes, name='my-lotes'),
     path('usuario/<int:user_id>/', UserLotesView.as_view(), name='user-lotes'),
     path('usuario/<int:user_id>/stats/', user_lote_stats, name='user-lote-stats'),
 
@@ -63,22 +73,31 @@ urlpatterns = [
     path('<int:pk>/update/', lote_update, name='lote-update'),
     path('<int:pk>/delete/', lote_delete, name='lote-delete'),
     
+    # ✅ NUEVO: Agregar endpoint de stats
+    path('stats/', user_lote_stats, name='lotes-stats'),
+    
     # Rutas para MapGIS
     path('scrap/cbml/', scrap_cbml, name='scrap-cbml'),
     path('scrap/matricula/', scrap_matricula, name='scrap-matricula'),
-    path('scrap/direccion/', scrap_direccion, name='scrap-direccion'),
-    path('consultar/restricciones/', consultar_restricciones_completas, name='consultar-restricciones'),
-    path('health/mapgis/', health_mapgis, name='health-mapgis'),
     
     # Rutas para tratamientos urbanísticos
     path('tratamientos/', listar_tratamientos, name='listar-tratamientos'),
     path('tratamientos/por-cbml/', obtener_tratamiento_por_cbml, name='tratamiento-por-cbml'),
     path('tratamientos/calcular/', calcular_aprovechamiento, name='calcular-aprovechamiento'),
 
-    # Endpoints públicos para MapGIS - No requieren autenticación
+    # Endpoints públicos para MapGIS - CORREGIDO (sin dirección)
     path('public/cbml/', PublicCBMLView.as_view(), name='public-cbml'),
     path('public/matricula/', PublicMatriculaView.as_view(), name='public-matricula'),
-    path('public/direccion/', PublicDireccionView.as_view(), name='public-direccion'),
+
+    # Rutas de verificación administrativa
+    path('<int:pk>/verify/', verify_lote, name='verify-lote'),
+    path('<int:pk>/reject/', reject_lote, name='reject-lote'),
+    path('<int:pk>/archive/', archive_lote, name='archive-lote'),
+    path('<int:pk>/reactivate/', reactivate_lote, name='reactivate-lote'),
+    path('pending-verification/', lotes_pending_verification, name='pending-verification'),
+
+    # Endpoint para lotes disponibles (developers)
+    path('available/', available_lotes, name='available-lotes'),
 
     # Include favorites endpoints
     path('', include(favorites_router.urls)),

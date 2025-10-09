@@ -19,25 +19,20 @@ class StatsService:
     def record_stat(type, name, value=None, user_id=None, session_id=None, ip_address=None):
         """
         Registra un evento estadístico en la base de datos.
-        
-        Args:
-            type (str): Tipo de estadística ('view', 'search', etc.)
-            name (str): Nombre del evento
-            value (dict, optional): Datos asociados al evento
-            user_id (int/uuid, optional): ID del usuario que generó el evento
-            session_id (str, optional): ID de sesión
-            ip_address (str, optional): Dirección IP
-            
-        Returns:
-            Stat: Objeto estadístico creado
         """
         try:
             if value is None:
                 value = {}
             
-            # Convertir user_id a string si es un UUID u otro tipo
-            if user_id is not None:
-                user_id = str(user_id)
+            # ✅ CORREGIDO: Obtener instancia del usuario si se proporciona user_id
+            user = None
+            if user_id:
+                try:
+                    from django.contrib.auth import get_user_model
+                    User = get_user_model()
+                    user = User.objects.get(id=user_id)
+                except User.DoesNotExist:
+                    logger.warning(f"Usuario con ID {user_id} no encontrado")
                 
             # Verificar que la tabla existe antes de intentar escribir
             try:
@@ -49,12 +44,13 @@ class StatsService:
                 StatsService._save_to_backup_log(type, name, value, user_id, session_id, ip_address)
                 return None
                 
+            # ✅ CRÍTICO: Usar campo 'user' (ForeignKey) en lugar de 'user_id'
             stat = Stat.objects.create(
-                type=type,
-                name=name,
-                value=value,
-                user_id=user_id,
+                user=user,  # ✅ Usar ForeignKey directamente
                 session_id=session_id,
+                event_type=type,     # ✅ Correcto
+                event_name=name,     # ✅ Correcto
+                event_value=value,   # ✅ Correcto
                 ip_address=ip_address
             )
             return stat
@@ -266,35 +262,43 @@ class StatsService:
     def get_user_activity(user_id, days=30):
         """
         Obtiene la actividad reciente de un usuario.
-        
-        Args:
-            user_id (int/str): ID del usuario (puede ser UUID en forma de string)
-            days (int): Número de días a considerar
-            
-        Returns:
-            dict: Actividad del usuario
         """
         start_date = timezone.now() - timedelta(days=days)
         
-        # Asegurar que user_id sea string
-        user_id = str(user_id)
+        # ✅ CORREGIDO: Usar campo 'user' (ForeignKey) en lugar de 'user_id'
+        try:
+            from django.contrib.auth import get_user_model
+            User = get_user_model()
+            user_obj = User.objects.get(id=user_id)
+        except:
+            user_obj = None
+            
+        if not user_obj:
+            return {
+                'total_events': 0,
+                'events_by_type': {},
+                'recent_events': [],
+                'first_activity': None,
+                'last_activity': None
+            }
         
+        # ✅ CRÍTICO: Usar 'user' en lugar de 'user_id'
         stats = Stat.objects.filter(
-            user_id=user_id,
+            user=user_obj,  # ✅ Usar ForeignKey directamente
             timestamp__gte=start_date
         ).order_by('-timestamp')
         
         activity = {
             'total_events': stats.count(),
             'events_by_type': {},
-            'recent_events': list(stats.values('name', 'type', 'timestamp', 'value')[:20]),
+            'recent_events': list(stats.values('event_name', 'event_type', 'timestamp', 'event_value')[:20]),
             'first_activity': stats.order_by('timestamp').first(),
             'last_activity': stats.first()
         }
         
         # Eventos por tipo
         for stat_type, _ in Stat.STAT_TYPES:
-            type_count = stats.filter(type=stat_type).count()
+            type_count = stats.filter(event_type=stat_type).count()
             activity['events_by_type'][stat_type] = type_count
             
         return activity

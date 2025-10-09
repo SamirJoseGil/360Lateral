@@ -6,10 +6,11 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework import status
 from django.db import models, IntegrityError
+from django.utils import timezone
 import logging
 
 from ..models import Lote
-from ..serializers import LoteSerializer, LoteDetailSerializer
+from ..serializers import LoteSerializer, LoteDetailSerializer, LoteCreateFromMapGISSerializer
 
 logger = logging.getLogger(__name__)
 
@@ -17,33 +18,49 @@ logger = logging.getLogger(__name__)
 @permission_classes([IsAuthenticated])
 def lote_list(request):
     """
-    GET: Listar todos los lotes
+    GET: Listar todos los lotes SEGÚN EL ROL DEL USUARIO
     POST: Crear un nuevo lote
     """
     if request.method == 'GET':
         try:
-            # Filtrar lotes según permisos
             user = request.user
+            
+            # LÓGICA DE FILTRADO POR ROL
             if user.is_superuser or getattr(user, 'role', None) == 'admin':
+                # Admin ve TODOS los lotes
                 lotes = Lote.objects.all()
-            else:
-                lotes = Lote.objects.filter(usuario=user)
+                logger.info(f"Admin {user.email} consultando TODOS los lotes")
                 
-            serializer = LoteSerializer(lotes, many=True)
+            elif getattr(user, 'role', None) == 'developer':
+                # Developer ve SOLO lotes verificados y activos (disponibles para desarrollo)
+                lotes = Lote.objects.filter(
+                    is_verified=True,
+                    estado='active'
+                ).exclude(usuario=user)  # Excluir sus propios lotes si los tiene
+                logger.info(f"Developer {user.email} consultando lotes verificados disponibles")
+                
+            elif getattr(user, 'role', None) == 'owner':
+                # Owner ve SOLO sus propios lotes
+                lotes = Lote.objects.filter(usuario=user)
+                logger.info(f"Owner {user.email} consultando sus propios lotes")
+                
+            else:
+                # Usuario sin rol específico - solo sus lotes
+                lotes = Lote.objects.filter(usuario=user)
+                logger.warning(f"Usuario {user.email} sin rol específico")
+            
+            # Aplicar ordenamiento
+            ordering = request.query_params.get('ordering', '-fecha_creacion')
+            lotes = lotes.order_by(ordering)
+            
+            serializer = LoteSerializer(lotes, many=True, context={'request': request})
             return Response({
                 'count': len(serializer.data),
-                'results': serializer.data
+                'results': serializer.data,
+                'user_role': getattr(user, 'role', 'unknown')
             })
         except Exception as e:
             logger.error(f"Error al acceder a lotes: {str(e)}")
-            
-            if "no existe la relación" in str(e).lower():
-                return Response({
-                    "error": "La tabla de lotes no existe en la base de datos.",
-                    "detail": "Ejecuta 'python manage.py migrate' para crear las tablas necesarias.",
-                    "code": "table_not_exists"
-                }, status=500)
-            
             return Response({
                 "error": "Error al recuperar lotes",
                 "detail": str(e)
@@ -52,10 +69,8 @@ def lote_list(request):
     elif request.method == 'POST':
         serializer = LoteSerializer(data=request.data, context={'request': request})
         if serializer.is_valid():
-            # Asignar el propietario si no se proporcionó
             if 'usuario' not in serializer.validated_data:
                 serializer.validated_data['usuario'] = request.user
-                
             serializer.save()
             return Response(serializer.data, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
@@ -88,27 +103,49 @@ def lote_detail(request, pk):
             "detail": str(e)
         }, status=500)
     
-    # Verificar permisos
+    # ✅ CORREGIDO: Lógica de permisos según rol
     user = request.user
-    if not (user.is_superuser or getattr(user, 'role', None) == 'admin' or lote.usuario == user):
-        return Response({'detail': 'No tienes permiso para acceder a este lote'}, 
-                      status=status.HTTP_403_FORBIDDEN)
+    
+    # Admin puede ver cualquier lote
+    if user.is_superuser or getattr(user, 'role', None) == 'admin':
+        pass  # Tiene acceso total
+    
+    # Developer puede ver lotes verificados y activos
+    elif getattr(user, 'role', None) == 'developer':
+        if not (lote.is_verified and lote.estado == 'active'):
+            return Response({
+                'detail': 'Este lote no está disponible para visualización'
+            }, status=status.HTTP_403_FORBIDDEN)
+    
+    # Owner solo puede ver sus propios lotes
+    elif lote.usuario != user:
+        return Response({
+            'detail': 'No tienes permiso para acceder a este lote'
+        }, status=status.HTTP_403_FORBIDDEN)
     
     if request.method == 'GET':
-        serializer = LoteDetailSerializer(lote)
+        serializer = LoteDetailSerializer(lote, context={'request': request})
         return Response(serializer.data)
     
     elif request.method == 'PUT':
-        serializer = LoteDetailSerializer(lote, data=request.data, partial=True)
+        # Solo admin y owner pueden editar
+        if not (user.is_superuser or getattr(user, 'role', None) == 'admin' or lote.usuario == user):
+            return Response({
+                'detail': 'No tienes permiso para editar este lote'
+            }, status=status.HTTP_403_FORBIDDEN)
+        
+        serializer = LoteDetailSerializer(lote, data=request.data, partial=True, context={'request': request})
         if serializer.is_valid():
             serializer.save()
             return Response(serializer.data)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     
     elif request.method == 'DELETE':
+        # Solo admin puede eliminar
         if not (user.is_superuser or getattr(user, 'role', None) == 'admin'):
-            return Response({'detail': 'Solo los administradores pueden eliminar lotes'},
-                          status=status.HTTP_403_FORBIDDEN)
+            return Response({
+                'detail': 'Solo los administradores pueden eliminar lotes'
+            }, status=status.HTTP_403_FORBIDDEN)
         lote.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
 
@@ -283,122 +320,167 @@ def lote_delete(request, pk):
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def lote_create_from_mapgis(request):
-    """Crear un nuevo lote importando datos desde MapGIS usando CBML con validación de duplicados"""
+    """
+    Crear lote con datos de MapGIS - FLUJO OPTIMIZADO
+    
+    Campos obligatorios:
+    - cbml O matricula (al menos uno)
+    - nombre
+    - direccion
+    - descripcion
+    
+    Los datos de MapGIS (área, clasificación_suelo, etc.) se obtienen automáticamente
+    """
     try:
-        cbml = request.data.get('cbml')
-        if not cbml:
-            return Response(
-                {"error": "CBML es requerido"}, 
-                status=status.HTTP_400_BAD_REQUEST
-            )
+        logger.info(f"Creación de lote con MapGIS - Usuario: {request.user.email}")
         
-        # Validar que no exista un lote con ese CBML
-        if Lote.objects.filter(cbml=cbml).exists():
+        # Validar con serializer
+        serializer = LoteCreateFromMapGISSerializer(
+            data=request.data,
+            context={'request': request}
+        )
+        
+        if not serializer.is_valid():
+            logger.warning(f"Validación fallida: {serializer.errors}")
             return Response({
-                "error": f"Ya existe un lote registrado con el CBML: {cbml}"
+                'success': False,
+                'message': 'Datos de creación inválidos',
+                'errors': serializer.errors
             }, status=status.HTTP_400_BAD_REQUEST)
         
-        # Importar servicio MapGIS
-        from ..services.mapgis_service import MapGISService
-        mapgis_service = MapGISService()
+        # Verificar duplicados antes de crear
+        cbml = serializer.validated_data.get('cbml')
+        matricula = serializer.validated_data.get('matricula')
         
-        # Consultar datos en MapGIS
-        logger.info(f"Consultando datos en MapGIS para CBML: {cbml}")
-        resultado_mapgis = mapgis_service.buscar_por_cbml(cbml)
+        if cbml and Lote.objects.filter(cbml=cbml).exists():
+            return Response({
+                'success': False,
+                'message': f'Ya existe un lote registrado con el CBML: {cbml}',
+                'errors': {'cbml': ['Este CBML ya está registrado']}
+            }, status=status.HTTP_400_BAD_REQUEST)
         
-        # Verificar si se encontraron datos
-        if not resultado_mapgis.get('encontrado'):
-            return Response(
-                {"error": f"No se encontraron datos para el CBML {cbml}"}, 
-                status=status.HTTP_404_NOT_FOUND
-            )
-        
-        # Extraer datos de MapGIS
-        datos_mapgis = resultado_mapgis.get('datos', {})
-        
-        # Preparar datos para el lote
-        nombre_lote = request.data.get('nombre') or f"Lote CBML {cbml}"
-        
-        lote_data = {
-            'usuario': request.user,
-            'nombre': nombre_lote,
-            'cbml': cbml,
-            'estado': request.data.get('status', 'active')
-        }
-        
-        # Agregar datos de MapGIS
-        if datos_mapgis.get('area_lote_m2'):
-            lote_data['area'] = datos_mapgis.get('area_lote_m2')
-        
-        if datos_mapgis.get('clasificacion_suelo'):
-            lote_data['clasificacion_suelo'] = datos_mapgis.get('clasificacion_suelo')
-        
-        if datos_mapgis.get('aprovechamiento_urbano', {}).get('tratamiento'):
-            lote_data['tratamiento_pot'] = datos_mapgis['aprovechamiento_urbano']['tratamiento']
+        if matricula and Lote.objects.filter(matricula=matricula).exists():
+            return Response({
+                'success': False,
+                'message': f'Ya existe un lote registrado con la matrícula: {matricula}',
+                'errors': {'matricula': ['Esta matrícula ya está registrada']}
+            }, status=status.HTTP_400_BAD_REQUEST)
         
         # Crear el lote
-        lote = Lote.objects.create(**lote_data)
+        lote = serializer.save()
         
-        logger.info(f"Lote creado desde MapGIS: ID={lote.id}, CBML={cbml}")
+        logger.info(f"Lote creado exitosamente: ID={lote.id}, CBML={lote.cbml}, Usuario={request.user.email}")
         
-        serializer = LoteSerializer(lote)
+        # Serializar respuesta
+        response_serializer = LoteDetailSerializer(lote, context={'request': request})
+        
         return Response({
-            'id': lote.id,
-            'mensaje': 'Lote creado desde MapGIS exitosamente',
-            'lote': serializer.data,
-            'datos_mapgis': datos_mapgis
+            'success': True,
+            'message': 'Lote creado exitosamente. Pendiente de verificación administrativa.',
+            'data': {
+                'lote': response_serializer.data
+            }
         }, status=status.HTTP_201_CREATED)
         
-    except IntegrityError as e:
-        logger.error(f"Error de integridad al crear lote desde MapGIS: {str(e)}")
+    except ValidationError as e:
+        logger.error(f"Error de validación al crear lote: {str(e)}")
         return Response({
-            "error": "Error de integridad: Ya existe un lote con ese CBML"
+            'success': False,
+            'message': 'Error de validación',
+            'errors': {'general': str(e)}
         }, status=status.HTTP_400_BAD_REQUEST)
+        
     except Exception as e:
-        logger.exception(f"Error creando lote desde MapGIS: {e}")
-        return Response(
-            {"error": f"Error creando lote desde MapGIS: {str(e)}"}, 
-            status=status.HTTP_500_INTERNAL_SERVER_ERROR
-        )
-
+        logger.exception(f"Error inesperado al crear lote desde MapGIS: {e}")
+        return Response({
+            'success': False,
+            'message': 'Error interno del servidor',
+            'errors': {'general': 'Por favor, intenta de nuevo más tarde.'}
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        
 
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def lote_search(request):
-    """Buscar lotes aplicando filtros"""
+    """Buscar lotes aplicando filtros - CON LÓGICA DE VISIBILIDAD POR ROL"""
     try:
         user = request.user
         
-        # Base queryset según permisos
+        # Base queryset según permisos - CORREGIDO
         if user.is_superuser or getattr(user, 'role', None) == 'admin':
+            # Admin ve todos los lotes
             queryset = Lote.objects.all()
+            
+        elif getattr(user, 'role', None) == 'developer':
+            # Developer SOLO ve lotes verificados y activos
+            queryset = Lote.objects.filter(
+                estado='active',
+                is_verified=True
+            )
+            logger.info(f"Developer {user.email} buscando en lotes verificados")
+            
         else:
+            # Owner ve solo sus propios lotes
             queryset = Lote.objects.filter(usuario=user)
         
-        # Aplicar filtros
+        # Aplicar filtros de búsqueda
         if 'search' in request.query_params:
             search_term = request.query_params['search']
             queryset = queryset.filter(
                 models.Q(nombre__icontains=search_term) |
                 models.Q(direccion__icontains=search_term) |
-                models.Q(cbml__icontains=search_term)
+                models.Q(cbml__icontains=search_term) |
+                models.Q(barrio__icontains=search_term)
             )
         
         # Filtros específicos
         if 'estrato' in request.query_params:
             queryset = queryset.filter(estrato=request.query_params['estrato'])
         
-        if 'estado' in request.query_params:
-            queryset = queryset.filter(estado=request.query_params['estado'])
+        if 'area_min' in request.query_params:
+            queryset = queryset.filter(area__gte=float(request.query_params['area_min']))
+        
+        if 'area_max' in request.query_params:
+            queryset = queryset.filter(area__lte=float(request.query_params['area_max']))
+        
+        if 'tratamiento_pot' in request.query_params:
+            queryset = queryset.filter(tratamiento_pot__icontains=request.query_params['tratamiento_pot'])
+        
+        if 'barrio' in request.query_params:
+            queryset = queryset.filter(barrio__icontains=request.query_params['barrio'])
         
         # Ordenamiento
         ordering = request.query_params.get('ordering', '-fecha_creacion')
+        
+        # Mapear nombres de campos
+        field_mapping = {
+            'created_at': 'fecha_creacion',
+            '-created_at': '-fecha_creacion',
+            'updated_at': 'fecha_actualizacion',
+            '-updated_at': '-fecha_actualizacion',
+        }
+        
+        ordering = field_mapping.get(ordering, ordering)
         queryset = queryset.order_by(ordering)
         
-        serializer = LoteSerializer(queryset, many=True)
+        # Paginación
+        limit = int(request.query_params.get('limit', 20))
+        offset = int(request.query_params.get('offset', 0))
+        
+        total_count = queryset.count()
+        queryset = queryset[offset:offset + limit]
+        
+        serializer = LoteSerializer(queryset, many=True, context={'request': request})
+        
         return Response({
-            'count': len(serializer.data),
-            'results': serializer.data
+            'count': total_count,
+            'results': serializer.data,
+            'next': offset + limit < total_count,
+            'previous': offset > 0,
+            'user_role': getattr(user, 'role', 'unknown'),
+            'filters_applied': {
+                'verified_only': getattr(user, 'role', None) == 'developer'
+            }
         })
         
     except Exception as e:

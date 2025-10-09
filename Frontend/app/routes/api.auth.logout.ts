@@ -1,42 +1,40 @@
 // app/routes/api.auth.logout.ts
-import { ActionFunctionArgs, json } from "@remix-run/node";
-import { clearAuthCookies } from "~/utils/auth.server";
+import { ActionFunctionArgs, redirect } from "@remix-run/node";
+import { clearAuthCookies, clearUserCache } from "~/utils/auth.server";
 
 /**
- * Endpoint para cerrar sesión que elimina las cookies de autenticación
+ * Endpoint optimizado para cerrar sesión SIN loops
  */
 export async function action({ request }: ActionFunctionArgs) {
   if (request.method !== "POST") {
-    return json({ success: false, message: "Método no permitido" }, { status: 405 });
+    return redirect("/");
   }
 
   try {
-    console.log("API logout action: Clearing cookies and returning success");
+    console.log("=== API LOGOUT START ===");
 
-    // Limpiar cookies manualmente para asegurar que se borren
+    // Limpiar caché de usuario
+    clearUserCache();
+
+    // Limpiar cookies
     const headers = await clearAuthCookies();
+    
+    // CRÍTICO: NO agregar X-Remix-Revalidate ni Cache-Control
+    // Esto causa loops infinitos de revalidación
 
-    // Imprimir headers para depuración
-    console.log(
-      "Set-Cookie headers:",
-      [...headers.entries()]
-        .filter(([name]) => name.toLowerCase() === "set-cookie")
-        .map(([, value]) => value)
-    );
+    console.log("=== API LOGOUT END ===");
 
-    // Asegurar que la respuesta incluya todas las cookies necesarias para eliminar
-    // y un campo explícito indicando que se debe recargar
-    return json(
-      {
-        success: true,
-        message: "Sesión cerrada correctamente",
-        redirectTo: "/",
-        forceRefresh: true,
-      },
-      { headers }
-    );
+    // Redirigir a home
+    return redirect("/?logout=true", { headers });
   } catch (error) {
     console.error("Error al cerrar sesión:", error);
-    return json({ success: false, message: "Error al cerrar sesión" }, { status: 500 });
+    return redirect("/", {
+      headers: await clearAuthCookies()
+    });
   }
+}
+
+// Loader que redirige GET requests
+export async function loader() {
+  return redirect("/");
 }

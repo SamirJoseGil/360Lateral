@@ -2,39 +2,65 @@
 URLs para la aplicación de estadísticas.
 """
 from django.urls import path, include
-from rest_framework import routers
-from . import views
+from rest_framework.routers import DefaultRouter
 
-# Create a router for DRF viewsets
-router = routers.DefaultRouter()
-router.register(r'events', views.StatViewSet)
+from .views import (
+    StatViewSet,
+    DailySummaryViewSet,
+    DashboardStatsView,
+    DashboardSummaryView,
+    UsersStatsView,
+    LotesStatsView,
+    DocumentosStatsView,
+    RecentActivityView,
+    EventDashboardView,
+    EventCountsView,
+    DailyEventsView,
+    EventTypeDistributionView,
+    DashboardChartsView,
+    LotesSummaryView,
+    DocumentsCountView,
+    DocumentsByMonthView,
+    stats_over_time,
+    user_activity,
+    RecordEventView,  # Importar la clase-based view
+)
+
+app_name = 'stats'
+
+router = DefaultRouter()
+router.register(r'stats', StatViewSet, basename='stat')
+router.register(r'daily-summary', DailySummaryViewSet, basename='daily-summary')
 
 urlpatterns = [
-    # Include router URLs
+    # Router URLs
     path('', include(router.urls)),
     
-    # Dashboard statistics endpoints
-    path('dashboard/', views.DashboardStatsView.as_view(), name='stats-dashboard'),
-    path('dashboard/summary/', views.DashboardSummaryView.as_view(), name='stats-dashboard-summary'),
-    path('dashboard/users/', views.UsersStatsView.as_view(), name='stats-users'),
-    path('dashboard/lotes/', views.LotesStatsView.as_view(), name='stats-lotes'),
-    path('dashboard/documentos/', views.DocumentosStatsView.as_view(), name='stats-documentos'),
-    path('dashboard/recent-activity/', views.RecentActivityView.as_view(), name='stats-recent-activity'),
+    # Dashboard endpoints
+    path('dashboard/', DashboardStatsView.as_view(), name='dashboard'),
+    path('dashboard/summary/', DashboardSummaryView.as_view(), name='dashboard-summary'),
+    path('dashboard/charts/', DashboardChartsView.as_view(), name='dashboard-charts'),
     
-    # Events endpoints
-    path('events/dashboard/', views.EventDashboardView.as_view(), name='stats-events-dashboard'),
-    path('events/daily/', views.DailyEventsView.as_view(), name='stats-events-daily'),
-    path('events/counts/', views.EventCountsView.as_view(), name='stats-events-counts'),
-    path('events/types/', views.EventTypeDistributionView.as_view(), name='stats-events-types'),
+    # Specific stats endpoints
+    path('users/', UsersStatsView.as_view(), name='users-stats'),
+    path('lotes/', LotesStatsView.as_view(), name='lotes-stats'),
+    path('lotes/summary/', LotesSummaryView.as_view(), name='lotes-summary'),
+    path('documentos/', DocumentosStatsView.as_view(), name='documentos-stats'),
+    path('documentos/count/', DocumentsCountView.as_view(), name='documents-count'),
+    path('documentos/by-month/', DocumentsByMonthView.as_view(), name='documents-by-month'),
+    path('activity/', RecentActivityView.as_view(), name='recent-activity'),
     
-    # Charts endpoints
-    path('charts/', views.DashboardChartsView.as_view(), name='stats-charts'),
-    path('charts/lotes-summary/', views.LotesSummaryView.as_view(), name='stats-lotes-summary'),
-    path('charts/documents-count/', views.DocumentsCountView.as_view(), name='stats-documents-count'),
-    path('charts/documents-by-month/', views.DocumentsByMonthView.as_view(), name='stats-documents-by-month'),
+    # Event stats endpoints
+    path('events/dashboard/', EventDashboardView.as_view(), name='events-dashboard'),
+    path('events/counts/', EventCountsView.as_view(), name='event-counts'),
+    path('events/daily/', DailyEventsView.as_view(), name='daily-events'),
+    path('events/distribution/', EventTypeDistributionView.as_view(), name='event-distribution'),
     
-    # Utility endpoints
-    path('over-time/', views.stats_over_time, name='stats-over-time'),
-    path('user-activity/', views.user_activity, name='stats-user-activity'),
-    path('user-activity/<str:user_id>/', views.user_activity, name='stats-user-activity-detail'),
+    # ✅ CRÍTICO: Endpoint para registrar eventos - SIN RESTRICCIÓN DE ROL
+    path('events/record/', RecordEventView.as_view(), name='record-event'),
+    
+    # Function-based views
+    path('over-time/', stats_over_time, name='stats-over-time'),
+    path('user-activity/', user_activity, name='user-activity'),
+    path('user-activity/<uuid:user_id>/', user_activity, name='user-activity-detail'),
 ]

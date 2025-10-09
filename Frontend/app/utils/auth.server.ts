@@ -1,7 +1,5 @@
 import { createCookie, json, redirect } from "@remix-run/node";
 import type { HeadersFunction } from "@remix-run/node";
-import { isExpired } from "./jwt.server";
-import { getSession, commitSession, getUserFromSession } from "./session.server";
 import { API_URL } from "./api.server";
 
 export type Role = "admin" | "owner" | "developer";
@@ -10,7 +8,9 @@ export type ApiUser = {
   id: string;
   email: string;
   role: Role;
-  name: string;
+  first_name?: string;
+  last_name?: string;
+  name?: string;
 };
 
 // ────────────────────────────────────────────────────────────────────────────────
@@ -52,50 +52,36 @@ export async function commitAuthCookies({
 export async function clearAuthCookies() {
   const headers = new Headers();
   
-  // Usar el formato específico para garantizar que las cookies se eliminan
-  // Nota: especificar path="/" es crucial para eliminar las cookies correctamente
+  // Limpiar todas las cookies de autenticación
+  const cookieOptions = "Path=/; HttpOnly; SameSite=Lax; Expires=Thu, 01 Jan 1970 00:00:00 GMT; Max-Age=0";
   
-  // Limpiar l360_access
-  headers.append("Set-Cookie", 
-    "l360_access=; Max-Age=0; Path=/; HttpOnly; SameSite=Lax; Expires=Thu, 01 Jan 1970 00:00:00 GMT");
+  headers.append("Set-Cookie", `l360_access=; ${cookieOptions}`);
+  headers.append("Set-Cookie", `l360_refresh=; ${cookieOptions}`);
+  headers.append("Set-Cookie", `l360_user=; ${cookieOptions}`);
+  headers.append("Set-Cookie", `l360_session=; ${cookieOptions}`);
   
-  // Limpiar l360_refresh
-  headers.append("Set-Cookie", 
-    "l360_refresh=; Max-Age=0; Path=/; HttpOnly; SameSite=Lax; Expires=Thu, 01 Jan 1970 00:00:00 GMT");
+  console.log("All auth cookies cleared");
   
-  // Limpiar l360_session
-  headers.append("Set-Cookie", 
-    "l360_session=; Max-Age=0; Path=/; HttpOnly; SameSite=Lax; Expires=Thu, 01 Jan 1970 00:00:00 GMT");
+  // CRÍTICO: Limpiar caché de usuario
+  userRequestCache.clear();
   
-  // Limpiar __360lateral (cookie de sesión)
-  headers.append("Set-Cookie", 
-    "__360lateral=; Max-Age=0; Path=/; HttpOnly; SameSite=Lax; Expires=Thu, 01 Jan 1970 00:00:00 GMT");
-  
-  console.log("All auth cookies cleared with explicit headers");
   return headers;
 }
 
 export async function logoutAction(request: Request) {
   try {
-    // Limpiar cookies manualmente
+    console.log("=== LOGOUT ACTION START ===");
+    
+    // Limpiar cookies y caché
     const headers = await clearAuthCookies();
     
-    // Verificar si es una solicitud de API o una navegación normal
-    const acceptHeader = request.headers.get("Accept") || "";
-    const isApiRequest = acceptHeader.includes("application/json");
+    // CRÍTICO: NO agregar X-Remix-Revalidate
+    // Esto causa loops infinitos
     
-    if (isApiRequest) {
-      // Para solicitudes API, devolver JSON con instrucción de redirección
-      return json({ 
-        success: true, 
-        message: "Sesión cerrada correctamente",
-        redirectTo: "/",
-        forceRefresh: true
-      }, { headers });
-    }
+    console.log("=== LOGOUT ACTION END ===");
     
-    // Para solicitudes normales, hacer redirección directa
-    return redirect("/", { headers });
+    // Redirigir a home con headers que limpian cookies
+    return redirect("/?logout=true", { headers });
   } catch (error) {
     console.error("Error en logoutAction:", error);
     return redirect("/", {
@@ -104,113 +90,191 @@ export async function logoutAction(request: Request) {
   }
 }
 
-// Enhanced fetchWithAuth function with better error handling
+/**
+ * Función mejorada para hacer peticiones autenticadas con mejor manejo de errores
+ */
 export async function fetchWithAuth(
   request: Request,
-  endpoint: string,
-  options: Record<string, any> = {}
-) {
+  url: string,
+  options: RequestInit = {}
+): Promise<{ res: Response; setCookieHeaders: Headers }> {
+  const accessToken = await getAccessTokenFromCookies(request);
+  const refreshToken = await getRefreshTokenFromCookies(request);
+
+  console.log(`[Auth] Making authenticated request to: ${url}`);
+  console.log(`[Auth] Has access token: ${!!accessToken}`);
+  console.log(`[Auth] Has refresh token: ${!!refreshToken}`);
+
+  if (!accessToken) {
+    console.log("[Auth] No access token available, authentication required");
+    throw new Response("Authentication required", { status: 401 });
+  }
+
+  // Preparar headers con token
+  const headers = new Headers(options.headers);
+  headers.set('Authorization', `Bearer ${accessToken}`);
+  headers.set('Content-Type', 'application/json');
+
+  console.log(`[Auth] Making request with token: ${accessToken.substring(0, 20)}...`);
+
   try {
-    // Get access token from cookies
-    const accessToken = await getAccessTokenFromCookies(request);
-    
-    if (!accessToken) {
-      console.log('[Auth] No access token found');
-      throw new Response("Authentication required", { status: 401 });
-    }
-    
-    // Ensure endpoint has the correct base URL
-    const url = endpoint.startsWith('http') 
-      ? endpoint 
-      : `${API_URL}${endpoint.startsWith('/') ? '' : '/'}${endpoint}`;
-    
-    // Set default headers with auth token
-    const headers = new Headers(options.headers || {});
-    headers.set("Authorization", `Bearer ${accessToken}`);
-    if (!headers.has("Content-Type")) {
-      headers.set("Content-Type", "application/json");
-    }
-    
-    // Make the request with auth header
     const response = await fetch(url, {
       ...options,
       headers,
     });
-    
-    // Handle token expiration
+
+    console.log(`[Auth] Response status: ${response.status} for ${url}`);
+
+    // Si el token ha expirado (401), intentar renovarlo
     if (response.status === 401) {
-      console.log('[Auth] Token expired, authentication required');
-      throw new Response("Authentication required", { status: 401 });
+      console.log("[Auth] Token expired, attempting refresh");
+      
+      if (!refreshToken) {
+        console.log("[Auth] No refresh token available, authentication required");
+        throw new Response("Authentication required", { status: 401 });
+      }
+
+      try {
+        console.log("[Auth] Attempting token refresh");
+        const refreshResponse = await fetch(`${API_URL}/api/auth/token/refresh/`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ refresh: refreshToken }),
+        });
+
+        console.log(`[Auth] Refresh response status: ${refreshResponse.status}`);
+
+        if (refreshResponse.ok) {
+          const refreshData = await refreshResponse.json();
+          const newAccessToken = refreshData.access;
+          
+          console.log("[Auth] Token refreshed successfully");
+
+          // Reintentar la petición original con el nuevo token
+          const retryHeaders = new Headers(options.headers);
+          retryHeaders.set('Authorization', `Bearer ${newAccessToken}`);
+          retryHeaders.set('Content-Type', 'application/json');
+
+          const retryResponse = await fetch(url, {
+            ...options,
+            headers: retryHeaders,
+          });
+
+          console.log(`[Auth] Retry response status: ${retryResponse.status}`);
+
+          // Crear headers para actualizar las cookies
+          const setCookieHeaders = new Headers();
+          const isProduction = process.env.NODE_ENV === 'production';
+          
+          setCookieHeaders.append("Set-Cookie", `l360_access=${encodeURIComponent(newAccessToken)}; Path=/; HttpOnly; SameSite=Strict${isProduction ? '; Secure' : ''}`);
+          
+          // Si el refresh también devuelve un nuevo refresh token, actualizarlo
+          if (refreshData.refresh) {
+            setCookieHeaders.append("Set-Cookie", `l360_refresh=${encodeURIComponent(refreshData.refresh)}; Path=/; HttpOnly; SameSite=Strict${isProduction ? '; Secure' : ''}`);
+          }
+
+          return { res: retryResponse, setCookieHeaders };
+        } else {
+          console.log("[Auth] Token refresh failed, authentication required");
+          const errorText = await refreshResponse.text();
+          console.log(`[Auth] Refresh error: ${errorText}`);
+          throw new Response("Authentication required", { status: 401 });
+        }
+      } catch (refreshError) {
+        console.error("[Auth] Error during token refresh:", refreshError);
+        throw new Response("Authentication required", { status: 401 });
+      }
+    }
+
+    // Si la respuesta es exitosa, devolver tal como está
+    return { res: response, setCookieHeaders: new Headers() };
+    
+  } catch (error) {
+    console.error(`[Auth] Error in fetchWithAuth for endpoint ${url}:`, error);
+    
+    // Si es un error de red, relanzar para que el código llamador lo maneje
+    if (error instanceof TypeError && error.message.includes('fetch')) {
+      throw new Error(`Network error: Unable to connect to ${url}`);
     }
     
-    return {
-      res: response,
-      setCookieHeaders: new Headers(),
-    };
-  } catch (error) {
-    console.log(`[Auth] Error in fetchWithAuth for endpoint ${endpoint}:`, error);
-    throw error;
+    // Si es nuestro error de autenticación, relanzarlo
+    if (error instanceof Response) {
+      throw error;
+    }
+    
+    // Para otros errores, crear una respuesta de error genérica
+    throw new Response("Internal server error", { status: 500 });
   }
 }
 
-// Implementamos un pequeño caché en memoria para reducir consultas repetidas
+// Implementamos un pequeño caché en memoria - MEJORADO
 const userRequestCache = new Map<string, { user: any | null, timestamp: number }>();
 
-// Función para obtener el usuario actual
+// CRÍTICO: Función para limpiar caché manualmente
+export function clearUserCache() {
+  userRequestCache.clear();
+  console.log("User cache cleared");
+}
+
+// Función para obtener el usuario actual - OPTIMIZADA
 export async function getUser(request: Request): Promise<any | null> {
-  const url = request.url;
+  const url = new URL(request.url);
+  const pathname = url.pathname;
+  
+  // CRÍTICO: No usar caché en rutas de logout
+  if (pathname === "/api/auth/logout" || pathname === "/logout" || url.searchParams.has('logout')) {
+    console.log("Logout detected, skipping cache and returning null");
+    return null;
+  }
+  
+  // Cache key único por ruta
+  const cacheKey = `user_${pathname}`;
   const now = Date.now();
 
-  // Si tenemos una versión cacheada reciente (menos de 2 segundos), la usamos
-  if (userRequestCache.has(url)) {
-    const cached = userRequestCache.get(url)!;
+  // Verificar cache (2 segundos para evitar demasiadas llamadas)
+  if (userRequestCache.has(cacheKey)) {
+    const cached = userRequestCache.get(cacheKey)!;
     if (now - cached.timestamp < 2000) {
-      console.log(`[Cache] Using cached user for ${url}`);
       return cached.user;
     }
+    userRequestCache.delete(cacheKey);
   }
 
   try {
-    // Primero intenta obtener el usuario desde la sesión
-    const user = await getUserFromSession(request);
-    
-    if (user) {
-      console.log("User found in session:", user.email);
-      userRequestCache.set(url, { user, timestamp: now });
-      return user;
-    }
-
-    // Si no hay usuario en sesión, intentamos obtenerlo del API con el token
+    // 1. Intentar obtener token de acceso
     const token = await getAccessTokenFromCookies(request);
-    console.log("Access token from cookies:", token ? "found" : "not found");
+    
+    if (!token) {
+      userRequestCache.set(cacheKey, { user: null, timestamp: now });
+      return null;
+    }
 
-    if (token) {
-      try {
-        // Consulta al API para verificar el token y obtener el usuario
-        const response = await fetch(`${API_URL}/api/users/me/`, {
-          headers: {
-            Authorization: `Bearer ${token}`
-          }
-        });
-        
-        if (response.ok) {
-          const userData = await response.json();
-          console.log("User data from API:", userData?.email);
-          userRequestCache.set(url, { user: userData, timestamp: now });
-          return userData;
-        } else {
-          console.log("API response not OK:", response.status);
+    // 2. Validar token con el API
+    try {
+      const response = await fetch(`${API_URL}/api/users/me/`, {
+        headers: {
+          "Authorization": `Bearer ${token}`,
+          "Accept": "application/json"
         }
-      } catch (error) {
-        console.error("Error fetching user data:", error);
+      });
+      
+      if (response.ok) {
+        const userData = await response.json();
+        userRequestCache.set(cacheKey, { user: userData, timestamp: now });
+        return userData;
       }
+    } catch (error) {
+      console.error("Error fetching user from API:", error);
     }
     
-    userRequestCache.set(url, { user: null, timestamp: now });
+    // No hay usuario autenticado
+    userRequestCache.set(cacheKey, { user: null, timestamp: now });
     return null;
   } catch (error) {
     console.error("Error in getUser:", error);
-    userRequestCache.set(url, { user: null, timestamp: now });
+    userRequestCache.set(cacheKey, { user: null, timestamp: now });
     return null;
   }
 }
@@ -236,6 +300,29 @@ export async function getAccessTokenFromCookies(request: Request): Promise<strin
   return accessToken.startsWith('"') && accessToken.endsWith('"')
     ? accessToken.slice(1, -1)
     : accessToken;
+}
+
+// Función que analiza directamente las cookies en la solicitud para obtener el refresh token
+export async function getRefreshTokenFromCookies(request: Request): Promise<string | null> {
+  const cookieHeader = request.headers.get("Cookie");
+  if (!cookieHeader) {
+    return null;
+  }
+
+  const cookies = cookieHeader.split(';').map(c => c.trim());
+  const refreshTokenCookie = cookies.find(c => c.startsWith('l360_refresh='));
+
+  if (!refreshTokenCookie) {
+    return null;
+  }
+
+  // Extraer el token de la cookie
+  const refreshToken = refreshTokenCookie.split('=')[1];
+
+  // Intentar quitar comillas si están presentes
+  return refreshToken.startsWith('"') && refreshToken.endsWith('"')
+    ? refreshToken.slice(1, -1)
+    : refreshToken;
 }
 
 // Mejorar loginAction utilizando el nuevo servicio de auth
@@ -332,4 +419,3 @@ export async function authenticateAdmin(request: Request): Promise<any> {
   
   return user;
 }
-

@@ -1,142 +1,143 @@
 """
-Servicios para autenticación
+Servicios para el módulo de autenticación
 """
 import secrets
-import logging
+import string
 from datetime import datetime, timedelta
-from django.contrib.auth import get_user_model
+import token
 from django.core.mail import send_mail
 from django.conf import settings
-from django.template.loader import render_to_string
+from django.contrib.auth import get_user_model
+from django.core.cache import cache
+import logging
 
-logger = logging.getLogger(__name__)
 User = get_user_model()
+logger = logging.getLogger(__name__)
 
 class PasswordResetService:
-    """Servicio para gestionar restablecimiento de contraseñas"""
+    """Servicio para manejar el restablecimiento de contraseñas"""
     
     def __init__(self):
-        self.token_expiry = getattr(settings, 'PASSWORD_RESET_TOKEN_EXPIRY', 24)  # horas
-        
-    def generate_reset_token(self):
-        """Genera un token seguro"""
-        return secrets.token_urlsafe(32)
+        self.token_expiry_hours = getattr(settings, 'PASSWORD_RESET_TIMEOUT_HOURS', 1)
     
-    def send_password_reset_email(self, email):
-        """Envía email con enlace para restablecer contraseña"""
+    def generate_reset_token(self) -> str:
+        """Genera un token seguro para restablecimiento de contraseña"""
+        alphabet = string.ascii_letters + string.digits
+        return ''.join(secrets.choice(alphabet) for _ in range(32))
+    
+    def send_password_reset_email(self, email: str) -> bool:
+        """
+        Envía un correo de restablecimiento de contraseña
+        
+        Args:
+            email: Dirección de correo electrónico
+            
+        Returns:
+            bool: True si el correo se envió exitosamente
+        """
         try:
-            user = User.objects.filter(email=email).first()
-            if not user:
-                # No revelamos si el usuario existe o no
-                logger.info(f"Password reset requested for non-existent email: {email}")
-                return True
+            # Verificar si el usuario existe
+            try:
+                user = User.objects.get(email=email)
+            except User.DoesNotExist:
+                # Por seguridad, no revelamos si el email existe
+                logger.warning(f"Password reset requested for non-existent email: {email}")
+                return True  # Devolvemos True para no revelar si el email existe
             
             # Generar token
             token = self.generate_reset_token()
             
-            # Guardar token en DB o cache
-            self._store_token(user, token)
+            # Guardar token en cache con expiración
+            cache_key = f"password_reset_{token}"
+            cache.set(cache_key, {
+                'user_id': user.id,
+                'email': email,
+                'created_at': datetime.now().isoformat()
+            }, timeout=self.token_expiry_hours * 3600)
             
-            # Generar URL para reset (frontend debería manejar esto)
+            # Construir URL de restablecimiento
             reset_url = f"{settings.FRONTEND_URL}/reset-password?token={token}"
             
-            # Enviar email
-            self._send_email(user, reset_url)
+            # Preparar contenido del correo
+            subject = "Restablecimiento de contraseña - 360Lateral"
+            message = f"""
+            Hola {user.first_name or user.username},
+            
+            Has solicitado restablecer tu contraseña en 360Lateral.
+            
+            Haz clic en el siguiente enlace para restablecer tu contraseña:
+            {reset_url}
+            
+            Este enlace expirará en {self.token_expiry_hours} hora(s).
+            
+            Si no solicitaste este restablecimiento, puedes ignorar este correo.
+            
+            Saludos,
+            El equipo de 360Lateral
+            """
+            
+            # Enviar correo
+            send_mail(
+                subject=subject,
+                message=message,
+                from_email=settings.DEFAULT_FROM_EMAIL,
+                recipient_list=[email],
+                fail_silently=False
+            )
             
             logger.info(f"Password reset email sent to: {email}")
             return True
             
         except Exception as e:
-            logger.error(f"Error sending password reset email: {str(e)}")
+            logger.error(f"Error sending password reset email to {email}: {str(e)}")
             return False
     
-    def _store_token(self, user, token):
-        """Almacena token en DB o cache con expiración"""
-        # Este es un ejemplo básico, en producción usar JWT o un modelo dedicado
-        from django.core.cache import cache
+    def reset_password_with_token(self, token: str, new_password: str) -> bool:
+        """
+        Restablece la contraseña usando un token
         
-        # Guardar token con relación al usuario
-        cache_key = f"pwd_reset_{token}"
-        expiry = self.token_expiry * 3600  # convertir a segundos
-        cache.set(cache_key, str(user.id), timeout=expiry)
-    
-    def _send_email(self, user, reset_url):
-        """Envía el email con enlace de reset"""
-        subject = "Restablecimiento de contraseña - Lateral 360°"
-        
-        # Contexto para la plantilla
-        context = {
-            'user': user,
-            'reset_url': reset_url,
-            'expiry_hours': self.token_expiry,
-            'site_name': 'Lateral 360°',
-        }
-        
-        # Renderizar mensaje desde plantilla
+        Args:
+            token: Token de restablecimiento
+            new_password: Nueva contraseña
+            
+        Returns:
+            bool: True si el restablecimiento fue exitoso
+        """
         try:
-            message_html = render_to_string('authentication/password_reset_email.html', context)
-            message_text = render_to_string('authentication/password_reset_email.txt', context)
-        except Exception:
-            # Si la plantilla no existe, usar mensaje plano
-            message_text = f"""
-            Hola {user.get_full_name() or user.email},
+            # Verificar token en cache
+            cache_key = f"password_reset_{token}"
+            token_data = cache.get(cache_key)
             
-            Has solicitado restablecer tu contraseña en Lateral 360°.
-            
-            Haz clic en el siguiente enlace para crear una nueva contraseña:
-            {reset_url}
-            
-            Este enlace expirará en {self.token_expiry} horas.
-            
-            Si no solicitaste este cambio, puedes ignorar este correo.
-            
-            Saludos,
-            Equipo Lateral 360°
-            """
-            message_html = message_text.replace('\n', '<br>')
-        
-        # Enviar email
-        send_mail(
-            subject=subject,
-            message=message_text,
-            from_email=settings.DEFAULT_FROM_EMAIL,
-            recipient_list=[user.email],
-            html_message=message_html,
-            fail_silently=False,
-        )
-    
-    def reset_password_with_token(self, token, new_password):
-        """Restablece contraseña usando un token"""
-        try:
-            # Verificar token en DB o cache
-            user_id = self._verify_token(token)
-            if not user_id:
-                logger.warning(f"Invalid or expired password reset token used: {token[:8]}...")
+            if not token_data:
+                logger.warning(f"Invalid or expired password reset token: {token}")
                 return False
             
             # Obtener usuario
             try:
-                user = User.objects.get(id=user_id)
+                user = User.objects.get(id=token_data['user_id'])
             except User.DoesNotExist:
-                logger.error(f"User not found for password reset token: {token[:8]}...")
+                logger.error(f"User not found for password reset: {token_data['user_id']}")
                 return False
             
             # Cambiar contraseña
             user.set_password(new_password)
             user.save()
             
-            # Invalidar token
-            self._invalidate_token(token)
+            # Eliminar token del cache
+            cache.delete(cache_key)
             
             logger.info(f"Password reset successful for user: {user.email}")
             return True
             
         except Exception as e:
-            logger.error(f"Error resetting password: {str(e)}")
+            logger.error(f"Error resetting password with token {token}: {str(e)}")
             return False
     
-    def _verify_token(self, token):
-        """Verifica token y devuelve ID del usuario si es válido"""
+    def cleanup_expired_tokens(self):
+        """Limpia tokens expirados (para ser llamado por un cron job)"""
+        # Esta función sería implementada según el backend de cache usado
+        # Redis, Memcached, etc. tienen diferentes formas de limpiar claves expiradas
+        logger.info("Token cleanup requested (implementation depends on cache backend)")
         from django.core.cache import cache
         
         # Recuperar token de cache

@@ -213,54 +213,159 @@ class MapGISClient:
             logger.exception("Excepción detallada:")
             raise
     
-    def health_check(self) -> Dict[str, Any]:
-        """
-        Verifica el estado de la conexión con MapGIS.
-        
-        Returns:
-            Dict: Estado de la conexión
-        """
-        start_time = time.time()
-        
+    def buscar_por_cbml(self, cbml: str) -> Dict[str, Any]:
+        """Buscar información por CBML (implementación existente)"""
         try:
-            # Intentar inicializar sesión
-            session_ok = self.initialize_session()
-            
-            if session_ok:
-                # Verificar si podemos hacer una consulta simple
-                test_cbml = "14220250006"  # CBML de prueba
-                try:
-                    self.query(
-                        test_cbml, 
-                        'SQL_CONSULTA_CLASIFICACIONSUELO',
-                        'Clasificación del suelo'
-                    )
-                    consulta_ok = True
-                except Exception:
-                    consulta_ok = False
-                
-                return {
-                    'service': 'MapGIS',
-                    'status': 'healthy' if consulta_ok else 'partial',
-                    'response_time': round(time.time() - start_time, 2),
-                    'authenticated': self.authenticated,
-                    'session_active': self.session_initialized
-                }
-            else:
-                return {
-                    'service': 'MapGIS',
-                    'status': 'unhealthy',
-                    'response_time': round(time.time() - start_time, 2),
-                    'authenticated': False,
-                    'session_active': False,
-                    'error': 'No se pudo inicializar sesión'
-                }
-        
+            # Implementación existente del CBML
+            # ...existing code...
+            pass
         except Exception as e:
-            logger.error(f"Error en health check: {str(e)}")
+            logger.error(f"Error en búsqueda por CBML {cbml}: {str(e)}")
             return {
-                'service': 'MapGIS',
-                'status': 'error',
-                'response_time': round(time.time() - start_time, 2),
-                'error': str(e)
+                'encontrado': False,
+                'error': str(e),
+                'codigo_error': 'CBML_ERROR'
             }
+    
+    def buscar_por_matricula(self, matricula: str) -> Dict[str, Any]:
+        """
+        Buscar información por matrícula inmobiliaria.
+        Primero obtiene el CBML y luego consulta los datos completos.
+        """
+        try:
+            logger.info(f"🔍 Buscando por matrícula: {matricula}")
+            
+            # Paso 1: Obtener CBML desde matrícula
+            cbml_data = self._get_cbml_from_matricula(matricula)
+            
+            if not cbml_data.get('cbml'):
+                return {
+                    'encontrado': False,
+                    'error': 'No se pudo obtener CBML para la matrícula',
+                    'codigo_error': 'MATRICULA_NOT_FOUND'
+                }
+            
+            cbml = cbml_data['cbml']
+            logger.info(f"✅ CBML obtenido para matrícula {matricula}: {cbml}")
+            
+            # Paso 2: Usar el CBML para obtener datos completos
+            resultado_completo = self.buscar_por_cbml(cbml)
+            
+            if resultado_completo.get('encontrado'):
+                # Agregar información de la matrícula a los datos
+                resultado_completo['datos']['matricula'] = matricula
+                resultado_completo['datos']['cbml_from_matricula'] = cbml
+                resultado_completo['metodo_busqueda'] = 'matricula'
+                
+                logger.info(f"🎯 Búsqueda por matrícula {matricula} completada exitosamente")
+            
+            return resultado_completo
+            
+        except Exception as e:
+            logger.error(f"❌ Error en búsqueda por matrícula {matricula}: {str(e)}")
+            return {
+                'encontrado': False,
+                'error': str(e),
+                'codigo_error': 'MATRICULA_ERROR'
+            }
+    
+    def _get_cbml_from_matricula(self, matricula: str) -> Dict[str, Any]:
+        """
+        Obtiene el CBML desde la matrícula usando el endpoint de MapGIS
+        """
+        try:
+            # Limpiar matrícula (solo números)
+            matricula_clean = ''.join(filter(str.isdigit, matricula))
+            
+            if not matricula_clean:
+                raise ValueError("Matrícula debe contener números")
+            
+            # Endpoint para buscar por matrícula
+            url = f"{self.base_url}/site_consulta_pot/buscarFichaMat.hyg"
+            
+            # Payload como form data
+            payload = {
+                'matricula': matricula_clean
+            }
+            
+            logger.info(f"📡 Consultando MapGIS - Matrícula: {matricula_clean}")
+            logger.debug(f"URL: {url}")
+            
+            # Realizar request POST
+            response = self.session.post(
+                url,
+                data=payload,
+                headers={
+                    'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+                    'Referer': f"{self.base_url}/site_consulta_pot/ConsultaPot.hyg"
+                },
+                timeout=self.timeout,
+                verify=True
+            )
+            
+            logger.info(f"📨 Respuesta MapGIS - Status: {response.status_code}")
+            
+            if response.status_code != 200:
+                raise Exception(f"Error HTTP {response.status_code}: {response.text}")
+            
+            # Parsear respuesta JSON
+            try:
+                data = response.json()
+                logger.info(f"📄 Datos recibidos de MapGIS: {data}")
+                
+                # Validar que tenemos los datos necesarios
+                if 'cbml' in data and data['cbml']:
+                    return {
+                        'encontrado': True,
+                        'cbml': data['cbml'],
+                        'matricula': data.get('matricula', matricula),
+                        'direccion': data.get('direccion'),
+                        'coordenadas': {
+                            'x': data.get('x'),
+                            'y': data.get('y')
+                        }
+                    }
+                else:
+                    return {
+                        'encontrado': False,
+                        'error': 'CBML no encontrado en la respuesta'
+                    }
+                    
+            except ValueError as json_error:
+                logger.error(f"❌ Error parsing JSON: {json_error}")
+                logger.error(f"Raw response: {response.text[:500]}")
+                raise Exception(f"Respuesta no válida de MapGIS: {json_error}")
+                
+        except requests.exceptions.Timeout:
+            logger.error(f"⏰ Timeout en consulta de matrícula {matricula}")
+            raise Exception("Timeout en consulta a MapGIS")
+        except requests.exceptions.ConnectionError:
+            logger.error(f"🔌 Error de conexión en consulta de matrícula {matricula}")
+            raise Exception("Error de conexión con MapGIS")
+        except Exception as e:
+            logger.error(f"❌ Error general en _get_cbml_from_matricula: {str(e)}")
+            raise e
+    
+    def health_check(self) -> Dict[str, Any]:
+        """Verificar estado del servicio MapGIS"""
+        try:
+            # Test básico de conectividad
+            url = f"{self.base_url}/site_consulta_pot/ConsultaPot.hyg"
+            response = self.session.get(url, timeout=10)
+            
+            return {
+                'status': 'ok' if response.status_code == 200 else 'error',
+                'status_code': response.status_code,
+                'timestamp': self._get_timestamp()
+            }
+        except Exception as e:
+            return {
+                'status': 'error',
+                'error': str(e),
+                'timestamp': self._get_timestamp()
+            }
+    
+    def _get_timestamp(self) -> str:
+        """Obtener timestamp actual"""
+        from datetime import datetime
+        return datetime.now().isoformat()

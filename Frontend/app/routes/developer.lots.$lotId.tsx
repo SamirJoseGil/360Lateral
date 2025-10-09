@@ -4,7 +4,7 @@ import type { LoaderFunctionArgs, ActionFunctionArgs } from "@remix-run/node";
 import { getUser } from "~/utils/auth.server";
 import { useState } from "react";
 import { recordEvent } from "~/services/stats.server";
-import { getLoteById, toggleLoteFavorite, checkLoteIsFavorite } from "~/services/lotes.server";
+import { getLoteById, checkLoteIsFavorite, toggleLoteFavorite } from "~/services/lotes.server";
 import { getNormativaPorCBML } from "~/services/pot.server";
 
 type LoaderData = {
@@ -16,7 +16,6 @@ type LoaderData = {
 };
 
 export async function loader({ params, request }: LoaderFunctionArgs) {
-    // El usuario ya ha sido verificado en el layout padre
     const user = await getUser(request);
     const lotId = params.lotId;
 
@@ -30,14 +29,18 @@ export async function loader({ params, request }: LoaderFunctionArgs) {
 
     try {
         // Registrar evento de vista del lote
-        await recordEvent(request, {
-            type: "view",
-            name: "developer_lot_detail",
-            value: {
-                user_id: user?.id || "unknown",
-                lot_id: lotId
-            }
-        });
+        try {
+            await recordEvent(request, {
+                type: "view",
+                name: "developer_lot_detail",
+                value: {
+                    user_id: user?.id || "unknown",
+                    lot_id: lotId
+                }
+            });
+        } catch (eventError) {
+            console.warn("No se pudo registrar el evento:", eventError);
+        }
 
         // Obtener datos del lote desde la API
         const { lote, headers } = await getLoteById(request, lotId);
@@ -47,8 +50,8 @@ export async function loader({ params, request }: LoaderFunctionArgs) {
         let favoriteId = undefined;
         try {
             const favoriteCheck = await checkLoteIsFavorite(request, parseInt(lotId));
-            isFavorite = favoriteCheck.isFavorite;
-            favoriteId = favoriteCheck.favoriteId;
+            isFavorite = favoriteCheck.is_favorite || false;
+            // El backend no devuelve favoriteId directamente, así que lo dejamos undefined
         } catch (error) {
             console.log("Error verificando favorito:", error);
         }
@@ -73,10 +76,15 @@ export async function loader({ params, request }: LoaderFunctionArgs) {
 
     } catch (error) {
         console.error(`Error cargando detalles del lote ${lotId}:`, error);
+
+        const errorMessage = error instanceof Error
+            ? error.message
+            : "Error al cargar los detalles del lote";
+
         return json<LoaderData>({
             lote: null,
             isFavorite: false,
-            error: "Error al cargar los detalles del lote"
+            error: errorMessage
         }, { status: 500 });
     }
 }
@@ -100,10 +108,10 @@ export async function action({ params, request }: ActionFunctionArgs) {
             case "toggle_favorite":
                 const result = await toggleLoteFavorite(request, parseInt(lotId));
                 return json({
-                    success: true,
+                    success: result.success,
                     isFavorite: result.isFavorite,
                     message: result.message
-                });
+                }, { headers: result.headers });
 
             default:
                 return json({
@@ -115,7 +123,7 @@ export async function action({ params, request }: ActionFunctionArgs) {
         console.error("Error en acción:", error);
         return json({
             success: false,
-            message: "Error al procesar la acción"
+            message: error instanceof Error ? error.message : "Error al procesar la acción"
         }, { status: 500 });
     }
 }
@@ -140,26 +148,40 @@ export default function LotDetail() {
     const fetcher = useFetcher<FetcherData>();
     const [activeImage, setActiveImage] = useState(0);
 
-    // Usar estado del fetcher si está disponible, sino usar el del loader
     const currentFavoriteStatus = fetcher.data?.isFavorite !== undefined ? fetcher.data.isFavorite : isFavorite;
 
     if (error || !lote) {
         return (
-            <div className="bg-red-50 p-4 rounded-md">
-                <div className="flex">
-                    <div className="flex-shrink-0">
-                        <svg className="h-5 w-5 text-red-400" viewBox="0 0 20 20" fill="currentColor">
-                            <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
-                        </svg>
-                    </div>
-                    <div className="ml-3">
-                        <h3 className="text-sm font-medium text-red-800">Error</h3>
-                        <div className="mt-2 text-sm text-red-700">
-                            <p>{error}</p>
+            <div className="min-h-screen flex items-center justify-center bg-gray-50 px-4">
+                <div className="max-w-md w-full">
+                    <div className="bg-white rounded-lg shadow-lg p-8">
+                        <div className="flex items-center justify-center w-16 h-16 mx-auto bg-red-100 rounded-full mb-4">
+                            <svg className="w-8 h-8 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                            </svg>
                         </div>
-                        <div className="mt-4">
-                            <Link to="/developer/search" className="text-sm font-medium text-red-600 hover:text-red-500">
+
+                        <h2 className="text-2xl font-bold text-center text-gray-900 mb-2">
+                            No se puede acceder al lote
+                        </h2>
+
+                        <p className="text-center text-gray-600 mb-6">
+                            {error || "El lote solicitado no está disponible"}
+                        </p>
+
+                        <div className="space-y-3">
+                            <Link
+                                to="/developer/search"
+                                className="block w-full text-center px-4 py-3 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors"
+                            >
                                 Volver a la búsqueda
+                            </Link>
+
+                            <Link
+                                to="/developer"
+                                className="block w-full text-center px-4 py-3 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors"
+                            >
+                                Ir al panel principal
                             </Link>
                         </div>
                     </div>

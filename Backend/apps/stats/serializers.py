@@ -10,7 +10,7 @@ class StatSerializer(serializers.ModelSerializer):
     """
     class Meta:
         model = Stat
-        fields = ['id', 'type', 'name', 'value', 'timestamp', 'user_id', 'session_id', 'ip_address']
+        fields = ['id', 'event_type', 'event_name', 'event_value', 'timestamp', 'user_id', 'session_id', 'ip_address']
         read_only_fields = ['id', 'timestamp']
 
 class StatCreateSerializer(serializers.ModelSerializer):
@@ -19,9 +19,9 @@ class StatCreateSerializer(serializers.ModelSerializer):
     """
     class Meta:
         model = Stat
-        fields = ['type', 'name', 'value', 'user_id', 'session_id', 'ip_address']
+        fields = ['event_type', 'event_name', 'event_value', 'user_id', 'session_id', 'ip_address']
         
-    def validate_type(self, value):
+    def validate_event_type(self, value):
         """Validar que el tipo sea uno de los permitidos"""
         valid_types = [choice[0] for choice in Stat.STAT_TYPES]
         if value not in valid_types:

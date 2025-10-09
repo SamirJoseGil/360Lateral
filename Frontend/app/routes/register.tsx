@@ -29,47 +29,42 @@ export async function loader({ request }: LoaderFunctionArgs) {
         return redirect(dashboardRoute);
     }
 
-    // Registrar vista de página de registro para estadísticas
+    // Registrar vista de página de registro para estadísticas (sin fallar si hay error)
     try {
         await recordEvent(request, {
             type: "view",
             name: "register_page",
-            value: {}
+            value: {
+                timestamp: new Date().toISOString(),
+                user_agent: request.headers.get('user-agent') || 'unknown'
+            }
         });
     } catch (error) {
-        console.error("Error registrando vista de registro:", error);
+        // No fallar el loader por errores de estadísticas
+        console.warn("Error registrando vista de registro:", error);
     }
 
     return json({});
 }
 
-// Acción de registro con auto-login
+// Acción de registro CORREGIDA
 export async function action({ request }: ActionFunctionArgs) {
-    console.log("registerAction - starting");
+    console.log("=== REGISTER ACTION START ===");
     const formData = await request.formData();
 
-    // Obtener datos del formulario con manejo mejorado
-    const email = (formData.get("email") as string)?.trim() || "";
+    const email = (formData.get("email") as string)?.trim().toLowerCase();
     const username = (formData.get("username") as string)?.trim() || "";
-    const password = (formData.get("password") as string) || "";
-    const passwordConfirm = (formData.get("passwordConfirm") as string) || "";
-    const first_name = (formData.get("first_name") as string)?.trim() || "";
-    const last_name = (formData.get("last_name") as string)?.trim() || "";
+    const password = formData.get("password") as string;
+    const passwordConfirm = formData.get("passwordConfirm") as string;
+    const first_name = (formData.get("first_name") as string)?.trim();
+    const last_name = (formData.get("last_name") as string)?.trim();
     const phone = (formData.get("phone") as string)?.trim() || "";
     const company = (formData.get("company") as string)?.trim() || "";
-    const role = (formData.get("role") as string)?.trim() || "";
+    const role = (formData.get("role") as string)?.trim();
 
-    console.log(`registerAction - attempting registration for: ${email}`);
-    console.log("registerAction - form data received:", {
-        email,
-        first_name,
-        last_name,
-        role,
-        hasPassword: !!password,
-        hasPasswordConfirm: !!passwordConfirm
-    });
+    console.log(`Registration attempt for: ${email}`);
 
-    // Validaciones básicas
+    // Validaciones del lado del cliente
     const errors: Record<string, string> = {};
 
     if (!email) {
@@ -92,7 +87,7 @@ export async function action({ request }: ActionFunctionArgs) {
     }
 
     if (Object.keys(errors).length > 0) {
-        console.log("registerAction - validation errors:", errors);
+        console.log("Validation errors:", errors);
         return json({
             success: false,
             errors,
@@ -101,34 +96,39 @@ export async function action({ request }: ActionFunctionArgs) {
     }
 
     try {
-        // Registro del usuario
+        const registerPayload = {
+            email,
+            password,
+            password_confirm: passwordConfirm,
+            first_name,
+            last_name,
+            role,
+            ...(username && { username }),
+            ...(phone && { phone }),
+            ...(company && { company })
+        };
+
+        console.log("Sending registration payload (password hidden)");
+
         const registerResponse = await fetch("http://localhost:8000/api/auth/register/", {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-                email,
-                username: username || undefined, // Enviar undefined si está vacío
-                password,
-                password_confirm: passwordConfirm,
-                first_name,
-                last_name,
-                phone: phone || undefined,
-                company: company || undefined,
-                role
-            }),
+            headers: {
+                "Content-Type": "application/json",
+                "Accept": "application/json"
+            },
+            body: JSON.stringify(registerPayload),
         });
 
-        console.log("registerAction - API response status:", registerResponse.status);
+        console.log(`API response status: ${registerResponse.status}`);
+
+        const responseText = await registerResponse.text();
+        console.log("API raw response:", responseText);
 
         let registerData;
-        const responseText = await registerResponse.text();
-        console.log("registerAction - raw response:", responseText);
-
         try {
-            registerData = JSON.parse(responseText);
-            console.log("registerAction - parsed data:", registerData);
+            registerData = responseText ? JSON.parse(responseText) : {};
         } catch (parseError) {
-            console.error("registerAction - JSON parse error:", parseError);
+            console.error("JSON parse error:", parseError);
             return json({
                 success: false,
                 errors: { general: "Error en la respuesta del servidor" },
@@ -137,58 +137,24 @@ export async function action({ request }: ActionFunctionArgs) {
         }
 
         if (!registerResponse.ok) {
-            console.log("registerAction - registration failed, response data:", registerData);
+            console.error("Registration failed:", registerData);
 
-            // Manejo de errores específicos del backend
             const backendErrors: Record<string, string> = {};
 
-            // El backend puede enviar errores en diferentes formatos
-            if (registerData) {
-                // Manejar errores de validación de Django
-                if (registerData.email) {
-                    const emailError = Array.isArray(registerData.email) ? registerData.email[0] : registerData.email;
-                    backendErrors.email = typeof emailError === 'string' ? emailError : "Error en el email";
-                }
-
-                if (registerData.username) {
-                    const usernameError = Array.isArray(registerData.username) ? registerData.username[0] : registerData.username;
-                    backendErrors.username = typeof usernameError === 'string' ? usernameError : "Error en el username";
-                }
-
-                if (registerData.password) {
-                    const passwordError = Array.isArray(registerData.password) ? registerData.password[0] : registerData.password;
-                    backendErrors.password = typeof passwordError === 'string' ? passwordError : "Error en la contraseña";
-                }
-
-                if (registerData.first_name) {
-                    const firstNameError = Array.isArray(registerData.first_name) ? registerData.first_name[0] : registerData.first_name;
-                    backendErrors.first_name = typeof firstNameError === 'string' ? firstNameError : "Error en el nombre";
-                }
-
-                if (registerData.last_name) {
-                    const lastNameError = Array.isArray(registerData.last_name) ? registerData.last_name[0] : registerData.last_name;
-                    backendErrors.last_name = typeof lastNameError === 'string' ? lastNameError : "Error en el apellido";
-                }
-
-                // Manejar errores no específicos de campo
-                if (registerData.detail) {
-                    backendErrors.general = registerData.detail;
-                }
-
-                if (registerData.message) {
-                    backendErrors.general = registerData.message;
-                }
-
-                // Manejar errores de "non_field_errors"
-                if (registerData.non_field_errors) {
-                    const nonFieldError = Array.isArray(registerData.non_field_errors)
-                        ? registerData.non_field_errors[0]
-                        : registerData.non_field_errors;
-                    backendErrors.general = typeof nonFieldError === 'string' ? nonFieldError : "Error en el registro";
-                }
+            // Procesar errores del backend
+            if (registerData.errors) {
+                Object.keys(registerData.errors).forEach(field => {
+                    const fieldError = registerData.errors[field];
+                    backendErrors[field] = Array.isArray(fieldError)
+                        ? fieldError[0]
+                        : fieldError;
+                });
             }
 
-            // Si no hay errores específicos, usar un mensaje general
+            if (registerData.message && !backendErrors.general) {
+                backendErrors.general = registerData.message;
+            }
+
             if (Object.keys(backendErrors).length === 0) {
                 backendErrors.general = "Error en el registro. Por favor, verifica los datos.";
             }
@@ -200,35 +166,61 @@ export async function action({ request }: ActionFunctionArgs) {
             }, { status: registerResponse.status });
         }
 
-        // Si llegamos aquí, el registro fue exitoso y ya tenemos tokens
-        const { refresh, access, user } = registerData.data || registerData;
+        // Registro exitoso
+        console.log("Registration successful");
 
-        if (!refresh || !access || !user) {
-            console.error("registerAction - missing required data in response:", registerData);
+        if (!registerData.success || !registerData.data) {
+            console.error("Invalid response structure:", registerData);
             return json({
                 success: false,
-                errors: { general: "Error en la respuesta del servidor" },
+                errors: { general: "Respuesta inválida del servidor" },
                 values: { email, username, first_name, last_name, phone, company, role }
             }, { status: 500 });
         }
 
-        // Determinar la ruta de redirección basada en el rol del usuario
+        const { refresh, access, user } = registerData.data;
+
+        if (!refresh || !access || !user) {
+            console.error("Missing required data:", { refresh: !!refresh, access: !!access, user: !!user });
+            return json({
+                success: false,
+                errors: { general: "Datos incompletos en la respuesta" },
+                values: { email, username, first_name, last_name, phone, company, role }
+            }, { status: 500 });
+        }
+
+        console.log(`Registration complete for: ${user.email} (role: ${user.role})`);
+
+        // Determinar ruta de redirección
         const finalRedirectTo = getDashboardRoute(user.role);
 
-        // Crear cookies de sesión y redirigir
-        console.log(`registerAction - creating user session and redirecting to: ${finalRedirectTo}`);
-
+        // Crear cookies
         const headers = new Headers();
-        headers.append("Set-Cookie", `l360_access=${encodeURIComponent(access)}; Path=/; HttpOnly; SameSite=Strict; Secure=${process.env.NODE_ENV === 'production'}`);
-        headers.append("Set-Cookie", `l360_refresh=${encodeURIComponent(refresh)}; Path=/; HttpOnly; SameSite=Strict; Secure=${process.env.NODE_ENV === 'production'}`);
-        headers.append("Set-Cookie", `l360_user=${encodeURIComponent(JSON.stringify(user))}; Path=/; HttpOnly; SameSite=Strict; Secure=${process.env.NODE_ENV === 'production'}`);
+        const isProduction = process.env.NODE_ENV === 'production';
+        const cookieOptions = `Path=/; HttpOnly; SameSite=Lax${isProduction ? '; Secure' : ''}; Max-Age=604800`;
+
+        headers.append("Set-Cookie", `l360_access=${encodeURIComponent(access)}; ${cookieOptions}`);
+        headers.append("Set-Cookie", `l360_refresh=${encodeURIComponent(refresh)}; ${cookieOptions}`);
+        headers.append("Set-Cookie", `l360_user=${encodeURIComponent(JSON.stringify(user))}; ${cookieOptions}`);
+
+        console.log(`Redirecting to: ${finalRedirectTo}`);
+        console.log("=== REGISTER ACTION END (SUCCESS) ===");
 
         return redirect(finalRedirectTo, { headers });
+
     } catch (error) {
-        console.error("registerAction - network/fetch error:", error);
+        console.error("Registration error:", error);
+        console.log("=== REGISTER ACTION END (ERROR) ===");
+
+        let errorMessage = "Error de conexión al servidor";
+
+        if (error instanceof TypeError && error.message.includes('fetch')) {
+            errorMessage = "No se pudo conectar al servidor. Verifica tu conexión.";
+        }
+
         return json({
             success: false,
-            errors: { general: "Error de conexión al servidor. Por favor, intenta de nuevo." },
+            errors: { general: errorMessage },
             values: { email, username, first_name, last_name, phone, company, role }
         }, { status: 500 });
     }
@@ -243,6 +235,7 @@ type RegisterActionErrors = {
     passwordConfirm?: string;
     role?: string;
     general?: string;
+    [key: string]: string | undefined;
 };
 
 type RegisterActionData = {
@@ -279,7 +272,7 @@ export default function Register() {
         username: actionData?.values?.username || "",
         phone: actionData?.values?.phone || "",
         company: actionData?.values?.company || "",
-        role: selectedRole
+        role: actionData?.values?.role || selectedRole
     });
 
     // Verificar si las contraseñas coinciden
@@ -309,18 +302,31 @@ export default function Register() {
         }));
     }, [selectedRole]);
 
-    const handleSubmit = (event: React.FormEvent<HTMLFormElement>) => {
-        console.log("Form submit started");
-        console.log("Current form data:", formData);
-        setIsLoading(true);
-    };
-
-    // Resetear isLoading si hay errores
+    // Resetear isLoading cuando hay respuesta de la acción
     React.useEffect(() => {
-        if (actionData?.errors) {
+        if (actionData) {
             setIsLoading(false);
         }
     }, [actionData]);
+
+    const handleSubmit = (event: React.FormEvent<HTMLFormElement>) => {
+        console.log("Form submit started");
+        console.log("Current form data:", formData);
+        console.log("Passwords:", { password: password.substring(0, 3) + "...", passwordConfirm: passwordConfirm.substring(0, 3) + "..." });
+
+        // Validación adicional del lado del cliente antes del envío
+        if (!passwordsMatch) {
+            event.preventDefault();
+            return;
+        }
+
+        if (password.length < 8) {
+            event.preventDefault();
+            return;
+        }
+
+        setIsLoading(true);
+    };
 
     const nextStep = () => {
         if (currentStep < totalSteps) setCurrentStep(currentStep + 1);
@@ -328,6 +334,14 @@ export default function Register() {
 
     const prevStep = () => {
         if (currentStep > 1) setCurrentStep(currentStep - 1);
+    };
+
+    // Función para mostrar errores de manera más clara
+    const getErrorMessage = (field: string) => {
+        if (actionData?.errors?.[field]) {
+            return actionData.errors[field];
+        }
+        return null;
     };
 
     return (
@@ -434,7 +448,7 @@ export default function Register() {
 
                     {/* Formulario */}
                     <div className="bg-white rounded-2xl shadow-xl p-8">
-                        {/* Error general */}
+                        {/* Error general mejorado */}
                         {actionData?.errors?.general && (
                             <div className="mb-6 bg-red-50 border-l-4 border-red-400 p-4 rounded-lg">
                                 <div className="flex">
@@ -444,7 +458,13 @@ export default function Register() {
                                         </svg>
                                     </div>
                                     <div className="ml-3">
-                                        <p className="text-sm text-red-700">{actionData.errors.general}</p>
+                                        <h3 className="text-sm font-medium text-red-800">Error en el registro</h3>
+                                        <p className="text-sm text-red-700 mt-1">{actionData.errors.general}</p>
+                                        {actionData.success === false && (
+                                            <p className="text-xs text-red-600 mt-2">
+                                                Si el problema persiste, por favor contacta al soporte técnico.
+                                            </p>
+                                        )}
                                     </div>
                                 </div>
                             </div>
@@ -482,16 +502,16 @@ export default function Register() {
                                                 required
                                                 value={formData.first_name}
                                                 onChange={(e) => handleInputChange('first_name', e.target.value)}
-                                                className={`w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-lateral-500 focus:border-lateral-500 transition-colors duration-200 ${actionData?.errors?.first_name ? 'border-red-300 bg-red-50' : 'border-gray-300'
+                                                className={`w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-lateral-500 focus:border-lateral-500 transition-colors duration-200 ${getErrorMessage('first_name') ? 'border-red-300 bg-red-50' : 'border-gray-300'
                                                     }`}
                                                 placeholder="Tu nombre"
                                             />
-                                            {actionData?.errors?.first_name && (
+                                            {getErrorMessage('first_name') && (
                                                 <p className="mt-1 text-sm text-red-600 flex items-center">
                                                     <svg className="w-4 h-4 mr-1" fill="currentColor" viewBox="0 0 20 20">
                                                         <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
                                                     </svg>
-                                                    {actionData.errors.first_name}
+                                                    {getErrorMessage('first_name')}
                                                 </p>
                                             )}
                                         </div>
@@ -506,16 +526,16 @@ export default function Register() {
                                                 required
                                                 value={formData.last_name}
                                                 onChange={(e) => handleInputChange('last_name', e.target.value)}
-                                                className={`w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-lateral-500 focus:border-lateral-500 transition-colors duration-200 ${actionData?.errors?.last_name ? 'border-red-300 bg-red-50' : 'border-gray-300'
+                                                className={`w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-lateral-500 focus:border-lateral-500 transition-colors duration-200 ${getErrorMessage('last_name') ? 'border-red-300 bg-red-50' : 'border-gray-300'
                                                     }`}
                                                 placeholder="Tu apellido"
                                             />
-                                            {actionData?.errors?.last_name && (
+                                            {getErrorMessage('last_name') && (
                                                 <p className="mt-1 text-sm text-red-600 flex items-center">
                                                     <svg className="w-4 h-4 mr-1" fill="currentColor" viewBox="0 0 20 20">
                                                         <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
                                                     </svg>
-                                                    {actionData.errors.last_name}
+                                                    {getErrorMessage('last_name')}
                                                 </p>
                                             )}
                                         </div>
@@ -539,17 +559,17 @@ export default function Register() {
                                                 required
                                                 value={formData.email}
                                                 onChange={(e) => handleInputChange('email', e.target.value)}
-                                                className={`w-full pl-10 pr-4 py-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-lateral-500 focus:border-lateral-500 transition-colors duration-200 ${actionData?.errors?.email ? 'border-red-300 bg-red-50' : 'border-gray-300'
+                                                className={`w-full pl-10 pr-4 py-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-lateral-500 focus:border-lateral-500 transition-colors duration-200 ${getErrorMessage('email') ? 'border-red-300 bg-red-50' : 'border-gray-300'
                                                     }`}
                                                 placeholder="tu@email.com"
                                             />
                                         </div>
-                                        {actionData?.errors?.email && (
+                                        {getErrorMessage('email') && (
                                             <p className="mt-1 text-sm text-red-600 flex items-center">
                                                 <svg className="w-4 h-4 mr-1" fill="currentColor" viewBox="0 0 20 20">
                                                     <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
                                                 </svg>
-                                                {actionData.errors.email}
+                                                {getErrorMessage('email')}
                                             </p>
                                         )}
                                     </div>
@@ -633,7 +653,7 @@ export default function Register() {
                                                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
                                                                 </svg>
                                                             </div>
-                                                            Propietario
+                                                            Propietario / Comisionista
                                                         </div>
                                                     </label>
                                                     <p className="text-xs text-gray-500 mt-1">
@@ -721,16 +741,16 @@ export default function Register() {
                                             type="text"
                                             value={formData.username}
                                             onChange={(e) => handleInputChange('username', e.target.value)}
-                                            className={`w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-lateral-500 focus:border-lateral-500 transition-colors duration-200 ${actionData?.errors?.username ? 'border-red-300 bg-red-50' : 'border-gray-300'
+                                            className={`w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-lateral-500 focus:border-lateral-500 transition-colors duration-200 ${getErrorMessage('username') ? 'border-red-300 bg-red-50' : 'border-gray-300'
                                                 }`}
                                             placeholder="usuario123"
                                         />
-                                        {actionData?.errors?.username && (
-                                            <p className="mt-1 text-sm text-red-600">{actionData.errors.username}</p>
+                                        {getErrorMessage('username') && (
+                                            <p className="mt-1 text-sm text-red-600">{getErrorMessage('username')}</p>
                                         )}
                                     </div>
 
-                                    {/* Contraseñas */}
+                                    {/* Contraseñas con validación mejorada */}
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                         <div>
                                             <label htmlFor="display_password" className="block text-sm font-medium text-gray-700 mb-2">
@@ -743,7 +763,7 @@ export default function Register() {
                                                     required
                                                     value={password}
                                                     onChange={(e) => handlePasswordChange(e.target.value)}
-                                                    className={`w-full px-4 py-3 pr-10 border rounded-lg focus:outline-none focus:ring-2 focus:ring-lateral-500 focus:border-lateral-500 transition-colors duration-200 ${actionData?.errors?.password ? 'border-red-300 bg-red-50' : 'border-gray-300'
+                                                    className={`w-full px-4 py-3 pr-10 border rounded-lg focus:outline-none focus:ring-2 focus:ring-lateral-500 focus:border-lateral-500 transition-colors duration-200 ${getErrorMessage('password') || (password && password.length < 8) ? 'border-red-300 bg-red-50' : 'border-gray-300'
                                                         }`}
                                                     placeholder="Min. 8 caracteres"
                                                 />
@@ -764,8 +784,11 @@ export default function Register() {
                                                     )}
                                                 </button>
                                             </div>
-                                            {actionData?.errors?.password && (
-                                                <p className="mt-1 text-sm text-red-600">{actionData.errors.password}</p>
+                                            {getErrorMessage('password') && (
+                                                <p className="mt-1 text-sm text-red-600">{getErrorMessage('password')}</p>
+                                            )}
+                                            {password && password.length < 8 && !getErrorMessage('password') && (
+                                                <p className="mt-1 text-sm text-yellow-600">La contraseña debe tener al menos 8 caracteres</p>
                                             )}
                                         </div>
 
@@ -780,7 +803,7 @@ export default function Register() {
                                                     required
                                                     value={passwordConfirm}
                                                     onChange={(e) => handlePasswordChange(e.target.value, true)}
-                                                    className={`w-full px-4 py-3 pr-10 border rounded-lg focus:outline-none focus:ring-2 focus:ring-lateral-500 focus:border-lateral-500 transition-colors duration-200 ${!passwordsMatch || actionData?.errors?.passwordConfirm ? 'border-red-300 bg-red-50' : 'border-gray-300'
+                                                    className={`w-full px-4 py-3 pr-10 border rounded-lg focus:outline-none focus:ring-2 focus:ring-lateral-500 focus:border-lateral-500 transition-colors duration-200 ${!passwordsMatch || getErrorMessage('passwordConfirm') ? 'border-red-300 bg-red-50' : 'border-gray-300'
                                                         }`}
                                                     placeholder="Repite tu contraseña"
                                                 />
@@ -808,6 +831,9 @@ export default function Register() {
                                                     </svg>
                                                     Las contraseñas no coinciden
                                                 </p>
+                                            )}
+                                            {getErrorMessage('passwordConfirm') && (
+                                                <p className="mt-1 text-sm text-red-600">{getErrorMessage('passwordConfirm')}</p>
                                             )}
                                         </div>
                                     </div>
@@ -850,7 +876,7 @@ export default function Register() {
 
                                         <button
                                             type="submit"
-                                            disabled={!passwordsMatch || !password || !passwordConfirm || isLoading}
+                                            disabled={!passwordsMatch || !password || !passwordConfirm || password.length < 8 || isLoading}
                                             className="bg-lateral-600 text-white px-8 py-3 rounded-lg hover:bg-lateral-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-lateral-500 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 shadow-lg hover:shadow-xl flex items-center"
                                         >
                                             {isLoading ? (

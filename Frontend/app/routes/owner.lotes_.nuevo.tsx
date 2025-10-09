@@ -1,14 +1,14 @@
 // filepath: d:\Accesos Directos\Escritorio\frontendx\app\routes\owner.lote.nuevo.tsx
 import { json, redirect } from "@remix-run/node";
-import { Form, useActionData, useNavigation, Link } from "@remix-run/react";
+import { Form, useActionData, useNavigation, Link, useLoaderData } from "@remix-run/react";
 import { useState, useEffect } from "react";
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "@remix-run/node";
 import { getUser } from "~/utils/auth.server";
-import { createLote, getTratamientosPOT } from "~/services/lotes.server";
+import { createLote, getTratamientosPOT, suggestLoteFromMapGis } from "~/services/lotes.server";
 import { getNormativaPorCBML, getTratamientosActivosPOT } from "~/services/pot.server";
 import StatusModal from "~/components/StatusModal";
 import { useNavigate } from "@remix-run/react";
-import { consultarPorCBML, consultarPorMatricula, consultarPorDireccion } from "~/services/mapgis.server";
+import { consultarPorCBML, consultarPorMatricula } from "~/services/mapgis.server";
 import LoteSearchSection from "~/components/LoteSearchSection";
 import LoteFormFields from "~/components/LoteFormFields";
 import type { DireccionResult } from "~/components/DireccionSearchResults";
@@ -38,102 +38,57 @@ type NuevoLoteData = {
 
 // Endpoint adicional para búsquedas de MapGIS
 export async function loader({ request }: LoaderFunctionArgs) {
-    // Verificar que el usuario esté autenticado y sea propietario
+    // Verificar autenticación
     const user = await getUser(request);
+
     if (!user) {
-        return redirect("/login");
+        return json({ error: "No autenticado" }, { status: 401 });
     }
 
     if (user.role !== "owner") {
-        return redirect(`/${user.role}`);
+        return json({ error: "No autorizado" }, { status: 403 });
     }
 
+    // Obtener parámetros de búsqueda de la URL
     const url = new URL(request.url);
-    const searchType = url.searchParams.get('searchType');
-    const searchValue = url.searchParams.get('searchValue');
+    const searchType = url.searchParams.get("searchType");
+    const searchValue = url.searchParams.get("searchValue");
 
-    // Si hay parámetros de búsqueda, realizar la consulta a MapGIS
+    let resultadoScrap = null;
+
+    // Si hay búsqueda pendiente, ejecutarla
     if (searchType && searchValue) {
         console.log(`Loader: Buscando ${searchType}: ${searchValue}`);
+
         try {
-            let result;
-
-            switch (searchType) {
-                case 'cbml':
-                    result = await consultarPorCBML(request, searchValue);
-                    console.log('Resultado CBML:', result);
-                    if ((result.resultado as any).encontrado) {
-                        // Intentar obtener datos POT adicionales
-                        let potData = null;
-                        try {
-                            const potResponse = await getNormativaPorCBML(request, searchValue);
-                            potData = potResponse.normativa;
-                            console.log('Datos POT obtenidos:', potData);
-                        } catch (potError) {
-                            console.error('Error obteniendo datos POT:', potError);
-                            // Seguimos sin datos POT, no es crítico
-                        }
-
-                        return json({
-                            user,
-                            searchResult: result.resultado.datos,
-                            searchType: 'cbml',
-                            potData,
-                            headers: result.headers
-                        });
-                    }
-                    break;
-
-                case 'matricula':
-                    result = await consultarPorMatricula(request, searchValue);
-                    console.log('Resultado matrícula:', result);
-                    if (result.resultado.encontrado) {
-                        return json({
-                            user,
-                            searchResult: result.resultado.datos,
-                            searchType: 'matricula',
-                            headers: result.headers
-                        });
-                    }
-                    break;
-
-                case 'direccion':
-                    result = await consultarPorDireccion(request, searchValue);
-                    if (result.resultado.encontrado) {
-                        return json({
-                            user,
-                            searchResults: result.resultado.resultados,
-                            searchType: 'direccion',
-                            headers: result.headers
-                        });
-                    }
-                    break;
+            if (searchType === "matricula") {
+                // ✅ CRÍTICO: Pasar request como primer parámetro
+                resultadoScrap = await consultarPorMatricula(request, searchValue);
+            } else if (searchType === "cbml") {
+                // ✅ CRÍTICO: Pasar request como primer parámetro
+                resultadoScrap = await consultarPorCBML(request, searchValue);
             }
 
-            // Si llegamos aquí, la búsqueda no tuvo éxito
-            return json({
-                user,
-                searchError: `No se encontraron resultados para ${searchValue}`,
-                searchType
+            console.log(`📊 Resultado ${searchType} ${searchValue}:`, {
+                encontrado: resultadoScrap?.encontrado,
+                cbml_obtenido: resultadoScrap?.cbml_obtenido
             });
         } catch (error) {
-            console.error('Error en búsqueda MapGIS:', error);
-            return json({
-                user,
-                searchError: 'Ocurrió un error al realizar la búsqueda',
-                searchType
-            });
+            console.error(`Error en búsqueda MapGIS:`, error);
+            resultadoScrap = {
+                success: false,
+                encontrado: false,
+                message: "Error al consultar MapGIS"
+            };
         }
     }
 
-    try {
-        // Obtener los tratamientos POT disponibles usando el servicio correcto
-        const { tratamientos } = await getTratamientosActivosPOT(request);
-        return json({ user, tratamientos });
-    } catch (error) {
-        console.error("Error obteniendo tratamientos:", error);
-        return json({ user, tratamientos: [], error: "Error cargando tratamientos" });
-    }
+    return json({
+        user,
+        resultadoScrap,
+        searchType,
+        searchValue
+    });
 }
 
 export async function action({ request }: ActionFunctionArgs) {
@@ -305,6 +260,7 @@ export async function action({ request }: ActionFunctionArgs) {
 }
 
 export default function NuevoLote() {
+    const loaderData = useLoaderData<typeof loader>();
     const actionData = useActionData<typeof action>();
     const navigation = useNavigation();
     const navigate = useNavigate();
@@ -349,88 +305,7 @@ export default function NuevoLote() {
     const [potData, setPotData] = useState<any>(null);
     const [sellabilityAnalysis, setSellabilityAnalysis] = useState<any>(null);
 
-    // Función para manejar los datos recibidos del componente de búsqueda
-    const handleMapGisDataReceived = (mapGisData: any) => {
-        if (!mapGisData) return;
-
-        console.log("MapGIS data received in parent:", mapGisData);
-
-        // Extraer datos de las propiedades anidadas
-        const areaValue = mapGisData.area_lote_m2?.toString() || '';
-        const cbmlValue = mapGisData.cbml || '';
-        const clasificacionSuelo = mapGisData.clasificacion_suelo || '';
-        const barrioValue = mapGisData.barrio || '';
-
-        // ELIMINADO: No procesar datos de tratamiento POT temporalmente
-        let usoSuelo = '';
-        let restriccionRiesgo = '';
-        let restriccionRetiros = '';
-
-        // Extraer información de uso de suelo
-        if (mapGisData.uso_suelo && typeof mapGisData.uso_suelo === 'object') {
-            const uso = mapGisData.uso_suelo;
-            usoSuelo = `${uso.categoria_uso || ''}${uso.subcategoria_uso ? ` - ${uso.subcategoria_uso}` : ''}`;
-
-            // Añadir porcentaje si está disponible
-            if (uso.porcentaje) {
-                usoSuelo += ` (${uso.porcentaje.toFixed(2)}%)`;
-            }
-        }
-
-        // Extraer información de restricciones ambientales
-        if (mapGisData.restricciones_ambientales && typeof mapGisData.restricciones_ambientales === 'object') {
-            restriccionRiesgo = mapGisData.restricciones_ambientales.amenaza_riesgo || '';
-            restriccionRetiros = mapGisData.restricciones_ambientales.retiros_rios || '';
-        }
-
-        // Actualizar el formulario con todos los datos extraídos (sin campos POT)
-        setFormValues(prevValues => ({
-            ...prevValues,
-            direccion: mapGisData.direccion || prevValues.direccion,
-            area: areaValue || prevValues.area,
-            cbml: cbmlValue || prevValues.cbml,
-            matricula: mapGisData.matricula || prevValues.matricula,
-            codigo_catastral: mapGisData.codigo_catastral || prevValues.codigo_catastral,
-            barrio: barrioValue || prevValues.barrio,
-            uso_suelo: usoSuelo || prevValues.uso_suelo,
-            clasificacion_suelo: clasificacionSuelo || prevValues.clasificacion_suelo,
-            restriccion_ambiental_riesgo: restriccionRiesgo || prevValues.restriccion_ambiental_riesgo,
-            restriccion_ambiental_retiros: restriccionRetiros || prevValues.restriccion_ambiental_retiros,
-            // Eliminamos los campos de tratamientos POT
-            tratamiento_pot: '', // Valor vacío en lugar de usar tratamiento
-            densidad_habitacional: '', // Valor vacío en lugar de usar densidad
-            altura_normativa: '', // Valor vacío en lugar de usar altura
-            latitud: mapGisData.latitud?.toString() || prevValues.latitud,
-            longitud: mapGisData.longitud?.toString() || prevValues.longitud
-        }));
-
-        // Si tiene coordenadas, activar la sección de ubicación
-        if (mapGisData.latitud && mapGisData.longitud) {
-            setUsarUbicacion(true);
-        }
-
-        // Construir datos del POT para análisis (sin campos de tratamiento)
-        const newPotData = {
-            area: parseFloat(areaValue) || undefined,
-            clasificacion: clasificacionSuelo,
-            uso_suelo: usoSuelo,
-            tratamiento: '', // Valor vacío en lugar de tratamiento
-            densidad: undefined, // No usar densidad
-            restricciones: (restriccionRiesgo || restriccionRetiros) ?
-                (restriccionRiesgo && restriccionRetiros ? 2 : 1) : 0,
-            detalles_restricciones: [
-                restriccionRiesgo,
-                restriccionRetiros
-            ].filter(Boolean)
-        };
-
-        // Guardar los datos del POT y realizar análisis de vendibilidad
-        setPotData(newPotData);
-        const analysis = analyzeSellability(newPotData);
-        setSellabilityAnalysis(analysis);
-
-        console.log("Análisis de vendibilidad generado:", analysis);
-    };
+    // (Eliminada la declaración duplicada de handleMapGisDataReceived)
 
     // Manejar selección de un resultado de dirección
     const handleDireccionSelect = async (result: DireccionResult) => {
@@ -586,6 +461,176 @@ export default function NuevoLote() {
         }
     }, [navigation.state, navigation.location]);
 
+    // Efecto para auto-llenar formulario cuando se reciben datos del loader
+    useEffect(() => {
+        if (loaderData && 'autoFillData' in loaderData && loaderData.autoFillData) {
+            const autoData = loaderData.autoFillData;
+            console.log("Auto-llenando formulario con datos:", autoData);
+
+            setFormValues(prev => ({
+                ...prev,
+                nombre: autoData.nombre || prev.nombre,
+                cbml: autoData.cbml || prev.cbml,
+                direccion: autoData.direccion || prev.direccion,
+                area: autoData.area?.toString() || prev.area,
+                clasificacion_suelo: autoData.clasificacion_suelo || prev.clasificacion_suelo,
+                uso_suelo: autoData.uso_suelo || prev.uso_suelo,
+                tratamiento_pot: autoData.tratamiento_pot || prev.tratamiento_pot,
+                barrio: autoData.barrio || prev.barrio,
+                descripcion: autoData.descripcion || prev.descripcion,
+                // Mapear restricciones si existen
+                restriccion_ambiental_riesgo: autoData.restricciones_ambientales?.amenaza_riesgo || prev.restriccion_ambiental_riesgo,
+                restriccion_ambiental_retiros: autoData.restricciones_ambientales?.retiros_rios || prev.restriccion_ambiental_retiros,
+                // Mapear aprovechamiento si existe
+                densidad_habitacional: autoData.aprovechamiento_urbano?.densidad_habitacional_max?.toString() || prev.densidad_habitacional,
+                altura_normativa: autoData.aprovechamiento_urbano?.altura_normativa || prev.altura_normativa
+            }));
+
+            // Activar coordenadas si están disponibles
+            if ('latitud' in autoData && 'longitud' in autoData && autoData.latitud && autoData.longitud) {
+                setUsarUbicacion(true);
+            }
+
+            // Configurar datos POT para análisis
+            if (loaderData.mapgisData) {
+                setPotData(loaderData.mapgisData);
+                const analysis = analyzeSellability(loaderData.mapgisData);
+                setSellabilityAnalysis(analysis);
+            }
+        }
+    }, [loaderData]);
+
+    // Función mejorada para manejar datos de MapGIS
+    const handleMapGisDataReceived = (mapGisData: any) => {
+        if (!mapGisData) return;
+
+        console.log("MapGIS data received in parent:", mapGisData);
+
+        // Auto-llenar formulario de manera más inteligente
+        const mappedData = {
+            direccion: mapGisData.direccion || formValues.direccion,
+            area: mapGisData.area_lote_m2?.toString() || formValues.area,
+            cbml: mapGisData.cbml || formValues.cbml,
+            matricula: mapGisData.matricula || formValues.matricula,
+            codigo_catastral: mapGisData.codigo_catastral || formValues.codigo_catastral,
+            barrio: mapGisData.barrio || formValues.barrio,
+            clasificacion_suelo: mapGisData.clasificacion_suelo || formValues.clasificacion_suelo,
+            latitud: mapGisData.latitud?.toString() || formValues.latitud,
+            longitud: mapGisData.longitud?.toString() || formValues.longitud,
+            uso_suelo: formValues.uso_suelo,
+            tratamiento_pot: formValues.tratamiento_pot,
+            densidad_habitacional: formValues.densidad_habitacional,
+            altura_normativa: formValues.altura_normativa,
+            restriccion_ambiental_riesgo: formValues.restriccion_ambiental_riesgo,
+            restriccion_ambiental_retiros: formValues.restriccion_ambiental_retiros
+        };
+
+        // Mapear uso de suelo de manera más inteligente
+        if (mapGisData.uso_suelo && typeof mapGisData.uso_suelo === 'object') {
+            const uso = mapGisData.uso_suelo;
+            let usoSuelo = `${uso.categoria_uso || ''}`;
+            if (uso.subcategoria_uso) {
+                usoSuelo += ` - ${uso.subcategoria_uso}`;
+            }
+            if (uso.porcentaje) {
+                usoSuelo += ` (${uso.porcentaje.toFixed(2)}%)`;
+            }
+            mappedData.uso_suelo = usoSuelo;
+        }
+
+        // Mapear aprovechamiento urbano
+        if (mapGisData.aprovechamiento_urbano && typeof mapGisData.aprovechamiento_urbano === 'object') {
+            const aprovechamiento = mapGisData.aprovechamiento_urbano;
+            mappedData.tratamiento_pot = aprovechamiento.tratamiento || formValues.tratamiento_pot;
+            mappedData.densidad_habitacional = aprovechamiento.densidad_habitacional_max?.toString() || formValues.densidad_habitacional;
+            mappedData.altura_normativa = aprovechamiento.altura_normativa || formValues.altura_normativa;
+        }
+
+        // Mapear restricciones ambientales
+        if (mapGisData.restricciones_ambientales && typeof mapGisData.restricciones_ambientales === 'object') {
+            const restricciones = mapGisData.restricciones_ambientales;
+            mappedData.restriccion_ambiental_riesgo = restricciones.amenaza_riesgo || formValues.restriccion_ambiental_riesgo;
+            mappedData.restriccion_ambiental_retiros = restricciones.retiros_rios || formValues.restriccion_ambiental_retiros;
+        }
+
+        // Actualizar formulario
+        setFormValues(prev => ({
+            ...prev,
+            ...mappedData
+        }));
+
+        // Auto-generar nombre si no existe
+        if (!formValues.nombre && mapGisData.cbml) {
+            setFormValues(prev => ({
+                ...prev,
+                nombre: `Lote ${mapGisData.cbml}`
+            }));
+        }
+
+        // Auto-generar descripción enriquecida
+        if (!formValues.descripcion) {
+            const autoDescription = generateAutoDescription(mapGisData);
+            setFormValues(prev => ({
+                ...prev,
+                descripcion: autoDescription
+            }));
+        }
+
+        // Activar ubicación si hay coordenadas
+        if (mapGisData.latitud && mapGisData.longitud) {
+            setUsarUbicacion(true);
+        }
+
+        // Configurar análisis POT
+        setPotData(mapGisData);
+        const analysis = analyzeSellability(mapGisData);
+        setSellabilityAnalysis(analysis);
+
+        console.log("Formulario auto-llenado completado");
+    };
+
+    // Función auxiliar para generar descripción automática
+    const generateAutoDescription = (mapGisData: any): string => {
+        let description = "Lote registrado automáticamente con información de MapGIS:\n\n";
+
+        if (mapGisData.area_lote) {
+            description += `📐 Área: ${mapGisData.area_lote}\n`;
+        }
+
+        if (mapGisData.clasificacion_suelo) {
+            description += `🏙️ Clasificación: ${mapGisData.clasificacion_suelo}\n`;
+        }
+
+        if (mapGisData.uso_suelo?.categoria_uso) {
+            description += `🏗️ Uso: ${mapGisData.uso_suelo.categoria_uso}\n`;
+            if (mapGisData.uso_suelo.subcategoria_uso) {
+                description += `   Subcategoría: ${mapGisData.uso_suelo.subcategoria_uso}\n`;
+            }
+        }
+
+        if (mapGisData.aprovechamiento_urbano?.tratamiento) {
+            description += `📋 Tratamiento: ${mapGisData.aprovechamiento_urbano.tratamiento}\n`;
+        }
+
+        if (mapGisData.aprovechamiento_urbano?.densidad_habitacional_max) {
+            description += `🏠 Densidad máx: ${mapGisData.aprovechamiento_urbano.densidad_habitacional_max} viv/ha\n`;
+        }
+
+        if (mapGisData.restricciones_ambientales) {
+            description += `\n⚠️ Restricciones ambientales:\n`;
+            if (mapGisData.restricciones_ambientales.amenaza_riesgo) {
+                description += `• ${mapGisData.restricciones_ambientales.amenaza_riesgo}\n`;
+            }
+            if (mapGisData.restricciones_ambientales.retiros_rios) {
+                description += `• ${mapGisData.restricciones_ambientales.retiros_rios}\n`;
+            }
+        }
+
+        description += `\n🤖 Información generada automáticamente el ${new Date().toLocaleDateString('es-CO')}`;
+
+        return description;
+    };
+
     return (
         <>
             <div className="p-8 py-32">
@@ -602,7 +647,6 @@ export default function NuevoLote() {
                 {/* Componente de búsqueda de MapGIS */}
                 <LoteSearchSection
                     onDataReceived={handleMapGisDataReceived}
-                    onDireccionSelect={handleDireccionSelect}
                 />
 
                 {actionData?.errors?.form && (

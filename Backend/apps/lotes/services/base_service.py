@@ -30,10 +30,10 @@ class BaseService:
     def _success_response(self, data: Dict, message: str = "Operación exitosa") -> Dict:
         """Genera respuesta de éxito estándar"""
         return {
+            'success': True,
             'encontrado': True,
-            'error': False,
             'mensaje': message,
-            'datos': data,
+            'data': data,
             'timestamp': self._get_timestamp()
         }
     

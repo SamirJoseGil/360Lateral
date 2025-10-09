@@ -110,21 +110,21 @@ class DashboardService:
         # Actividad por tipo
         activity_by_type = Stat.objects.filter(
             timestamp__gte=start_date
-        ).values('type').annotate(count=Count('id'))
+        ).values('event_type').annotate(count=Count('id'))
         
         return {
             'recent_events': [
                 {
                     'id': event.id,
-                    'type': event.type,
-                    'name': event.name,
+                    'type': event.event_type,
+                    'name': event.event_name,
                     'timestamp': event.timestamp,
                     'user_id': event.user_id
                 } for event in recent_events
             ],
             'active_users': active_users_count,
             'activity_by_type': {
-                item['type']: item['count'] for item in activity_by_type
+                item['event_type']: item['count'] for item in activity_by_type
             }
         }
     

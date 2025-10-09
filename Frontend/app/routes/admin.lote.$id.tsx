@@ -1,9 +1,10 @@
 import { json, redirect } from "@remix-run/node";
-import { useLoaderData, Link } from "@remix-run/react";
-import type { LoaderFunctionArgs } from "@remix-run/node";
+import { useLoaderData, Link, useNavigate } from "@remix-run/react";
+import type { LoaderFunctionArgs, ActionFunctionArgs } from "@remix-run/node";
 import { getUser } from "~/utils/auth.server";
-import { getLoteById } from "~/services/lotes.server";
+import { getLoteById, verifyLote, rejectLote, archiveLote, reactivateLote } from "~/services/lotes.server";
 import { getUserById } from "~/services/users.server";
+import LoteStatusManager from "~/components/admin/LoteStatusManager";
 
 export async function loader({ request, params }: LoaderFunctionArgs) {
     // Verificar que el usuario esté autenticado y sea admin
@@ -42,8 +43,67 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     }
 }
 
+// ✅ NUEVO: Action para manejar cambios de estado
+export async function action({ request, params }: ActionFunctionArgs) {
+    const user = await getUser(request);
+    if (!user || user.role !== "admin") {
+        return json({ success: false, message: "No autorizado" }, { status: 401 });
+    }
+
+    const loteId = params.id;
+    if (!loteId) {
+        return json({ success: false, message: "ID de lote inválido" }, { status: 400 });
+    }
+
+    const formData = await request.formData();
+    const action = formData.get("action");
+
+    try {
+        switch (action) {
+            case "verify":
+                const verifyResult = await verifyLote(request, loteId);
+                return json({
+                    success: true,
+                    message: verifyResult.data.message || "Lote verificado exitosamente"
+                }, { headers: verifyResult.headers });
+
+            case "reject":
+                const reason = formData.get("reason") as string || "Sin razón especificada";
+                const rejectResult = await rejectLote(request, loteId, reason);
+                return json({
+                    success: true,
+                    message: rejectResult.data.message || "Lote rechazado"
+                }, { headers: rejectResult.headers });
+
+            case "archive":
+                const archiveResult = await archiveLote(request, loteId);
+                return json({
+                    success: true,
+                    message: archiveResult.data.message || "Lote archivado"
+                }, { headers: archiveResult.headers });
+
+            case "reactivate":
+                const reactivateResult = await reactivateLote(request, loteId);
+                return json({
+                    success: true,
+                    message: reactivateResult.data.message || "Lote reactivado"
+                }, { headers: reactivateResult.headers });
+
+            default:
+                return json({ success: false, message: "Acción no válida" }, { status: 400 });
+        }
+    } catch (error) {
+        console.error("Error in lote action:", error);
+        return json({
+            success: false,
+            message: error instanceof Error ? error.message : "Error al procesar la acción"
+        }, { status: 500 });
+    }
+}
+
 export default function LoteDetailsPage() {
     const { lote, owner } = useLoaderData<typeof loader>();
+    const navigate = useNavigate();
 
     const getStatusColor = (status: string) => {
         switch (status) {
@@ -188,6 +248,15 @@ export default function LoteDetailsPage() {
 
                 {/* Panel lateral */}
                 <div className="space-y-6">
+                    {/* ✅ NUEVO: Componente de gestión de estado */}
+                    <LoteStatusManager
+                        lote={lote}
+                        onSuccess={() => {
+                            // Recargar la página para ver los cambios
+                            navigate(".", { replace: true });
+                        }}
+                    />
+
                     {/* Estado y acciones */}
                     <div className="bg-white shadow rounded-lg p-6">
                         <h2 className="text-xl font-semibold mb-4">Estado y Acciones</h2>
@@ -309,33 +378,6 @@ export default function LoteDetailsPage() {
                                 <p className="text-gray-400 text-xs mt-1">Este lote no tiene un propietario asignado</p>
                             </div>
                         )}
-                    </div>
-
-                    {/* Información de sistema */}
-                    <div className="bg-white shadow rounded-lg p-6">
-                        <h2 className="text-xl font-semibold mb-4">Información del Sistema</h2>
-                        <div className="space-y-2">
-                            <div>
-                                <label className="block text-sm font-medium text-gray-700">ID</label>
-                                <div className="mt-1 text-sm text-gray-500 font-mono">{lote.id}</div>
-                            </div>
-                            {lote.created_at && (
-                                <div>
-                                    <label className="block text-sm font-medium text-gray-700">Fecha de Creación</label>
-                                    <div className="mt-1 text-sm text-gray-500">
-                                        {new Date(lote.created_at).toLocaleString('es-CO')}
-                                    </div>
-                                </div>
-                            )}
-                            {lote.updated_at && (
-                                <div>
-                                    <label className="block text-sm font-medium text-gray-700">Última Actualización</label>
-                                    <div className="mt-1 text-sm text-gray-500">
-                                        {new Date(lote.updated_at).toLocaleString('es-CO')}
-                                    </div>
-                                </div>
-                            )}
-                        </div>
                     </div>
                 </div>
             </div>

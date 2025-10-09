@@ -3,7 +3,7 @@ import { fetchWithAuth, getAccessTokenFromCookies } from "~/utils/auth.server";
 
 // Define interfaces for the backend models
 export interface Lote {
-  id?: number; // Only optional when creating
+  id?: number;
   nombre: string;
   cbml: string;
   direccion: string;
@@ -20,21 +20,33 @@ export interface Lote {
   clasificacion_suelo?: string;
   metadatos?: Record<string, any>;
   status?: string;
+  estado?: string;  // Backend usa 'estado'
   owner?: number | string;
+  usuario?: number;  // Backend usa 'usuario'
+  // Campos de timestamp - mapeo de nombres
   created_at?: string;
   updated_at?: string;
-  fecha_creacion?: string;
-  // Nuevos campos para documentación requerida
+  fecha_creacion?: string;  // Backend usa fecha_creacion
+  fecha_actualizacion?: string;  // Backend usa fecha_actualizacion
+  // Campos de verificación
+  is_verified?: boolean;
+  verified_by?: number | string;
+  verified_at?: string;
+  rejection_reason?: string;
+  // Campos de documentación
   doc_ctl_subido?: boolean;
   doc_planos_subido?: boolean;
   doc_topografia_subido?: boolean;
   limite_tiempo_docs?: string;
-  tiempo_restante?: number; // En segundos
+  tiempo_restante?: number;
   documentos_requeridos?: {
     ctl: boolean;
     planos: boolean;
     topografia: boolean;
   };
+  // Campos para favoritos
+  is_favorite?: boolean;
+  is_visible?: boolean;
 }
 
 export type LoteStats = {
@@ -63,7 +75,7 @@ export async function getMisLotes(request: Request, searchQuery?: string) {
   console.log(`Obteniendo lotes propios ${searchQuery ? `con búsqueda: ${searchQuery}` : ''}`);
   
   try {
-    // Construir endpoint con parámetros de búsqueda según la documentación
+    // Usar el endpoint correcto según la documentación: GET /api/lotes/lotes/
     let endpoint = `${API_URL}/api/lotes/lotes/`;
     
     if (searchQuery) {
@@ -77,6 +89,13 @@ export async function getMisLotes(request: Request, searchQuery?: string) {
       console.error(`[Lotes] Error en la respuesta de la API: ${response.status} ${response.statusText}`);
       const errorText = await response.text();
       console.error(`[Lotes] Cuerpo de respuesta de error: ${errorText}`);
+      
+      // Si es 404, puede que el endpoint no exista, intentar con el endpoint principal
+      if (response.status === 404) {
+        console.log(`[Lotes] Endpoint /lotes/ no encontrado, intentando con endpoint principal`);
+        return await getAllLotes(request, { search: searchQuery });
+      }
+      
       throw new Error(`Error al obtener lotes: ${response.statusText}`);
     }
     
@@ -85,13 +104,22 @@ export async function getMisLotes(request: Request, searchQuery?: string) {
     
     // Ensure we're returning the results array from the API
     return { 
-      lotes: data.results || [], 
-      count: data.count || 0,
+      lotes: data.results || data || [], 
+      count: data.count || data.length || 0,
       headers: setCookieHeaders 
     };
   } catch (error) {
     console.error("[Lotes] Error obteniendo lotes:", error);
-    throw error;
+    
+    // Fallback: intentar obtener todos los lotes y filtrar del lado del cliente
+    try {
+      console.log("[Lotes] Intentando fallback con endpoint principal");
+      const fallbackResult = await getAllLotes(request, { search: searchQuery });
+      return fallbackResult;
+    } catch (fallbackError) {
+      console.error("[Lotes] Fallback también falló:", fallbackError);
+      throw error; // Lanzar el error original
+    }
   }
 }
 
@@ -105,6 +133,7 @@ export async function getUserLotes(request: Request, userId: string, filters?: {
   offset?: number;
 }) {
   try {
+    // Usar el endpoint correcto según la documentación
     let endpoint = `${API_URL}/api/lotes/usuario/${userId}/`;
     
     // Build query parameters
@@ -129,6 +158,21 @@ export async function getUserLotes(request: Request, userId: string, filters?: {
     if (!response.ok) {
       const errorText = await response.text();
       console.error(`[Lotes] Error fetching user lotes:`, response.status, errorText);
+      
+      // Si es 404, el endpoint puede no existir, usar filtro en endpoint principal
+      if (response.status === 404) {
+        console.log(`[Lotes] Endpoint de usuario específico no encontrado, usando filtro en endpoint principal`);
+        
+        // Intentar obtener todos los lotes y filtrar por usuario (esto requiere que el backend filtre correctamente)
+        const allLotesResponse = await getAllLotes(request, {
+          ...filters,
+          // Nota: esto asume que el backend puede filtrar por usuario de alguna manera
+          // Si no es así, necesitaríamos una implementación diferente
+        });
+        
+        return allLotesResponse;
+      }
+      
       throw new Error(`Error fetching user lotes: ${response.status} ${errorText}`);
     }
     
@@ -136,8 +180,8 @@ export async function getUserLotes(request: Request, userId: string, filters?: {
     console.log(`[Lotes] Received ${data.results?.length || 0} user lotes`);
     
     return { 
-      lotes: data.results || [], 
-      count: data.count || 0,
+      lotes: data.results || data || [], 
+      count: data.count || data.length || 0,
       next: data.next,
       previous: data.previous,
       headers: setCookieHeaders 
@@ -149,7 +193,7 @@ export async function getUserLotes(request: Request, userId: string, filters?: {
 }
 
 /**
- * Obtener todos los lotes (admin only)
+ * Obtener todos los lotes (admin only) - Con mapeo de campos correcto
  */
 export async function getAllLotes(request: Request, filters?: {
   search?: string;
@@ -158,42 +202,46 @@ export async function getAllLotes(request: Request, filters?: {
   offset?: number;
 }) {
   try {
-    let endpoint = `${API_URL}/api/lotes/`;
+    console.log("[Lotes] Fetching all lotes (admin)");
     
-    // Build query parameters
-    if (filters) {
-      const params = new URLSearchParams();
+    const params = new URLSearchParams();
+    if (filters?.search) params.append('search', filters.search);
+    
+    // ✅ Mapear ordering al nombre correcto del campo
+    if (filters?.ordering) {
+      let ordering = filters.ordering;
       
-      if (filters.search) params.append('search', filters.search);
-      if (filters.ordering) params.append('ordering', filters.ordering);
-      if (filters.limit) params.append('limit', filters.limit.toString());
-      if (filters.offset) params.append('offset', filters.offset.toString());
+      // Mapeo de nombres de campos
+      const fieldMapping: Record<string, string> = {
+        'created_at': 'fecha_creacion',
+        '-created_at': '-fecha_creacion',
+        'updated_at': 'fecha_actualizacion',
+        '-updated_at': '-fecha_actualizacion',
+      };
       
-      const queryString = params.toString();
-      if (queryString) {
-        endpoint += `?${queryString}`;
-      }
+      ordering = fieldMapping[ordering] || ordering;
+      params.append('ordering', ordering);
     }
     
-    console.log(`[Lotes] Fetching all lotes from endpoint: ${endpoint}`);
+    if (filters?.limit) params.append('limit', filters.limit.toString());
+    if (filters?.offset) params.append('offset', filters.offset.toString());
     
-    const { res: response, setCookieHeaders } = await fetchWithAuth(request, endpoint);
+    const { res, setCookieHeaders } = await fetchWithAuth(
+      request,
+      `${API_URL}/api/lotes/?${params.toString()}`
+    );
     
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error(`[Lotes] Error fetching all lotes:`, response.status, errorText);
-      throw new Error(`Error fetching all lotes: ${response.status} ${errorText}`);
+    if (!res.ok) {
+      const errorText = await res.text();
+      throw new Error(`Error fetching lotes: ${res.status} ${errorText}`);
     }
     
-    const data = await response.json();
-    console.log(`[Lotes] Received ${data.results?.length || 0} lotes`);
+    const data = await res.json();
     
-    return { 
-      lotes: data.results || [], 
+    return {
+      lotes: data.results || [],
       count: data.count || 0,
-      next: data.next,
-      previous: data.previous,
-      headers: setCookieHeaders 
+      headers: setCookieHeaders
     };
   } catch (error) {
     console.error("[Lotes] Error in getAllLotes:", error);
@@ -321,56 +369,57 @@ async function generateStatsFromLotes(request: Request, userId?: string) {
   // Obtenemos los lotes primero
   let lotesResponse;
   
-  if (userId) {
-    // Si se especificó un usuario, obtenemos sus lotes
-    const endpoint = `${API_URL}/api/lotes/usuario/${userId}/`;
-    const { res: response, setCookieHeaders } = await fetchWithAuth(request, endpoint);
-    
-    if (!response.ok) {
-      throw new Error(`Error al obtener lotes del usuario ${userId}: ${response.statusText}`);
+  try {
+    if (userId) {
+      // Si se especificó un usuario, obtenemos sus lotes
+      lotesResponse = await getUserLotes(request, userId);
+    } else {
+      // Si no se especificó, usamos los lotes del usuario autenticado
+      lotesResponse = await getMisLotes(request);
     }
     
-    lotesResponse = {
-      data: await response.json(),
-      headers: setCookieHeaders
+    const lotes = lotesResponse.lotes || [];
+    
+    // Calcular estadísticas basadas en los lotes disponibles
+    const stats: LoteStats = {
+      total: lotes.length,
+      area_total: lotes.reduce((sum: number, lote: Lote) => sum + (lote.area || 0), 0),
+      por_estado: {
+        active: lotes.filter((lote: Lote) => lote.status === 'active').length,
+        pending: lotes.filter((lote: Lote) => lote.status === 'pending').length,
+        archived: lotes.filter((lote: Lote) => lote.status === 'archived').length
+      },
+      por_estrato: {},
+      documentacion_completa: 0 // No tenemos info sobre documentación, así que lo dejamos en 0
     };
-  } else {
-    // Si no se especificó, usamos los lotes del usuario autenticado
-    lotesResponse = await getMisLotes(request);
+    
+    // Calcular cantidad por estrato
+    lotes.forEach((lote: Lote) => {
+      if (lote.estrato) {
+        const estrato = lote.estrato.toString();
+        stats.por_estrato[estrato] = (stats.por_estrato[estrato] || 0) + 1;
+      }
+    });
+    
+    return {
+      stats,
+      headers: lotesResponse.headers || new Headers()
+    };
+  } catch (error) {
+    console.error("[Lotes] Error generando estadísticas de respaldo:", error);
+    
+    // Devolver estadísticas vacías en caso de error total
+    return {
+      stats: {
+        total: 0,
+        area_total: 0,
+        por_estado: { active: 0, pending: 0, archived: 0 },
+        por_estrato: {},
+        documentacion_completa: 0
+      },
+      headers: new Headers()
+    };
   }
-  
-  const lotes =
-    Array.isArray((lotesResponse as any).lotes)
-      ? (lotesResponse as any).lotes
-      : Array.isArray((lotesResponse as any).data)
-      ? (lotesResponse as any).data
-      : [];
-  
-  // Calcular estadísticas basadas en los lotes disponibles
-  const stats: LoteStats = {
-    total: lotes.length,
-    area_total: lotes.reduce((sum: number, lote: Lote) => sum + (lote.area || 0), 0),
-    por_estado: {
-      active: lotes.filter((lote: Lote) => lote.status === 'active').length,
-      pending: lotes.filter((lote: Lote) => lote.status === 'pending').length,
-      archived: lotes.filter((lote: Lote) => lote.status === 'archived').length
-    },
-    por_estrato: {},
-    documentacion_completa: 0 // No tenemos info sobre documentación, así que lo dejamos en 0
-  };
-  
-  // Calcular cantidad por estrato
-  lotes.forEach((lote: Lote) => {
-    if (lote.estrato) {
-      const estrato = lote.estrato.toString();
-      stats.por_estrato[estrato] = (stats.por_estrato[estrato] || 0) + 1;
-    }
-  });
-  
-  return {
-    stats,
-    headers: lotesResponse.headers
-  };
 }
 
 // Obtener un lote específico por ID
@@ -384,9 +433,19 @@ export async function getLoteById(request: Request, loteId: string) {
     const { res: response, setCookieHeaders } = await fetchWithAuth(request, endpoint);
     
     if (!response.ok) {
-      console.error(`[Lotes] Error en la respuesta de la API: ${response.status} ${response.statusText}`);
       const errorText = await response.text();
+      console.error(`[Lotes] Error en la respuesta de la API: ${response.status} ${response.statusText}`);
       console.error(`[Lotes] Cuerpo de respuesta de error: ${errorText}`);
+      
+      // Manejo específico de errores
+      if (response.status === 403) {
+        throw new Error("No tienes permisos para ver este lote. Solo puedes ver lotes verificados y activos.");
+      }
+      
+      if (response.status === 404) {
+        throw new Error("El lote no existe o ha sido eliminado.");
+      }
+      
       throw new Error(`Error al obtener detalles del lote: ${response.statusText}`);
     }
     
@@ -574,223 +633,284 @@ export async function createLote(request: Request, loteData: any) {
 }
 
 /**
- * Crear lote desde datos de MapGIS usando el endpoint especializado
+ * Crear lote con datos automáticos desde MapGIS
  */
-export async function createLoteFromMapGis(request: Request, loteData: any) {
+export async function createLoteFromMapGIS(request: Request, loteData: {
+  cbml?: string;
+  matricula?: string;
+  nombre: string;
+  direccion: string;
+  descripcion: string;
+  barrio?: string;
+  estrato?: number;
+}) {
   try {
-    console.log("[Lotes] Creando lote desde MapGIS con datos:", loteData);
+    console.log("[Lotes] Creating lote from MapGIS");
     
-    // Usar el endpoint especializado para crear desde MapGIS
-    const endpoint = `${API_URL}/api/lotes/create-from-mapgis/`;
+    const { res, setCookieHeaders } = await fetchWithAuth(
+      request,
+      `${API_URL}/api/lotes/create-from-mapgis/`,
+      {
+        method: 'POST',
+        body: JSON.stringify(loteData)
+      }
+    );
     
-    console.log(`[Lotes] Creando lote desde MapGIS con endpoint: ${endpoint}`);
+    const responseData = await res.json();
+    
+    if (!res.ok) {
+      console.error(`[Lotes] Error creating lote:`, responseData);
+      throw new Error(responseData.message || 'Error al crear lote');
+    }
+    
+    console.log(`[Lotes] Lote created successfully:`, responseData.data?.lote?.id);
+    
+    return {
+      success: true,
+      lote: responseData.data?.lote,
+      message: responseData.message,
+      headers: setCookieHeaders
+    };
+  } catch (error) {
+    console.error("[Lotes] Error in createLoteFromMapGIS:", error);
+    throw error;
+  }
+}
 
-    const { res, setCookieHeaders } = await fetchWithAuth(request, endpoint, {
+/**
+ * Obtener datos completos de MapGIS y crear sugerencia de lote
+ */
+export async function suggestLoteFromMapGis(request: Request, cbml: string) {
+  try {
+    console.log("[Lotes] Obteniendo sugerencia de lote para CBML:", cbml);
+    
+    // Primero obtener datos de MapGIS
+    const endpoint = `${API_URL}/api/lotes/scrap/cbml/`;
+    
+    const { res: response, setCookieHeaders } = await fetchWithAuth(request, endpoint, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify(loteData),
+      body: JSON.stringify({ cbml }),
     });
+    
+    if (!response.ok) {
+      throw new Error(`Error al obtener datos de MapGIS: ${response.status}`);
+    }
+    
+    const mapgisResult = await response.json();
+    
+    if (!mapgisResult.encontrado) {
+      throw new Error(`No se encontraron datos para el CBML: ${cbml}`);
+    }
+    
+    const datos = mapgisResult.datos;
+    
+    // Crear sugerencia de lote con todos los campos mapeados
+    const suggestion = {
+      nombre: `Lote ${cbml}`,
+      cbml: cbml,
+      direccion: datos.direccion || '',
+      area: datos.area_lote_m2 || 0,
+      clasificacion_suelo: datos.clasificacion_suelo || '',
+      uso_suelo: datos.uso_suelo?.categoria_uso || '',
+      tratamiento_pot: datos.aprovechamiento_urbano?.tratamiento || '',
+      barrio: datos.barrio || '',
+      restricciones_ambientales: datos.restricciones_ambientales || {},
+      aprovechamiento_urbano: datos.aprovechamiento_urbano || {},
+      descripcion: generateAutoDescription(datos),
+      metadatos: {
+        mapgis_data: datos,
+        auto_filled: true,
+        suggestion_date: new Date().toISOString()
+      }
+    };
+    
+    return {
+      suggestion,
+      mapgis_data: datos,
+      headers: setCookieHeaders
+    };
+    
+  } catch (error) {
+    console.error("[Lotes] Error en suggestLoteFromMapGis:", error);
+    throw error;
+  }
+}
 
+/**
+ * Generar descripción automática basada en datos de MapGIS
+ */
+function generateAutoDescription(mapgisData: any): string {
+  let description = "Lote registrado con información de MapGIS:\n\n";
+  
+  if (mapgisData.area_lote) {
+    description += `📐 Área: ${mapgisData.area_lote}\n`;
+  }
+  
+  if (mapgisData.clasificacion_suelo) {
+    description += `🏙️ Clasificación: ${mapgisData.clasificacion_suelo}\n`;
+  }
+  
+  if (mapgisData.uso_suelo?.categoria_uso) {
+    description += `🏗️ Uso: ${mapgisData.uso_suelo.categoria_uso}\n`;
+    if (mapgisData.uso_suelo.subcategoria_uso) {
+      description += `   Subcategoría: ${mapgisData.uso_suelo.subcategoria_uso}\n`;
+    }
+  }
+  
+  if (mapgisData.aprovechamiento_urbano?.tratamiento) {
+    description += `📋 Tratamiento: ${mapgisData.aprovechamiento_urbano.tratamiento}\n`;
+  }
+  
+  if (mapgisData.aprovechamiento_urbano?.densidad_habitacional_max) {
+    description += `🏠 Densidad máx: ${mapgisData.aprovechamiento_urbano.densidad_habitacional_max} viv/ha\n`;
+  }
+  
+  if (mapgisData.restricciones_ambientales) {
+    description += `\n⚠️ Restricciones ambientales:\n`;
+    if (mapgisData.restricciones_ambientales.amenaza_riesgo) {
+      description += `• ${mapgisData.restricciones_ambientales.amenaza_riesgo}\n`;
+    }
+    if (mapgisData.restricciones_ambientales.retiros_rios) {
+      description += `• ${mapgisData.restricciones_ambientales.retiros_rios}\n`;
+    }
+  }
+  
+  return description;
+}
+
+/**
+ * Verificar un lote (admin only)
+ */
+export async function verifyLote(request: Request, loteId: string) {
+  try {
+    console.log(`[Lotes] Verificando lote ${loteId}`);
+    
+    const { res, setCookieHeaders } = await fetchWithAuth(
+      request, 
+      `${API_URL}/api/lotes/${loteId}/verify/`,
+      { method: 'POST' }
+    );
+    
     if (!res.ok) {
-      console.error(`[Lotes] Error creando lote desde MapGIS: ${res.status} ${res.statusText}`);
-      
-      try {
-        const errorData = await res.json();
-        console.error("[Lotes] Detalles del error:", errorData);
-        
-        const errorMessage = errorData.error || errorData.message || errorData.detail || 
-                           JSON.stringify(errorData) || `Error en la solicitud: ${res.status} ${res.statusText}`;
-        
-        throw new Error(errorMessage);
-      } catch (jsonError) {
-        throw new Error(`Error en la solicitud: ${res.status} ${res.statusText}`);
-      }
+      const errorText = await res.text();
+      throw new Error(`Error verificando lote: ${res.status} ${errorText}`);
     }
-
-    const result = await res.json();
-    console.log(`[Lotes] Lote creado desde MapGIS exitosamente:`, result);
-    return { lote: result, headers: setCookieHeaders };
+    
+    const data = await res.json();
+    return { data, headers: setCookieHeaders };
   } catch (error) {
-    console.error("[Lotes] Error en createLoteFromMapGis:", error);
+    console.error("[Lotes] Error en verifyLote:", error);
     throw error;
-  }
-}
-
-// Actualizar un lote existente
-export async function updateLote(request: Request, loteId: string, loteData: Partial<Lote>) {
-  console.log(`Actualizando lote ${loteId}`);
-  
-  try {
-    const endpoint = `${API_URL}/api/lotes/${loteId}/`;
-    console.log(`[Lotes] PATCHing to endpoint: ${endpoint}`);
-    
-    const { res: response, setCookieHeaders } = await fetchWithAuth(request, endpoint, {
-      method: 'PATCH', // Usar PATCH para actualización parcial
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify(loteData)
-    });
-    
-    if (!response.ok) {
-      console.error(`[Lotes] Error en la respuesta de la API: ${response.status} ${response.statusText}`);
-      const errorText = await response.text();
-      console.error(`[Lotes] Cuerpo de respuesta de error: ${errorText}`);
-      throw new Error(`Error al actualizar lote: ${response.statusText}`);
-    }
-    
-    const data = await response.json();
-    console.log(`[Lotes] Lote ${loteId} actualizado`);
-    
-    return {
-      lote: data,
-      headers: setCookieHeaders
-    };
-  } catch (error) {
-    console.error(`[Lotes] Error actualizando lote ${loteId}:`, error);
-    throw error;
-  }
-}
-
-// Eliminar un lote
-export async function deleteLote(request: Request, loteId: string) {
-  console.log(`Eliminando lote ${loteId}`);
-  
-  try {
-    const endpoint = `${API_URL}/api/lotes/${loteId}/`;
-    console.log(`[Lotes] DELETEing at endpoint: ${endpoint}`);
-    
-    const { res: response, setCookieHeaders } = await fetchWithAuth(request, endpoint, {
-      method: 'DELETE'
-    });
-    
-    if (!response.ok) {
-      console.error(`[Lotes] Error en la respuesta de la API: ${response.status} ${response.statusText}`);
-      const errorText = await response.text();
-      console.error(`[Lotes] Cuerpo de respuesta de error: ${errorText}`);
-      throw new Error(`Error al eliminar lote: ${response.statusText}`);
-    }
-    
-    console.log(`[Lotes] Lote ${loteId} eliminado correctamente`);
-    
-    return {
-      success: true,
-      headers: setCookieHeaders
-    };
-  } catch (error) {
-    console.error(`[Lotes] Error eliminando lote ${loteId}:`, error);
-    throw error;
-  }
-}
-
-// Obtener los datos POT de un lote específico por CBML
-export async function getLotePotData(request: Request, cbml: string) {
-  console.log(`Obteniendo datos POT para el lote con CBML: ${cbml}`);
-  
-  try {
-    // Endpoint correcto según la documentación
-    const endpoint = `${API_URL}/api/pot/normativa/cbml/?cbml=${encodeURIComponent(cbml)}`;
-    console.log(`[POT] Fetching from endpoint: ${endpoint}`);
-    
-    const { res: response, setCookieHeaders } = await fetchWithAuth(request, endpoint);
-    
-    if (!response.ok) {
-      console.error(`[POT] Error en la respuesta de la API: ${response.status} ${response.statusText}`);
-      const errorText = await response.text();
-      console.error(`[POT] Cuerpo de respuesta de error: ${errorText}`);
-      
-      // Si es un 404, devolvemos un objeto vacío en lugar de lanzar un error
-      if (response.status === 404) {
-        console.warn(`[POT] No se encontraron datos POT para el CBML ${cbml}, continuando con datos vacíos`);
-        return {
-          potData: { 
-            encontrado: false,
-            mensaje: "No se encontraron datos POT para este CBML" 
-          },
-          headers: setCookieHeaders
-        };
-      }
-      
-      throw new Error(`Error al obtener datos POT: ${response.statusText}`);
-    }
-    
-    const data = await response.json();
-    console.log(`[POT] Datos POT recibidos para CBML ${cbml}`);
-    
-    return {
-      potData: {
-        ...data,
-        encontrado: true
-      },
-      headers: setCookieHeaders
-    };
-  } catch (error) {
-    console.error(`[POT] Error obteniendo datos POT para CBML ${cbml}:`, error);
-    // En caso de error, devolver un objeto que indique que no se encontraron datos
-    return {
-      potData: {
-        encontrado: false,
-        mensaje: "Error al obtener datos POT",
-        error: error instanceof Error ? error.message : String(error)
-      },
-      headers: new Headers()
-    };
   }
 }
 
 /**
- * SISTEMA DE FAVORITOS - Endpoints según documentación
+ * Rechazar un lote (admin only)
  */
+export async function rejectLote(request: Request, loteId: string, reason: string) {
+  try {
+    console.log(`[Lotes] Rechazando lote ${loteId}`);
+    
+    const { res, setCookieHeaders } = await fetchWithAuth(
+      request, 
+      `${API_URL}/api/lotes/${loteId}/reject/`,
+      { 
+        method: 'POST',
+        body: JSON.stringify({ reason })
+      }
+    );
+    
+    if (!res.ok) {
+      const errorText = await res.text();
+      throw new Error(`Error rechazando lote: ${res.status} ${errorText}`);
+    }
+    
+    const data = await res.json();
+    return { data, headers: setCookieHeaders };
+  } catch (error) {
+    console.error("[Lotes] Error en rejectLote:", error);
+    throw error;
+  }
+}
 
 /**
- * Obtener lotes favoritos del usuario autenticado
+ * Archivar un lote (admin only)
  */
-export async function getFavoriteLotes(request: Request, filters?: {
-  ordering?: string;
-  limit?: number;
-  offset?: number;
-}) {
+export async function archiveLote(request: Request, loteId: string) {
   try {
-    let endpoint = `${API_URL}/api/lotes/favorites/`;
+    console.log(`[Lotes] Archivando lote ${loteId}`);
     
-    // Build query parameters
-    if (filters) {
-      const params = new URLSearchParams();
-      
-      if (filters.ordering) params.append('ordering', filters.ordering);
-      if (filters.limit) params.append('limit', filters.limit.toString());
-      if (filters.offset) params.append('offset', filters.offset.toString());
-      
-      const queryString = params.toString();
-      if (queryString) {
-        endpoint += `?${queryString}`;
-      }
+    const { res, setCookieHeaders } = await fetchWithAuth(
+      request, 
+      `${API_URL}/api/lotes/${loteId}/archive/`,
+      { method: 'POST' }
+    );
+    
+    if (!res.ok) {
+      const errorText = await res.text();
+      throw new Error(`Error archivando lote: ${res.status} ${errorText}`);
     }
     
-    console.log(`[Favorites] Fetching favorite lotes from endpoint: ${endpoint}`);
+    const data = await res.json();
+    return { data, headers: setCookieHeaders };
+  } catch (error) {
+    console.error("[Lotes] Error en archiveLote:", error);
+    throw error;
+  }
+}
+
+/**
+ * Reactivar un lote (admin only)
+ */
+export async function reactivateLote(request: Request, loteId: string) {
+  try {
+    console.log(`[Lotes] Reactivando lote ${loteId}`);
     
-    const { res: response, setCookieHeaders } = await fetchWithAuth(request, endpoint);
+    const { res, setCookieHeaders } = await fetchWithAuth(
+      request, 
+      `${API_URL}/api/lotes/${loteId}/reactivate/`,
+      { method: 'POST' }
+    );
     
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error(`[Favorites] Error fetching favorite lotes:`, response.status, errorText);
-      throw new Error(`Error fetching favorite lotes: ${response.status} ${errorText}`);
+    if (!res.ok) {
+      const errorText = await res.text();
+      throw new Error(`Error reactivando lote: ${res.status} ${errorText}`);
     }
     
-    const data = await response.json();
-    console.log(`[Favorites] Received ${data.results?.length || 0} favorite lotes`);
+    const data = await res.json();
+    return { data, headers: setCookieHeaders };
+  } catch (error) {
+    console.error("[Lotes] Error en reactivateLote:", error);
+    throw error;
+  }
+}
+
+/**
+ * Obtener lotes pendientes de verificación (admin only)
+ */
+export async function getPendingLotes(request: Request) {
+  try {
+    const { res, setCookieHeaders } = await fetchWithAuth(
+      request, 
+      `${API_URL}/api/lotes/pending-verification/`
+    );
     
+    if (!res.ok) {
+      const errorText = await res.text();
+      throw new Error(`Error obteniendo lotes pendientes: ${res.status} ${errorText}`);
+    }
+    
+    const data = await res.json();
     return { 
-      favorites: data.results || [], 
+      lotes: data.results || [], 
       count: data.count || 0,
-      next: data.next,
-      previous: data.previous,
       headers: setCookieHeaders 
     };
   } catch (error) {
-    console.error("[Favorites] Error in getFavoriteLotes:", error);
+    console.error("[Lotes] Error en getPendingLotes:", error);
     throw error;
   }
 }
@@ -798,35 +918,31 @@ export async function getFavoriteLotes(request: Request, filters?: {
 /**
  * Agregar lote a favoritos
  */
-export async function addLoteToFavorites(request: Request, loteId: number, notes?: string) {
+export async function addLoteToFavorites(request: Request, loteId: number, notas?: string) {
   try {
-    const endpoint = `${API_URL}/api/lotes/favorites/`;
+    console.log(`[Favorites] Agregando lote ${loteId} a favoritos`);
     
-    console.log(`[Favorites] Adding lote ${loteId} to favorites`);
+    const { res, setCookieHeaders } = await fetchWithAuth(
+      request, 
+      `${API_URL}/api/lotes/favorites/`,
+      {
+        method: 'POST',
+        body: JSON.stringify({ 
+          lote: loteId,
+          notas: notas || ''
+        })
+      }
+    );
     
-    const { res: response, setCookieHeaders } = await fetchWithAuth(request, endpoint, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ 
-        lote: loteId,
-        notes: notes || ''
-      }),
-    });
-    
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error(`[Favorites] Error adding to favorites:`, response.status, errorText);
-      throw new Error(`Error adding to favorites: ${response.status} ${errorText}`);
+    if (!res.ok) {
+      const errorText = await res.text();
+      throw new Error(`Error agregando favorito: ${res.status} ${errorText}`);
     }
     
-    const favorite = await response.json();
-    console.log(`[Favorites] Lote ${loteId} added to favorites successfully`);
-    
-    return { favorite, headers: setCookieHeaders };
+    const data = await res.json();
+    return { data, headers: setCookieHeaders };
   } catch (error) {
-    console.error("[Favorites] Error in addLoteToFavorites:", error);
+    console.error("[Favorites] Error en addLoteToFavorites:", error);
     throw error;
   }
 }
@@ -834,64 +950,55 @@ export async function addLoteToFavorites(request: Request, loteId: number, notes
 /**
  * Remover lote de favoritos
  */
-export async function removeLoteFromFavorites(request: Request, favoriteId: number) {
+export async function removeLoteFromFavorites(request: Request, loteId: number) {
   try {
-    const endpoint = `${API_URL}/api/lotes/favorites/${favoriteId}/`;
+    console.log(`[Favorites] Removiendo lote ${loteId} de favoritos`);
     
-    console.log(`[Favorites] Removing favorite ${favoriteId}`);
+    const { res, setCookieHeaders } = await fetchWithAuth(
+      request, 
+      `${API_URL}/api/lotes/favorites/remove_by_lote/`,
+      {
+        method: 'POST',
+        body: JSON.stringify({ lote_id: loteId })
+      }
+    );
     
-    const { res: response, setCookieHeaders } = await fetchWithAuth(request, endpoint, {
-      method: 'DELETE',
-    });
-    
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error(`[Favorites] Error removing from favorites:`, response.status, errorText);
-      throw new Error(`Error removing from favorites: ${response.status} ${errorText}`);
+    if (!res.ok) {
+      const errorText = await res.text();
+      throw new Error(`Error removiendo favorito: ${res.status} ${errorText}`);
     }
     
-    console.log(`[Favorites] Favorite ${favoriteId} removed successfully`);
-    
-    return { success: true, headers: setCookieHeaders };
+    const data = await res.json();
+    return { data, headers: setCookieHeaders };
   } catch (error) {
-    console.error("[Favorites] Error in removeLoteFromFavorites:", error);
+    console.error("[Favorites] Error en removeLoteFromFavorites:", error);
     throw error;
   }
 }
 
 /**
- * Toggle estado de favorito de un lote
+ * Obtener lotes favoritos del usuario
  */
-export async function toggleLoteFavorite(request: Request, loteId: number) {
+export async function getFavoriteLotes(request: Request) {
   try {
-    const endpoint = `${API_URL}/api/lotes/favorites/toggle/`;
+    const { res, setCookieHeaders } = await fetchWithAuth(
+      request, 
+      `${API_URL}/api/lotes/favorites/`
+    );
     
-    console.log(`[Favorites] Toggling favorite status for lote ${loteId}`);
-    
-    const { res: response, setCookieHeaders } = await fetchWithAuth(request, endpoint, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ lote_id: loteId }),
-    });
-    
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error(`[Favorites] Error toggling favorite:`, response.status, errorText);
-      throw new Error(`Error toggling favorite: ${response.status} ${errorText}`);
+    if (!res.ok) {
+      const errorText = await res.text();
+      throw new Error(`Error obteniendo favoritos: ${res.status} ${errorText}`);
     }
     
-    const result = await response.json();
-    console.log(`[Favorites] Favorite status toggled for lote ${loteId}:`, result);
-    
+    const data = await res.json();
     return { 
-      isFavorite: result.is_favorite,
-      message: result.message,
+      favorites: data.results || data || [], 
+      count: data.count || 0,
       headers: setCookieHeaders 
     };
   } catch (error) {
-    console.error("[Favorites] Error in toggleLoteFavorite:", error);
+    console.error("[Favorites] Error en getFavoriteLotes:", error);
     throw error;
   }
 }
@@ -899,30 +1006,203 @@ export async function toggleLoteFavorite(request: Request, loteId: number) {
 /**
  * Verificar si un lote es favorito
  */
-export async function checkLoteIsFavorite(request: Request, loteId: number) {
+export async function checkIfFavorite(request: Request, loteId: number) {
   try {
-    const endpoint = `${API_URL}/api/lotes/favorites/check/?lote_id=${loteId}`;
+    const { res, setCookieHeaders } = await fetchWithAuth(
+      request, 
+      `${API_URL}/api/lotes/favorites/check/?lote_id=${loteId}`
+    );
     
-    console.log(`[Favorites] Checking if lote ${loteId} is favorite`);
-    
-    const { res: response, setCookieHeaders } = await fetchWithAuth(request, endpoint);
-    
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error(`[Favorites] Error checking favorite status:`, response.status, errorText);
-      throw new Error(`Error checking favorite status: ${response.status} ${errorText}`);
+    if (!res.ok) {
+      return { is_favorite: false, headers: setCookieHeaders };
     }
     
-    const result = await response.json();
-    console.log(`[Favorites] Favorite status for lote ${loteId}:`, result);
-    
+    const data = await res.json();
     return { 
-      isFavorite: result.is_favorite,
-      favoriteId: result.favorite_id,
+      is_favorite: data.is_favorite || false, 
       headers: setCookieHeaders 
     };
   } catch (error) {
-    console.error("[Favorites] Error in checkLoteIsFavorite:", error);
+    console.error("[Favorites] Error en checkIfFavorite:", error);
+    return { is_favorite: false, headers: new Headers() };
+  }
+}
+
+/**
+ * Toggle favorito - agregar o remover
+ */
+export async function toggleLoteFavorite(request: Request, loteId: number) {
+  try {
+    console.log(`[Favorites] Toggling favorite for lote ${loteId}`);
+    
+    // Primero verificar si ya es favorito
+    const checkResult = await checkIfFavorite(request, loteId);
+    
+    if (checkResult.is_favorite) {
+      // Si ya es favorito, removerlo
+      const { res, setCookieHeaders } = await fetchWithAuth(
+        request,
+        `${API_URL}/api/lotes/favorites/remove_by_lote/`,
+        {
+          method: 'POST',
+          body: JSON.stringify({ lote_id: loteId })
+        }
+      );
+      
+      if (!res.ok) {
+        const errorText = await res.text();
+        throw new Error(`Error removiendo favorito: ${res.status} ${errorText}`);
+      }
+      
+      const data = await res.json();
+      
+      return {
+        success: true,
+        isFavorite: false,
+        message: data.message || 'Lote removido de favoritos',
+        headers: setCookieHeaders
+      };
+    } else {
+      // Si no es favorito, agregarlo
+      const { res, setCookieHeaders } = await fetchWithAuth(
+        request,
+        `${API_URL}/api/lotes/favorites/`,
+        {
+          method: 'POST',
+          body: JSON.stringify({ lote: loteId })
+        }
+      );
+      
+      if (!res.ok) {
+        const errorText = await res.text();
+        throw new Error(`Error agregando favorito: ${res.status} ${errorText}`);
+      }
+      
+      const data = await res.json();
+      
+      return {
+        success: true,
+        isFavorite: true,
+        message: data.message || 'Lote agregado a favoritos',
+        headers: setCookieHeaders
+      };
+    }
+  } catch (error) {
+    console.error("[Favorites] Error en toggleLoteFavorite:", error);
+    throw error;
+  }
+}
+
+/**
+ * Verificar si un lote es favorito - con alias para compatibilidad
+ */
+export async function checkLoteIsFavorite(request: Request, loteId: number) {
+  return await checkIfFavorite(request, loteId);
+}
+
+/**
+ * Actualizar un lote existente
+ */
+export async function updateLote(request: Request, loteId: string, data: Partial<Lote>) {
+  try {
+    console.log(`[Lotes] Actualizando lote ${loteId}`);
+    
+    const { res, setCookieHeaders } = await fetchWithAuth(
+      request, 
+      `${API_URL}/api/lotes/${loteId}/update/`,
+      {
+        method: 'PUT',
+        body: JSON.stringify(data)
+      }
+    );
+    
+    if (!res.ok) {
+      const errorText = await res.text();
+      throw new Error(`Error actualizando lote: ${res.status} ${errorText}`);
+    }
+    
+    const result = await res.json();
+    return { lote: result.lote || result, headers: setCookieHeaders };
+  } catch (error) {
+    console.error("[Lotes] Error en updateLote:", error);
+    throw error;
+  }
+}
+
+/**
+ * Eliminar un lote
+ */
+export async function deleteLote(request: Request, loteId: string) {
+  try {
+    console.log(`[Lotes] Eliminando lote ${loteId}`);
+    
+    const { res, setCookieHeaders } = await fetchWithAuth(
+      request, 
+      `${API_URL}/api/lotes/${loteId}/delete/`,
+      { method: 'DELETE' }
+    );
+    
+    if (!res.ok) {
+      const errorText = await res.text();
+      throw new Error(`Error eliminando lote: ${res.status} ${errorText}`);
+    }
+    
+    return { success: true, headers: setCookieHeaders };
+  } catch (error) {
+    console.error("[Lotes] Error en deleteLote:", error);
+    throw error;
+  }
+}
+
+/**
+ * Obtener lotes disponibles para developers (verificados y activos)
+ */
+export async function getAvailableLotes(request: Request, filters?: {
+  search?: string;
+  area_min?: number;
+  area_max?: number;
+  estrato?: number;
+  barrio?: string;
+  ordering?: string;
+  limit?: number;
+  offset?: number;
+}) {
+  try {
+    console.log("[Lotes] Obteniendo lotes disponibles para developer");
+    
+    const params = new URLSearchParams();
+    if (filters?.search) params.append('search', filters.search);
+    if (filters?.area_min) params.append('area_min', filters.area_min.toString());
+    if (filters?.area_max) params.append('area_max', filters.area_max.toString());
+    if (filters?.estrato) params.append('estrato', filters.estrato.toString());
+    if (filters?.barrio) params.append('barrio', filters.barrio);
+    if (filters?.ordering) params.append('ordering', filters.ordering);
+    if (filters?.limit) params.append('limit', filters.limit.toString());
+    if (filters?.offset) params.append('offset', filters.offset.toString());
+    
+    const { res, setCookieHeaders } = await fetchWithAuth(
+      request,
+      `${API_URL}/api/lotes/available/?${params.toString()}`
+    );
+    
+    if (!res.ok) {
+      const errorText = await res.text();
+      throw new Error(`Error fetching available lotes: ${res.status} ${errorText}`);
+    }
+    
+    const data = await res.json();
+    
+    console.log(`[Lotes] ${data.count} lotes disponibles obtenidos`);
+    
+    return {
+      lotes: data.results || [],
+      count: data.count || 0,
+      next: data.next,
+      previous: data.previous,
+      headers: setCookieHeaders
+    };
+  } catch (error) {
+    console.error("[Lotes] Error en getAvailableLotes:", error);
     throw error;
   }
 }

@@ -3,19 +3,14 @@ import type { LoaderFunctionArgs, ActionFunctionArgs } from "@remix-run/node";
 import { Form, useLoaderData, useActionData, useNavigation } from "@remix-run/react";
 import { useState } from "react";
 import { getUser } from "~/utils/auth.server";
-import { searchLotes, addLoteToFavorites, removeLoteFromFavorites, getAllLotes } from "~/services/lotes.server";
+import { searchLotes, addLoteToFavorites, removeLoteFromFavorites, getAllLotes, getMisLotes, getAvailableLotes } from "~/services/lotes.server";
 import { getNormativaPorCBML } from "~/services/pot.server";
 import POTInfo from "~/components/POTInfo";
 
 export async function loader({ request }: LoaderFunctionArgs) {
-    // Verificar que el usuario esté autenticado y sea developer
     const user = await getUser(request);
-    if (!user) {
-        return redirect("/login");
-    }
-
-    if (user.role !== "developer") {
-        return redirect(`/${user.role}`);
+    if (!user || user.role !== "developer") {
+        return redirect(user ? `/${user.role}` : "/login");
     }
 
     const url = new URL(request.url);
@@ -25,37 +20,26 @@ export async function loader({ request }: LoaderFunctionArgs) {
         area_max: url.searchParams.get("area_max") ? parseFloat(url.searchParams.get("area_max")!) : undefined,
         estrato: url.searchParams.get("estrato") ? parseInt(url.searchParams.get("estrato")!) : undefined,
         barrio: url.searchParams.get("zona") || "",
-        tratamiento_pot: url.searchParams.get("tratamiento_pot") || "",
+        ordering: url.searchParams.get("ordering") || "-fecha_creacion",
         limit: parseInt(url.searchParams.get("page_size") || "12"),
         offset: (parseInt(url.searchParams.get("page") || "1") - 1) * parseInt(url.searchParams.get("page_size") || "12")
     };
 
-    // Verificar si hay filtros aplicados
     const hasFilters = searchParams.search ||
         searchParams.area_min !== undefined ||
         searchParams.area_max !== undefined ||
         searchParams.estrato !== undefined ||
-        searchParams.barrio ||
-        searchParams.tratamiento_pot;
+        searchParams.barrio;
 
     try {
-        let searchResponse;
+        console.log("[Developer Search] Obteniendo lotes disponibles", { hasFilters });
 
-        if (hasFilters) {
-            // Si hay filtros, usar búsqueda específica
-            searchResponse = await searchLotes(request, searchParams);
-        } else {
-            // Si no hay filtros, mostrar todos los lotes disponibles
-            searchResponse = await getAllLotes(request, {
-                limit: searchParams.limit,
-                offset: searchParams.offset,
-                ordering: '-created_at' // Mostrar los más recientes primero
-            });
-        }
+        // USAR ENDPOINT ESPECÍFICO PARA DEVELOPERS
+        const searchResponse = await getAvailableLotes(request, searchParams);
 
-        // Para cada lote que tenga CBML, intentar obtener información POT
+        // Obtener información POT para cada lote
         const lotesConPOT = await Promise.all(
-            searchResponse.lotes.map(async (lote: any) => {
+            (searchResponse.lotes || []).map(async (lote: any) => {
                 let potData = null;
 
                 if (lote.cbml) {
@@ -76,19 +60,20 @@ export async function loader({ request }: LoaderFunctionArgs) {
 
         const currentPage = parseInt(url.searchParams.get("page") || "1");
         const pageSize = parseInt(url.searchParams.get("page_size") || "12");
-        const totalPages = Math.ceil(searchResponse.count / pageSize);
+        const totalCount = searchResponse.count || lotesConPOT.length;
+        const totalPages = Math.ceil(totalCount / pageSize);
 
         return json({
             user,
             lotes: lotesConPOT,
-            totalCount: searchResponse.count,
+            totalCount: totalCount,
             hasFilters,
             isInitialLoad: !hasFilters && currentPage === 1,
             pagination: {
                 page: currentPage,
                 totalPages,
-                next: searchResponse.next,
-                previous: searchResponse.previous
+                next: searchResponse.next ?? null,
+                previous: searchResponse.previous ?? null
             },
             filters: {
                 q: url.searchParams.get("q") || "",
@@ -109,7 +94,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
             totalCount: 0,
             hasFilters,
             isInitialLoad: false,
-            pagination: { page: 1, totalPages: 0 },
+            pagination: { page: 1, totalPages: 0, next: null, previous: null },
             filters: {
                 q: "",
                 area_min: "",
@@ -118,7 +103,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
                 zona: "",
                 tratamiento_pot: ""
             },
-            error: hasFilters ? "Error al realizar la búsqueda" : "Error al cargar los lotes disponibles"
+            error: "Error al cargar los lotes disponibles. Por favor, intenta nuevamente."
         });
     }
 }
@@ -227,7 +212,7 @@ export default function DeveloperSearch() {
             </div>
 
             {/* Error message */}
-            {error && (
+            {error && typeof error === "string" && (
                 <div className="mb-6 bg-red-50 border-l-4 border-red-400 p-4">
                     <p className="text-red-700">{error}</p>
                 </div>

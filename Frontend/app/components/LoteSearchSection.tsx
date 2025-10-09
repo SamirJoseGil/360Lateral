@@ -1,18 +1,17 @@
 import { useState, useEffect } from "react";
 import { useFetcher } from "@remix-run/react";
 import LoteSearchForm from "./LoteSearchForm";
-import DireccionSearchResults, { type DireccionResult } from "./DireccionSearchResults";
 import LoadingModal from "./LoadingModal";
 
 interface LoteSearchSectionProps {
     onDataReceived: (mapGisData: any) => void;
-    onDireccionSelect: (result: DireccionResult) => void;
 }
 
-export default function LoteSearchSection({ onDataReceived, onDireccionSelect }: LoteSearchSectionProps) {
+export default function LoteSearchSection({ onDataReceived }: LoteSearchSectionProps) {
+    const [searchType, setSearchType] = useState<'cbml' | 'matricula'>('cbml');
+    const [searchValue, setSearchValue] = useState('');
     const [isSearching, setIsSearching] = useState(false);
     const [searchError, setSearchError] = useState<string | null>(null);
-    const [direccionResults, setDireccionResults] = useState<DireccionResult[]>([]);
     const [showLoadingModal, setShowLoadingModal] = useState(false);
     const [loadingProgress, setLoadingProgress] = useState(0);
     const [searchStartTime, setSearchStartTime] = useState<number | null>(null);
@@ -21,16 +20,15 @@ export default function LoteSearchSection({ onDataReceived, onDireccionSelect }:
     const mapFetcher = useFetcher();
 
     // Función para manejar la búsqueda
-    const handleSearch = async (searchType: 'cbml' | 'matricula' | 'direccion', value: string) => {
+    const handleSearch = async () => {
         // Reset all state related to search
         setIsSearching(true);
         setSearchError(null);
-        setDireccionResults([]);
         setShowLoadingModal(true);
         setLoadingProgress(0);
         setSearchStartTime(Date.now());
 
-        console.log(`Iniciando búsqueda de ${searchType}: ${value}`);
+        console.log(`Iniciando búsqueda de ${searchType}: ${searchValue}`);
 
         // Limpiar timeout anterior si existe
         if (searchTimeout) {
@@ -68,10 +66,10 @@ export default function LoteSearchSection({ onDataReceived, onDireccionSelect }:
             // Usar submit en lugar de load para asegurar que se haga una nueva petición
             // y no se use caché del navegador
             mapFetcher.submit(
-                { searchType, searchValue: value },
+                { searchType, searchValue },
                 {
                     method: 'get',
-                    action: `/owner/lotes/nuevo?searchType=${searchType}&searchValue=${encodeURIComponent(value)}`
+                    action: `/owner/lotes/nuevo?searchType=${searchType}&searchValue=${encodeURIComponent(searchValue)}`
                 }
             );
 
@@ -122,12 +120,6 @@ export default function LoteSearchSection({ onDataReceived, onDireccionSelect }:
 
             if ("searchError" in mapFetcher.data) {
                 setSearchError(mapFetcher.data.searchError as string);
-            } else if (
-                "searchType" in mapFetcher.data &&
-                mapFetcher.data.searchType === "direccion" &&
-                "searchResults" in mapFetcher.data
-            ) {
-                setDireccionResults(mapFetcher.data.searchResults as DireccionResult[]);
             } else if ("searchResult" in mapFetcher.data) {
                 // Pasar los datos al componente padre
                 onDataReceived(mapFetcher.data.searchResult);
@@ -136,13 +128,53 @@ export default function LoteSearchSection({ onDataReceived, onDireccionSelect }:
     }, [mapFetcher.data, onDataReceived]);
 
     return (
-        <>
-            {/* Formulario de búsqueda MapGIS */}
-            <LoteSearchForm onSearch={handleSearch} isSearching={isSearching} />
+        <div className="bg-white shadow rounded-lg p-6 mb-6">
+            <h2 className="text-lg font-semibold mb-4">Buscar Información del Lote</h2>
+
+            {/* Selector de tipo de búsqueda */}
+            <div className="flex space-x-4 mb-4">
+                <label className="flex items-center">
+                    <input
+                        type="radio"
+                        value="cbml"
+                        checked={searchType === 'cbml'}
+                        onChange={(e) => setSearchType(e.target.value as 'cbml' | 'matricula')}
+                        className="mr-2"
+                    />
+                    CBML
+                </label>
+                <label className="flex items-center">
+                    <input
+                        type="radio"
+                        value="matricula"
+                        checked={searchType === 'matricula'}
+                        onChange={(e) => setSearchType(e.target.value as 'cbml' | 'matricula')}
+                        className="mr-2"
+                    />
+                    Matrícula Inmobiliaria
+                </label>
+            </div>
+
+            <div className="flex space-x-2">
+                <input
+                    type="text"
+                    value={searchValue}
+                    onChange={(e) => setSearchValue(e.target.value)}
+                    placeholder={searchType === 'cbml' ? 'Ej: 01005001234' : 'Ej: 174838'}
+                    className="flex-1 rounded-md border-gray-300 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200"
+                />
+                <button
+                    onClick={handleSearch}
+                    disabled={isSearching || !searchValue.trim()}
+                    className="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 disabled:opacity-50"
+                >
+                    {isSearching ? 'Buscando...' : 'Buscar'}
+                </button>
+            </div>
 
             {/* Mostrar error de búsqueda si existe */}
             {searchError && (
-                <div className="mb-4 bg-amber-50 border-l-4 border-amber-400 p-4">
+                <div className="mt-4 bg-amber-50 border-l-4 border-amber-400 p-4 rounded-md">
                     <div className="flex">
                         <div className="flex-shrink-0">
                             <svg className="h-5 w-5 text-amber-400" viewBox="0 0 20 20" fill="currentColor">
@@ -156,14 +188,6 @@ export default function LoteSearchSection({ onDataReceived, onDireccionSelect }:
                 </div>
             )}
 
-            {/* Mostrar resultados de búsqueda por dirección */}
-            {direccionResults.length > 0 && (
-                <DireccionSearchResults
-                    results={direccionResults}
-                    onSelect={onDireccionSelect}
-                />
-            )}
-
             {/* Modal de carga para búsqueda MapGIS */}
             {showLoadingModal && (
                 <LoadingModal
@@ -173,6 +197,6 @@ export default function LoteSearchSection({ onDataReceived, onDireccionSelect }:
                     startTime={searchStartTime}
                 />
             )}
-        </>
+        </div>
     );
 }

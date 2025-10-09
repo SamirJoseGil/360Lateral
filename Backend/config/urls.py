@@ -63,10 +63,9 @@ urlpatterns = [
     path('api/stats/', include('apps.stats.urls')),
     path('api/pot/', include('apps.pot.urls')),
     path('api/documents/', include('apps.documents.urls')),
-    path('api/common/', include('apps.common.urls')),
     
-    # Health check alternativo
-    path('health/', include('apps.common.urls')),
+    # Health check - SIN namespace común
+    path('health/', include(('apps.common.urls', 'common'), namespace='health')),
     
     # Media files
     re_path(r'^media/(?P<path>.*)$', serve, {'document_root': settings.MEDIA_ROOT}),

@@ -159,7 +159,7 @@ export default function AdminUsers() {
     };
 
     return (
-        <div className="p-6">
+        <div className="p-6 h-auto min-h-screen bg-gray-100">
             {/* Header */}
             <div className="mb-8 flex flex-col md:flex-row md:items-center md:justify-between">
                 <div>
@@ -235,7 +235,7 @@ export default function AdminUsers() {
 
             {/* Tabla de usuarios */}
             <div className="bg-white rounded-lg shadow overflow-hidden">
-                <table className="min-w-full divide-y divide-gray-200">
+                <table className="min-w-full divide-y overflow-y-auto divide-gray-200">
                     <thead className="bg-gray-50">
                         <tr>
                             <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -304,21 +304,6 @@ export default function AdminUsers() {
                                     >
                                         Editar
                                     </Link>
-                                    {userItem.status === 'active' ? (
-                                        <button
-                                            onClick={() => handleUserAction(userItem, 'deactivate')}
-                                            className="text-yellow-600 hover:text-yellow-900 ml-4"
-                                        >
-                                            Desactivar
-                                        </button>
-                                    ) : (
-                                        <button
-                                            onClick={() => handleUserAction(userItem, 'activate')}
-                                            className="text-green-600 hover:text-green-900 ml-4"
-                                        >
-                                            Activar
-                                        </button>
-                                    )}
                                 </td>
                             </tr>
                         ))}

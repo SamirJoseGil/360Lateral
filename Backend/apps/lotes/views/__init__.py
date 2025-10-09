@@ -11,13 +11,12 @@ from .lotes_views import lote_list, lote_detail, lote_create, lote_update, lote_
 from .mapgis_views import (
     scrap_cbml,
     scrap_matricula,
-    scrap_direccion,
     consultar_restricciones_completas,
     health_mapgis,
 )
 
-# Importar vistas públicas de MapGIS
-from .public_mapgis_views import PublicCBMLView, PublicMatriculaView, PublicDireccionView
+# Importar vistas públicas de MapGIS - CORREGIDO
+from .public_mapgis_views import PublicCBMLView, PublicMatriculaView
 
 # Importar vistas de tratamientos
 from .tratamientos_views import listar_tratamientos
@@ -34,14 +33,14 @@ __all__ = [
     'lote_list', 'lote_detail', 'lote_create', 'lote_update', 'lote_delete',
     
     # MapGIS
-    'scrap_cbml', 'scrap_matricula', 'scrap_direccion',
+    'scrap_cbml', 'scrap_matricula',
     'consultar_restricciones_completas', 'health_mapgis',
     
     # Tratamientos
     'listar_tratamientos',
 
-    # Vistas públicas
-    'PublicCBMLView', 'PublicMatriculaView', 'PublicDireccionView',
+    # Vistas públicas - CORREGIDO
+    'PublicCBMLView', 'PublicMatriculaView',
     
     # Favoritos
     'FavoriteViewSet',

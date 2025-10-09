@@ -8,7 +8,6 @@ export async function loader({ request }: LoaderFunctionArgs) {
   const user = await getUser(request);
 
   try {
-    // Registrar visita a la página de inicio
     await recordEvent(request, {
       type: "view",
       name: "homepage",
@@ -17,6 +16,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
       },
     });
 
+    // CRÍTICO: NO usar headers de no-cache aquí
     return json({ user });
   } catch (error) {
     console.error("Error registrando visita:", error);

@@ -84,36 +84,25 @@ export interface ChartData {
 
 // Función para registrar un evento estadístico
 export async function recordEvent(request: Request, eventData: EventData) {
-  // Solo logear cuando hay problemas, no para casos exitosos
   try {
-    const { res, setCookieHeaders } = await fetchWithAuth(request, `${API_URL}/api/stats/events/record/`, {
+    // ✅ TEMPORAL: Deshabilitar stats hasta que se arregle la BD
+    console.log("[Stats] Event recording disabled temporarily:", eventData);
+    return;
+    
+    // ✅ CÓDIGO ORIGINAL (comentado temporalmente)
+    /*
+    const response = await fetch(`${API_URL}/api/stats/events/record/`, {
       method: 'POST',
       headers: {
-        'Content-Type': 'application/json'
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`,
       },
-      body: JSON.stringify(eventData)
+      body: JSON.stringify(eventData),
     });
-
-    if (!res.ok) {
-      console.error(`[Stats] Error registrando evento: ${res.status} - ${eventData.type}:${eventData.name}`);
-      return { success: false, headers: new Headers() };
-    }
-
-    // Solo logear si el status no es 201 (éxito)
-    if (res.status !== 201) {
-      console.log(`[Stats] Evento registrado con status ${res.status}: ${eventData.type} - ${eventData.name}`);
-    }
-
-    return { 
-      success: true,
-      headers: setCookieHeaders
-    };
+    // ...rest of original code...
+    */
   } catch (error) {
-    console.error(`[Stats] Error registrando evento ${eventData.type}:${eventData.name}:`, error);
-    return { 
-      success: false,
-      headers: new Headers()
-    };
+    console.warn("[Stats] Error recording event (ignored):", error);
   }
 }
 
