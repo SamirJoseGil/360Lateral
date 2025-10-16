@@ -62,10 +62,10 @@ export async function loader({ request }: LoaderFunctionArgs) {
 
         try {
             if (searchType === "matricula") {
-                // ✅ CRÍTICO: Pasar request como primer parámetro
+                // ✅ CORREGIDO: Pasar request como primer parámetro
                 resultadoScrap = await consultarPorMatricula(request, searchValue);
             } else if (searchType === "cbml") {
-                // ✅ CRÍTICO: Pasar request como primer parámetro
+                // ✅ CORREGIDO: Pasar request como primer parámetro
                 resultadoScrap = await consultarPorCBML(request, searchValue);
             }
 
@@ -259,8 +259,7 @@ export async function action({ request }: ActionFunctionArgs) {
     }
 }
 
-export default function NuevoLote() {
-    const loaderData = useLoaderData<typeof loader>();
+export default function NuevoLotePage() {
     const actionData = useActionData<typeof action>();
     const navigation = useNavigation();
     const navigate = useNavigate();
@@ -280,7 +279,28 @@ export default function NuevoLote() {
     });
 
     // Estado del formulario con campos adicionales para la información normativa
-    const [formValues, setFormValues] = useState({
+    type FormValues = {
+        nombre: string;
+        direccion: string;
+        area: string;
+        estrato: string;
+        descripcion: string;
+        matricula: string;
+        codigo_catastral: string;
+        cbml: string;
+        barrio: string;
+        tratamiento_pot: string;
+        uso_suelo: string;
+        clasificacion_suelo: string;
+        restriccion_ambiental_riesgo: string;
+        restriccion_ambiental_retiros: string;
+        densidad_habitacional: string;
+        altura_normativa: string;
+        latitud: string;
+        longitud: string;
+    };
+
+    const [formValues, setFormValues] = useState<FormValues>({
         nombre: '',
         direccion: '',
         area: '',
@@ -462,9 +482,35 @@ export default function NuevoLote() {
     }, [navigation.state, navigation.location]);
 
     // Efecto para auto-llenar formulario cuando se reciben datos del loader
+    const loaderData = useLoaderData<typeof loader>();
     useEffect(() => {
-        if (loaderData && 'autoFillData' in loaderData && loaderData.autoFillData) {
-            const autoData = loaderData.autoFillData;
+        if (
+            loaderData &&
+            'autoFillData' in loaderData &&
+            loaderData.autoFillData &&
+            typeof loaderData.autoFillData === 'object'
+        ) {
+            const autoData = loaderData.autoFillData as {
+                nombre?: string;
+                cbml?: string;
+                direccion?: string;
+                area?: number;
+                clasificacion_suelo?: string;
+                uso_suelo?: string;
+                tratamiento_pot?: string;
+                barrio?: string;
+                descripcion?: string;
+                restricciones_ambientales?: {
+                    amenaza_riesgo?: string;
+                    retiros_rios?: string;
+                };
+                aprovechamiento_urbano?: {
+                    densidad_habitacional_max?: number;
+                    altura_normativa?: string;
+                };
+                latitud?: number;
+                longitud?: number;
+            };
             console.log("Auto-llenando formulario con datos:", autoData);
 
             setFormValues(prev => ({
@@ -492,9 +538,28 @@ export default function NuevoLote() {
             }
 
             // Configurar datos POT para análisis
-            if (loaderData.mapgisData) {
-                setPotData(loaderData.mapgisData);
-                const analysis = analyzeSellability(loaderData.mapgisData);
+            if ('resultadoScrap' in loaderData && loaderData.resultadoScrap && loaderData.resultadoScrap.data) {
+                const data = loaderData.resultadoScrap.data;
+                // Map MapGisResponseDetalle.data to PotData structure
+                const potDataMapped = {
+                    area: data.area ?? data.area_lote ?? data.area_terreno,
+                    clasificacion: data.clasificacion_suelo,
+                    uso_suelo: data.uso_suelo,
+                    tratamiento: data.tratamiento_pot,
+                    densidad: undefined, // No hay campo densidad en MapGisResponseDetalle
+                    restricciones: Array.isArray(data.restricciones)
+                        ? data.restricciones.length
+                        : Array.isArray(data.restricciones_ambientales)
+                            ? data.restricciones_ambientales.length
+                            : 0,
+                    detalles_restricciones: Array.isArray(data.restricciones)
+                        ? data.restricciones.filter(Boolean)
+                        : Array.isArray(data.restricciones_ambientales)
+                            ? data.restricciones_ambientales.filter(Boolean)
+                            : []
+                };
+                setPotData(potDataMapped);
+                const analysis = analyzeSellability(potDataMapped);
                 setSellabilityAnalysis(analysis);
             }
         }

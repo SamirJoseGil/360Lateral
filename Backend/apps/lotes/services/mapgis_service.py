@@ -1,162 +1,207 @@
 """
-Servicio para integración con MapGIS de Medellín - FUNCIONAL
+Servicio principal para integración con MapGIS Medellín - VERSIÓN CORREGIDA
 """
 
 import logging
-from typing import Dict
-
-from .base_service import BaseService
-from .mapgis.core import MapGISCore
-from .mapgis.queries import MapGISQueries
+from typing import Dict, Optional
+from django.core.cache import cache
 
 logger = logging.getLogger(__name__)
 
-class MapGISService(BaseService):
-    """Servicio principal para consultas a MapGIS"""
+class MapGISService:
+    """Servicio principal para interactuar con MapGIS"""
     
     def __init__(self):
-        super().__init__()
-        self.core = MapGISCore()
-        self.queries = MapGISQueries(self.core)
-    
-    def buscar_por_cbml(self, cbml: str) -> Dict:
-        """
-        Busca información completa de un lote por CBML
-        """
+        # ✅ CRÍTICO: Inicializar el cliente DESPUÉS de importar
+        # Importación tardía para evitar problemas circulares
+        from .mapgis.client import MapGISClient
+        
         try:
-            cbml_limpio = self._limpiar_cbml(cbml)
+            self.client = MapGISClient()
+            self.cache_timeout = 3600  # 1 hora
             
-            if not cbml_limpio or len(cbml_limpio) < 10:
-                return self._error_response(
-                    "CBML inválido",
-                    f"El CBML debe tener al menos 10 dígitos"
-                )
+            # ✅ Verificar que el cliente se inicializó correctamente
+            if not hasattr(self.client, 'base_url'):
+                logger.error("❌ MapGISClient no tiene base_url después de inicialización")
+                raise AttributeError("MapGISClient no se inicializó correctamente")
             
-            logger.info(f"🔍 Buscando datos para CBML: {cbml_limpio}")
-            
-            # Inicializar sesión
-            if not self.core.inicializar_sesion():
-                return self._error_response(
-                    "Error de sesión",
-                    "No se pudo inicializar la sesión con MapGIS"
-                )
-            
-            # Buscar ficha básica
-            ficha = self.queries.buscar_ficha_por_cbml(cbml_limpio)
-            
-            if not ficha:
-                return self._error_response(
-                    "No se encontró información",
-                    f"No existe información para el CBML: {cbml_limpio}"
-                )
-            
-            # Construir datos básicos
-            datos = {
-                'cbml': cbml_limpio,
-                'matricula': ficha.get('matricula'),
-                'direccion': ficha.get('direccion'),
-                'x': ficha.get('x'),
-                'y': ficha.get('y')
-            }
-            
-            # Consultar información adicional
-            area_result = self.queries.consultar_area_lote(cbml_limpio)
-            if area_result.get('success'):
-                datos['area_lote'] = area_result['area_lote']
-                datos['area_lote_m2'] = area_result['area_lote_m2']
-            
-            clasificacion_result = self.queries.consultar_clasificacion_suelo(cbml_limpio)
-            if clasificacion_result.get('success'):
-                datos['clasificacion_suelo'] = clasificacion_result['clasificacion_suelo']
-            
-            logger.info(f"✅ Datos encontrados para CBML {cbml_limpio}")
-            
-            return {
-                'success': True,
-                'encontrado': True,
-                'data': datos,
-                'fuente': 'mapgis_real',
-                'cbml': cbml_limpio
-            }
+            logger.info(f"✅ MapGISService initialized successfully with base_url: {self.client.base_url}")
             
         except Exception as e:
-            logger.error(f"Error en buscar_por_cbml: {str(e)}")
-            return self._error_response("Error en consulta", str(e))
+            logger.error(f"❌ Error inicializando MapGISService: {str(e)}")
+            raise
+    
+    def inicializar_sesion(self) -> bool:
+        """Inicializar sesión con MapGIS"""
+        try:
+            return self.client.inicializar_sesion()
+        except Exception as e:
+            logger.error(f"Error inicializando sesión MapGIS: {str(e)}")
+            return False
     
     def buscar_por_matricula(self, matricula: str) -> Dict:
         """
-        Busca información completa de un lote por matrícula
+        Buscar predio por matrícula - CORREGIDO
         """
         try:
-            matricula_limpia = self._limpiar_matricula(matricula)
-            
-            if not matricula_limpia:
-                return self._error_response(
-                    "Matrícula inválida",
-                    "La matrícula proporcionada no es válida"
-                )
-            
+            # Normalizar matrícula
+            matricula_limpia = matricula.strip().lstrip('0') or '0'
             logger.info(f"🔍 Buscando datos para matrícula: {matricula_limpia}")
             
-            # Inicializar sesión
-            if not self.core.inicializar_sesion():
-                return self._error_response(
-                    "Error de sesión",
-                    "No se pudo inicializar la sesión con MapGIS"
-                )
+            # Verificar caché
+            cache_key = f"mapgis_matricula_{matricula_limpia}"
+            cached_result = cache.get(cache_key)
             
-            # Buscar ficha por matrícula
-            ficha = self.queries.buscar_ficha_por_matricula(matricula_limpia)
+            if cached_result:
+                logger.info(f"📋 Resultado desde caché para matrícula: {matricula_limpia}")
+                return cached_result
             
-            if not ficha or not ficha.get('cbml'):
-                return self._error_response(
-                    "No se encontró información",
-                    f"No existe información para la matrícula: {matricula_limpia}"
-                )
+            # Verificar que el cliente tiene base_url
+            if not hasattr(self.client, 'base_url'):
+                logger.error("❌ CRÍTICO: MapGISClient no tiene base_url")
+                return {
+                    'success': False,
+                    'encontrado': False,
+                    'message': 'Error de configuración del servicio MapGIS',
+                    'cbml_obtenido': False
+                }
             
-            cbml_encontrado = ficha['cbml']
-            logger.info(f"✅ CBML encontrado para matrícula {matricula_limpia}: {cbml_encontrado}")
+            # Buscar en MapGIS usando el cliente
+            resultado = self.client.buscar_por_matricula(matricula_limpia)
             
-            # Buscar datos completos usando el CBML
-            resultado_cbml = self.buscar_por_cbml(cbml_encontrado)
+            if not resultado:
+                return {
+                    'success': False,
+                    'encontrado': False,
+                    'message': f'No se encontró información para la matrícula {matricula}',
+                    'cbml_obtenido': False
+                }
             
-            if resultado_cbml.get('success'):
-                resultado_cbml['data']['matricula'] = matricula_limpia
-                resultado_cbml['cbml_obtenido'] = cbml_encontrado
-                resultado_cbml['busqueda_origen'] = 'matricula'
+            # Si encontramos CBML, obtener datos completos
+            cbml = resultado.get('cbml')
+            if cbml:
+                logger.info(f"✅ CBML encontrado: {cbml}, obteniendo datos completos...")
                 
-                # Agregar coordenadas de la ficha
-                if 'x' in ficha and 'y' in ficha:
-                    resultado_cbml['data']['longitud'] = float(ficha['x'])
-                    resultado_cbml['data']['latitud'] = float(ficha['y'])
+                # Buscar datos completos por CBML
+                datos_cbml = self.client.buscar_por_cbml(cbml)
                 
-                return resultado_cbml
+                if datos_cbml:
+                    # Combinar resultados
+                    datos_completos = {
+                        **resultado,  # Datos de matrícula (cbml, direccion, coordenadas)
+                        **datos_cbml  # Datos completos de CBML
+                    }
+                    
+                    response = {
+                        'success': True,
+                        'encontrado': True,
+                        'cbml_obtenido': True,
+                        'busqueda_origen': 'matricula',
+                        'data': datos_completos,
+                        'message': 'Información obtenida exitosamente'
+                    }
+                    
+                    # Guardar en caché
+                    cache.set(cache_key, response, self.cache_timeout)
+                    return response
             
-            return self._error_response(
-                "Datos incompletos",
-                f"Se encontró CBML {cbml_encontrado} pero no se pudo obtener información completa"
-            )
+            # Si solo tenemos datos básicos sin CBML completo
+            response = {
+                'success': True,
+                'encontrado': True,
+                'cbml_obtenido': bool(cbml),
+                'busqueda_origen': 'matricula',
+                'data': resultado,
+                'message': 'Información básica obtenida'
+            }
+            
+            # Guardar en caché
+            cache.set(cache_key, response, self.cache_timeout)
+            return response
+            
+        except AttributeError as e:
+            logger.error(f"❌ Error de atributo en buscar_por_matricula: {str(e)}")
+            import traceback
+            logger.error(traceback.format_exc())
+            return {
+                'success': False,
+                'encontrado': False,
+                'message': f'Error de configuración: {str(e)}',
+                'cbml_obtenido': False
+            }
+        except Exception as e:
+            logger.error(f"❌ Error en buscar_por_matricula: {str(e)}")
+            import traceback
+            logger.error(traceback.format_exc())
+            return {
+                'success': False,
+                'encontrado': False,
+                'message': f'Error al buscar matrícula: {str(e)}',
+                'cbml_obtenido': False
+            }
+    
+    def buscar_por_cbml(self, cbml: str) -> Dict:
+        """
+        Buscar información por CBML - CORREGIDO
+        """
+        try:
+            logger.info(f"🔍 Buscando datos para CBML: {cbml}")
+            
+            # Verificar caché
+            cache_key = f"mapgis_cbml_{cbml}"
+            cached_result = cache.get(cache_key)
+            
+            if cached_result:
+                logger.info(f"📋 Resultado desde caché para CBML: {cbml}")
+                return cached_result
+            
+            # Buscar en MapGIS
+            resultado = self.client.buscar_por_cbml(cbml)
+            
+            if not resultado:
+                return {
+                    'success': False,
+                    'encontrado': False,
+                    'message': f'No se encontró información para el CBML {cbml}'
+                }
+            
+            response = {
+                'success': True,
+                'encontrado': True,
+                'data': resultado,
+                'message': 'Información obtenida exitosamente'
+            }
+            
+            # Guardar en caché
+            cache.set(cache_key, response, self.cache_timeout)
+            return response
             
         except Exception as e:
-            logger.error(f"Error en buscar_por_matricula: {str(e)}")
-            return self._error_response("Error en consulta", str(e))
+            logger.error(f"❌ Error en buscar_por_cbml: {str(e)}")
+            return {
+                'success': False,
+                'encontrado': False,
+                'message': f'Error al buscar CBML: {str(e)}'
+            }
     
-    def _limpiar_cbml(self, cbml: str) -> str:
-        """Limpiar y normalizar CBML"""
-        if not cbml:
-            return ""
-        
-        import re
-        return re.sub(r'[^\d]', '', str(cbml))
-    
-    def _limpiar_matricula(self, matricula: str) -> str:
-        """Limpiar y normalizar matrícula"""
-        if not matricula:
-            return ""
-        
-        import re
-        # Quitar guiones y ceros iniciales
-        matricula_limpia = re.sub(r'[^\d]', '', str(matricula))
-        matricula_limpia = matricula_limpia.lstrip('0') or '0'
-        
-        return matricula_limpia
+    def buscar_por_direccion(self, direccion: str) -> Dict:
+        """Buscar predios por dirección (retorna lista)"""
+        try:
+            logger.info(f"🔍 Buscando por dirección: {direccion}")
+            
+            # TODO: Implementar búsqueda por dirección en MapGIS
+            # Por ahora retornar no implementado
+            
+            return {
+                'success': False,
+                'encontrado': False,
+                'message': 'Búsqueda por dirección no implementada aún'
+            }
+            
+        except Exception as e:
+            logger.error(f"❌ Error en buscar_por_direccion: {str(e)}")
+            return {
+                'success': False,
+                'encontrado': False,
+                'message': f'Error al buscar dirección: {str(e)}'
+            }

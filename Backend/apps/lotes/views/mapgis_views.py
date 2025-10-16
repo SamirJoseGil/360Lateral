@@ -1,8 +1,8 @@
 """
-Vistas para consultas MapGIS
+Vistas para integración con MapGIS Medellín - CON ENDPOINTS PÚBLICOS
 """
 from rest_framework.decorators import api_view, permission_classes
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.permissions import AllowAny  # ✅ CAMBIADO: Ahora es público
 from rest_framework.response import Response
 from rest_framework import status
 import logging
@@ -11,11 +11,17 @@ from ..services.mapgis_service import MapGISService
 
 logger = logging.getLogger(__name__)
 
+# ✅ CRÍTICO: Endpoints públicos para MapGIS
 @api_view(['POST'])
-@permission_classes([IsAuthenticated])
+@permission_classes([AllowAny])  # ✅ SIN AUTENTICACIÓN
 def scrap_cbml(request):
     """
-    Consultar información de un lote por CBML
+    Consultar información de un lote por CBML en MapGIS - PÚBLICO
+    
+    Request body:
+    {
+        "cbml": "12070080003"
+    }
     """
     try:
         cbml = request.data.get('cbml')
@@ -23,138 +29,166 @@ def scrap_cbml(request):
         if not cbml:
             return Response({
                 'success': False,
-                'message': 'CBML es requerido'
+                'message': 'El CBML es requerido'
             }, status=status.HTTP_400_BAD_REQUEST)
         
-        logger.info(f"🔍 Consulta MapGIS por CBML: {cbml}")
+        logger.info(f"[MapGIS] Consulta pública por CBML: {cbml}")
         
+        # Obtener servicio
         mapgis_service = MapGISService()
+        
+        # Realizar consulta
         resultado = mapgis_service.buscar_por_cbml(cbml)
         
-        return Response(resultado, status=status.HTTP_200_OK)
-        
-    except Exception as e:
-        logger.error(f"Error en scrap_cbml: {str(e)}")
-        return Response({
-            'success': False,
-            'message': 'Error en consulta MapGIS',
-            'detail': str(e)
-        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
-
-@api_view(['POST'])
-@permission_classes([IsAuthenticated])
-def scrap_matricula(request):
-    """Busca información de predio por matrícula inmobiliaria en MapGIS"""
-    matricula = request.data.get('matricula', '')
-    if not isinstance(matricula, str):
-        matricula = str(matricula)
-    matricula = matricula.strip()
-    if not matricula:
-        return Response({
-            'success': False,
-            'encontrado': False,
-            'message': 'Matrícula es requerida'
-        }, status=400)
-    
-    logger.info(f"🔍 Consulta matrícula: {matricula}")
-    
-    try:
-        from ..services.mapgis_service import MapGISService
-        mapgis_service = MapGISService()
-        
-        # Llamar al servicio de MapGIS REAL
-        resultado = mapgis_service.buscar_por_matricula(matricula)
-        
-        logger.info(f"📊 Resultado matrícula {matricula}: encontrado={resultado.get('encontrado', False)}, cbml={resultado.get('cbml_obtenido')}")
-        
-        return Response(resultado)
-    
-    except Exception as e:
-        logger.error(f"❌ Error en scrap_matricula: {str(e)}")
-        return Response({
-            'encontrado': False,
-            'error': True,
-            'mensaje': 'Error en consulta',
-            'detalle': str(e),
-            'codigo_error': 'SERVER_ERROR'
-        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
-
-@api_view(['POST'])
-@permission_classes([IsAuthenticated])
-def consultar_restricciones_completas(request):
-    """
-    Consultar restricciones ambientales de un lote
-    """
-    try:
-        cbml = request.data.get('cbml')
-        
-        if not cbml:
+        if not resultado.get('success'):
             return Response({
                 'success': False,
-                'message': 'CBML es requerido'
-            }, status=status.HTTP_400_BAD_REQUEST)
-        
-        logger.info(f"🌿 Consultando restricciones para CBML: {cbml}")
-        
-        mapgis_service = MapGISService()
-        resultado = mapgis_service.buscar_por_cbml(cbml)
-        
-        if resultado.get('success'):
-            # Extraer solo restricciones ambientales
-            restricciones = resultado.get('data', {}).get('restricciones_ambientales', {})
-            
-            return Response({
-                'success': True,
-                'data': restricciones,
-                'cbml': cbml
-            }, status=status.HTTP_200_OK)
-        else:
-            return Response({
-                'success': False,
-                'message': resultado.get('message', 'No se encontró información')
+                'encontrado': False,
+                'message': resultado.get('message', 'No se encontró información para el CBML proporcionado')
             }, status=status.HTTP_404_NOT_FOUND)
         
+        return Response({
+            'success': True,
+            'encontrado': True,
+            'data': resultado.get('data', {}),
+            'message': 'Información obtenida exitosamente'
+        }, status=status.HTTP_200_OK)
+        
     except Exception as e:
-        logger.error(f"Error consultando restricciones: {str(e)}")
+        logger.error(f"[MapGIS] Error en scrap_cbml: {str(e)}")
         return Response({
             'success': False,
-            'message': 'Error consultando restricciones',
-            'detail': str(e)
+            'encontrado': False,
+            'message': f'Error al consultar MapGIS: {str(e)}'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['POST'])
+@permission_classes([AllowAny])  # ✅ SIN AUTENTICACIÓN
+def scrap_matricula(request):
+    """
+    Consultar información de un lote por matrícula en MapGIS - PÚBLICO
+    
+    Request body:
+    {
+        "matricula": "00174838"
+    }
+    """
+    try:
+        matricula = request.data.get('matricula')
+        
+        if not matricula:
+            return Response({
+                'success': False,
+                'message': 'La matrícula es requerida'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        logger.info(f"[MapGIS] Consulta pública por matrícula: {matricula}")
+        
+        # Obtener servicio
+        mapgis_service = MapGISService()
+        
+        # Realizar consulta
+        resultado = mapgis_service.buscar_por_matricula(matricula)
+        
+        if not resultado.get('success'):
+            return Response({
+                'success': False,
+                'encontrado': False,
+                'message': resultado.get('message', 'No se encontró información para la matrícula proporcionada'),
+                'cbml_obtenido': resultado.get('cbml_obtenido', False)
+            }, status=status.HTTP_404_NOT_FOUND)
+        
+        return Response({
+            'success': True,
+            'encontrado': True,
+            'data': resultado.get('data', {}),
+            'cbml_obtenido': resultado.get('cbml_obtenido', False),
+            'busqueda_origen': 'matricula',
+            'message': 'Información obtenida exitosamente'
+        }, status=status.HTTP_200_OK)
+        
+    except Exception as e:
+        logger.error(f"[MapGIS] Error en scrap_matricula: {str(e)}")
+        return Response({
+            'success': False,
+            'encontrado': False,
+            'message': f'Error al consultar MapGIS: {str(e)}'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['POST'])
+@permission_classes([AllowAny])  # ✅ SIN AUTENTICACIÓN (opcional, menos usado)
+def consultar_restricciones_completas(request):
+    """
+    Consultar restricciones completas de un predio - PÚBLICO
+    """
+    try:
+        cbml = request.data.get('cbml')
+        matricula = request.data.get('matricula')
+        
+        if not cbml and not matricula:
+            return Response({
+                'success': False,
+                'message': 'Debe proporcionar CBML o matrícula'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        logger.info(f"[MapGIS] Consulta de restricciones - CBML: {cbml}, Matrícula: {matricula}")
+        
+        mapgis_service = MapGISService()
+        
+        # Si tenemos matrícula, primero obtener CBML
+        if matricula and not cbml:
+            resultado_matricula = mapgis_service.buscar_por_matricula(matricula)
+            if resultado_matricula.get('success'):
+                cbml = resultado_matricula.get('data', {}).get('cbml')
+        
+        if not cbml:
+            return Response({
+                'success': False,
+                'message': 'No se pudo obtener CBML para consultar restricciones'
+            }, status=status.HTTP_404_NOT_FOUND)
+        
+        # Consultar restricciones
+        resultado = mapgis_service.buscar_por_cbml(cbml)
+        
+        return Response({
+            'success': resultado.get('success', False),
+            'data': resultado.get('data', {}),
+            'message': resultado.get('message', 'Restricciones obtenidas')
+        }, status=status.HTTP_200_OK if resultado.get('success') else status.HTTP_404_NOT_FOUND)
+        
+    except Exception as e:
+        logger.error(f"[MapGIS] Error en consultar_restricciones_completas: {str(e)}")
+        return Response({
+            'success': False,
+            'message': f'Error al consultar restricciones: {str(e)}'
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 @api_view(['GET'])
-@permission_classes([IsAuthenticated])
+@permission_classes([AllowAny])  # ✅ Health check público
 def health_mapgis(request):
     """
-    Health check del servicio MapGIS
+    Health check de la conexión con MapGIS - PÚBLICO
     """
     try:
         mapgis_service = MapGISService()
         
-        # Hacer una consulta de prueba
-        test_cbml = "01050100100010"
-        resultado = mapgis_service.buscar_por_cbml(test_cbml)
+        # Intentar inicializar sesión
+        session_ok = mapgis_service.inicializar_sesion()
         
-        if resultado.get('success'):
-            return Response({
-                'status': 'healthy',
-                'service': 'MapGIS',
-                'message': 'Servicio MapGIS operacional'
-            }, status=status.HTTP_200_OK)
-        else:
-            return Response({
-                'status': 'degraded',
-                'service': 'MapGIS',
-                'message': 'Servicio MapGIS con problemas'
-            }, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+        return Response({
+            'success': True,
+            'mapgis_available': session_ok,
+            'message': 'MapGIS disponible' if session_ok else 'MapGIS no disponible',
+            'timestamp': mapgis_service._get_timestamp()
+        }, status=status.HTTP_200_OK)
         
     except Exception as e:
-        logger.error(f"Error en health check MapGIS: {str(e)}")
+        logger.error(f"[MapGIS] Error en health check: {str(e)}")
         return Response({
-            'status': 'unhealthy',
-            'service': 'MapGIS',
-            'message': str(e)
+            'success': False,
+            'mapgis_available': False,
+            'message': f'Error: {str(e)}'
         }, status=status.HTTP_503_SERVICE_UNAVAILABLE)

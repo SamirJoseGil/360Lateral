@@ -1,8 +1,7 @@
 """
-Módulo MapGIS para integración con servicios de Medellín
+Paquete de servicios MapGIS
 """
-
+from .client import MapGISClient
 from .core import MapGISCore
-from .queries import MapGISQueries
 
-__all__ = ['MapGISCore', 'MapGISQueries']
+__all__ = ['MapGISClient', 'MapGISCore']
