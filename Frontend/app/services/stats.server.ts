@@ -1,7 +1,7 @@
 import { fetchWithAuth, getAccessTokenFromCookies } from "~/utils/auth.server";
+import { API_URL } from "~/utils/env.server";
 
-// Constante para la URL base de la API
-const API_URL = process.env.API_URL || "http://localhost:8000";
+console.log(`[Stats Service] Using API_URL: ${API_URL}`);
 
 // Generar UUID simple para sesiones
 function uuid() {
@@ -14,7 +14,7 @@ function uuid() {
 
 // Tipos actualizados según la documentación del API
 export interface EventData {
-  type: 'view' | 'search' | 'action' | 'api' | 'error' | 'other';
+  type: string;
   name: string;
   value?: Record<string, any>;
 }
@@ -83,26 +83,34 @@ export interface ChartData {
 // === FUNCIONES PRINCIPALES SEGÚN DOCUMENTACIÓN ===
 
 // Función para registrar un evento estadístico
-export async function recordEvent(request: Request, eventData: EventData) {
+export async function recordEvent(
+  request: Request,
+  eventData: EventData
+): Promise<boolean> {
   try {
-    // ✅ TEMPORAL: Deshabilitar stats hasta que se arregle la BD
-    console.log("[Stats] Event recording disabled temporarily:", eventData);
-    return;
+    console.log(`[Stats] Recording event: ${eventData.type}:${eventData.name}`);
     
-    // ✅ CÓDIGO ORIGINAL (comentado temporalmente)
-    /*
-    const response = await fetch(`${API_URL}/api/stats/events/record/`, {
+    const url = `${API_URL}/api/stats/events/record/`;
+    console.log(`[Stats] Posting to: ${url}`);
+    
+    const response = await fetch(url, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`,
       },
       body: JSON.stringify(eventData),
     });
-    // ...rest of original code...
-    */
+
+    if (!response.ok) {
+      console.warn(`[Stats] Event recording returned ${response.status}`);
+      return false;
+    }
+
+    console.log(`[Stats] Event recorded successfully`);
+    return true;
   } catch (error) {
-    console.warn("[Stats] Error recording event (ignored):", error);
+    console.error('[Stats] Error recording event:', error);
+    return false;
   }
 }
 

@@ -1,175 +1,274 @@
 """
-Servicio para lógica de negocio de lotes
+Servicio de lógica de negocio para lotes
 """
+from typing import Dict, Optional, List
 import logging
-from typing import Dict, Optional
-from django.core.cache import cache
+from django.db.models import Q, Count, Avg
+from decimal import Decimal
 
-from .base_service import BaseService
+from ..models import Lote
 
 logger = logging.getLogger(__name__)
 
-class LotesService(BaseService):
+
+class LotesService:
     """
-    Servicio para lógica de negocio relacionada con lotes
+    Servicio para operaciones de negocio relacionadas con lotes
     """
     
-    def __init__(self):
-        super().__init__()
-        # Importación tardía para evitar problemas circulares
-        self._mapgis_service = None
-        self.cache_timeout = 3600  # 1 hora
-    
-    @property
-    def mapgis_service(self):
-        """Lazy loading del MapGISService"""
-        if self._mapgis_service is None:
-            from .mapgis_service import MapGISService
-            self._mapgis_service = MapGISService()
-        return self._mapgis_service
-    
-    def consultar_predio_completo(self, valor: str, tipo_busqueda: str) -> Dict:
+    @staticmethod
+    def buscar_lotes(filtros: Dict) -> List[Lote]:
         """
-        Consulta completa de predio con cache y validaciones
-        """
-        try:
-            # Validar entrada
-            if not valor or not valor.strip():
-                return self._error_response("Valor de búsqueda requerido")
-            
-            valor = valor.strip()
-            
-            # Validar tipo de búsqueda
-            if tipo_busqueda not in ['cbml', 'matricula', 'direccion']:
-                return self._error_response("Tipo de búsqueda inválido")
-            
-            # Verificar cache
-            cache_key = f"mapgis_{tipo_busqueda}_{valor}"
-            cached_result = cache.get(cache_key)
-            if cached_result:
-                logger.info(f"📋 Resultado desde cache: {cache_key}")
-                cached_result['from_cache'] = True
-                return cached_result
-            
-            # Mostrar información detallada para depuración
-            logger.info(f"🔍 Consulta de predio - Tipo: {tipo_busqueda}, Valor: {valor}")
-            
-            # Realizar consulta según el tipo
-            if tipo_busqueda == 'cbml':
-                result = self.mapgis_service.buscar_por_cbml(valor)
-            elif tipo_busqueda == 'matricula':
-                result = self.mapgis_service.buscar_por_matricula(valor)
-            else:  # direccion
-                result = self.mapgis_service.buscar_por_direccion(valor)
-            
-            # Enriquecer resultado
-            result = self._enriquecer_resultado(result, valor, tipo_busqueda)
-            
-            # Guardar en cache si es exitoso
-            if result.get('encontrado'):
-                cache.set(cache_key, result, self.cache_timeout)
-                logger.info(f"💾 Resultado guardado en cache: {cache_key}")
-            
-            return result
-            
-        except Exception as e:
-            logger.error(f"❌ Error en consultar_predio_completo: {str(e)}")
-            return self._error_response("Error en consulta de predio", str(e))
-    
-    def _enriquecer_resultado(self, result: Dict, valor: str, tipo_busqueda: str) -> Dict:
-        """Enriquece el resultado con información adicional"""
-        try:
-            # Actualizado para usar 'success' en lugar de 'encontrado'
-            if result.get('success'):
-                # Agregar metadatos de consulta
-                result['consulta'] = {
-                    'valor_buscado': valor,
-                    'tipo_busqueda': tipo_busqueda,
-                    'timestamp': self._get_timestamp()
-                }
-                
-                # Validar y limpiar datos - Adaptado para usar 'data' en lugar de 'datos'
-                if 'data' in result:
-                    result['data'] = self._validar_datos_predio(result['data'])
-                
-                # Agregar información de confiabilidad
-                result['confiabilidad'] = self._calcular_confiabilidad(result)
-                
-            return result
-            
-        except Exception as e:
-            logger.error(f"❌ Error enriqueciendo resultado: {str(e)}")
-            return result
-    
-    def _validar_datos_predio(self, datos: Dict) -> Dict:
-        """Valida y limpia los datos del predio"""
-        validated_data = {}
+        Busca lotes según filtros proporcionados
         
-        # Campos esperados y sus validaciones
-        field_validators = {
-            'cbml': lambda x: x if x and str(x).isdigit() and len(str(x)) >= 10 else None,
-            'matricula': lambda x: x if x and len(str(x)) >= 6 else None,
-            'direccion': lambda x: self._clean_text_value(x) if x and len(str(x)) >= 5 else None,
-            'barrio': lambda x: self._clean_text_value(x) if x else None,
-            'comuna': lambda x: str(x) if x else None,
-            'estrato': lambda x: int(x) if x and str(x).isdigit() and 1 <= int(x) <= 6 else None,
-            'area_terreno': lambda x: self._clean_numeric_value(x) if x else None,
-            'area_construida': lambda x: self._clean_numeric_value(x) if x else None,
-            'clasificacion_suelo': lambda x: self._clean_text_value(x) if x else None
+        Args:
+            filtros: Diccionario con filtros de búsqueda
+            
+        Returns:
+            Lista de lotes que cumplen los criterios
+        """
+        queryset = Lote.objects.filter(is_verified=True, estado='active')
+        
+        # Filtro por área
+        if 'area_min' in filtros:
+            queryset = queryset.filter(area__gte=filtros['area_min'])
+        if 'area_max' in filtros:
+            queryset = queryset.filter(area__lte=filtros['area_max'])
+        
+        # Filtro por ubicación
+        if 'barrio' in filtros:
+            queryset = queryset.filter(barrio__icontains=filtros['barrio'])
+        if 'comuna' in filtros:
+            queryset = queryset.filter(comuna=filtros['comuna'])
+        if 'estrato' in filtros:
+            queryset = queryset.filter(estrato=filtros['estrato'])
+        
+        # Filtro por normativa
+        if 'tratamiento_pot' in filtros:
+            queryset = queryset.filter(tratamiento_pot__icontains=filtros['tratamiento_pot'])
+        if 'uso_suelo' in filtros:
+            queryset = queryset.filter(uso_suelo__icontains=filtros['uso_suelo'])
+        
+        # Filtro por precio
+        if 'precio_min' in filtros:
+            queryset = queryset.filter(valor_comercial__gte=filtros['precio_min'])
+        if 'precio_max' in filtros:
+            queryset = queryset.filter(valor_comercial__lte=filtros['precio_max'])
+        
+        logger.info(f"Búsqueda de lotes: {queryset.count()} resultados")
+        return list(queryset)
+    
+    @staticmethod
+    def calcular_estadisticas_lote(lote: Lote) -> Dict:
+        """
+        Calcula estadísticas y métricas de un lote
+        
+        Args:
+            lote: Instancia del lote
+            
+        Returns:
+            Diccionario con estadísticas calculadas
+        """
+        estadisticas = {
+            'id': str(lote.id),
+            'cbml': lote.cbml,
+            'area': float(lote.area) if lote.area else 0,
         }
         
-        for field, validator in field_validators.items():
-            if field in datos:
-                try:
-                    validated_value = validator(datos[field])
-                    if validated_value is not None:
-                        validated_data[field] = validated_value
-                except Exception as e:
-                    logger.debug(f"Error validando campo {field}: {str(e)}")
-        
-        return validated_data
-    
-    def _calcular_confiabilidad(self, result: Dict) -> Dict:
-        """Calcula métricas de confiabilidad del resultado"""
-        try:
-            datos = result.get('datos', {})
-            total_campos = len(datos)
-            campos_completos = sum(1 for v in datos.values() if v is not None and str(v).strip())
-            
-            confiabilidad = {
-                'total_campos': total_campos,
-                'campos_completos': campos_completos,
-                'porcentaje_completitud': round((campos_completos / max(total_campos, 1)) * 100, 2),
-                'fuente_datos': result.get('fuente', 'Desconocida'),
-                'es_respuesta_html': result.get('content_type') == 'text/html'
+        # Potencial constructivo
+        if lote.area and lote.indice_construccion:
+            area_maxima = float(lote.area) * float(lote.indice_construccion)
+            estadisticas['potencial_constructivo'] = {
+                'area_maxima_construccion': round(area_maxima, 2),
+                'indice_construccion': float(lote.indice_construccion),
             }
             
-            # Clasificar calidad
-            if confiabilidad['porcentaje_completitud'] >= 80:
-                confiabilidad['calidad'] = 'Alta'
-            elif confiabilidad['porcentaje_completitud'] >= 50:
-                confiabilidad['calidad'] = 'Media'
-            else:
-                confiabilidad['calidad'] = 'Baja'
+            if lote.altura_maxima and lote.indice_ocupacion:
+                area_por_piso = float(lote.area) * float(lote.indice_ocupacion)
+                pisos_maximos = int(float(lote.altura_maxima) / 3)  # 3m por piso
+                
+                estadisticas['potencial_constructivo'].update({
+                    'pisos_maximos': pisos_maximos,
+                    'area_por_piso': round(area_por_piso, 2),
+                })
+        
+        # Valoración
+        if lote.valor_comercial:
+            estadisticas['valoracion'] = {
+                'valor_comercial': float(lote.valor_comercial),
+                'valor_m2': float(lote.valor_m2) if lote.valor_m2 else 0,
+            }
             
-            return confiabilidad
+            if lote.avaluo_catastral:
+                estadisticas['valoracion']['avaluo_catastral'] = float(lote.avaluo_catastral)
+        
+        return estadisticas
+    
+    @staticmethod
+    def obtener_lotes_similares(lote: Lote, limite: int = 5) -> List[Lote]:
+        """
+        Encuentra lotes similares al proporcionado
+        
+        Args:
+            lote: Lote de referencia
+            limite: Número máximo de lotes a retornar
             
-        except Exception as e:
-            logger.error(f"❌ Error calculando confiabilidad: {str(e)}")
-            return {'calidad': 'Desconocida', 'error': str(e)}
+        Returns:
+            Lista de lotes similares
+        """
+        # Buscar lotes en la misma zona con características similares
+        queryset = Lote.objects.filter(
+            is_verified=True,
+            estado='active'
+        ).exclude(id=lote.id)
+        
+        # Filtrar por ubicación similar
+        if lote.barrio:
+            queryset = queryset.filter(barrio=lote.barrio)
+        elif lote.comuna:
+            queryset = queryset.filter(comuna=lote.comuna)
+        
+        # Filtrar por área similar (±30%)
+        if lote.area:
+            area_min = float(lote.area) * 0.7
+            area_max = float(lote.area) * 1.3
+            queryset = queryset.filter(area__gte=area_min, area__lte=area_max)
+        
+        # Filtrar por tratamiento similar
+        if lote.tratamiento_pot:
+            queryset = queryset.filter(tratamiento_pot=lote.tratamiento_pot)
+        
+        logger.info(f"Encontrados {queryset.count()} lotes similares a {lote.cbml}")
+        return list(queryset[:limite])
     
-    def limpiar_cache_mapgis(self) -> Dict:
-        """Limpia el cache de consultas MapGIS"""
-        try:
-            # En Django, no hay una forma directa de limpiar cache por patrón
-            # Esto requeriría implementación específica según el backend de cache
-            logger.info("🧹 Limpieza de cache solicitada")
-            return self._success_response({}, "Cache limpiado (implementación pendiente)")
-        except Exception as e:
-            logger.error(f"❌ Error limpiando cache: {str(e)}")
-            return self._error_response("Error limpiando cache", str(e))
+    @staticmethod
+    def validar_lote_para_publicacion(lote: Lote) -> tuple[bool, List[str]]:
+        """
+        Valida que un lote cumple los requisitos para ser publicado
+        
+        Args:
+            lote: Instancia del lote a validar
+            
+        Returns:
+            Tupla (es_valido, lista_de_errores)
+        """
+        errores = []
+        
+        # Validar campos obligatorios
+        if not lote.cbml:
+            errores.append("CBML es obligatorio")
+        if not lote.direccion:
+            errores.append("Dirección es obligatoria")
+        if not lote.area or lote.area <= 0:
+            errores.append("Área debe ser mayor a 0")
+        
+        # Validar ubicación
+        if not lote.barrio and not lote.comuna:
+            errores.append("Debe especificar barrio o comuna")
+        
+        # Validar coordenadas
+        if not lote.latitud or not lote.longitud:
+            errores.append("Coordenadas GPS son obligatorias")
+        
+        # Validar clasificación
+        if not lote.clasificacion_suelo:
+            errores.append("Clasificación del suelo es obligatoria")
+        
+        es_valido = len(errores) == 0
+        
+        if es_valido:
+            logger.info(f"Lote {lote.cbml} validado para publicación")
+        else:
+            logger.warning(f"Lote {lote.cbml} no cumple requisitos: {errores}")
+        
+        return es_valido, errores
     
-    def _get_timestamp(self) -> str:
-        """Obtiene timestamp actual"""
-        from datetime import datetime
-        return datetime.now().isoformat()
+    @staticmethod
+    def calcular_precio_sugerido(lote: Lote) -> Optional[Decimal]:
+        """
+        Calcula un precio sugerido basado en lotes similares
+        
+        Args:
+            lote: Instancia del lote
+            
+        Returns:
+            Precio sugerido o None si no hay datos suficientes
+        """
+        # Buscar lotes similares con precio
+        lotes_similares = Lote.objects.filter(
+            is_verified=True,
+            estado='active',
+            valor_m2__isnull=False
+        )
+        
+        if lote.barrio:
+            lotes_similares = lotes_similares.filter(barrio=lote.barrio)
+        elif lote.comuna:
+            lotes_similares = lotes_similares.filter(comuna=lote.comuna)
+        
+        if lote.estrato:
+            lotes_similares = lotes_similares.filter(estrato=lote.estrato)
+        
+        # Calcular precio promedio por m²
+        resultado = lotes_similares.aggregate(Avg('valor_m2'))
+        valor_m2_promedio = resultado['valor_m2__avg']
+        
+        if valor_m2_promedio and lote.area:
+            precio_sugerido = Decimal(str(valor_m2_promedio)) * lote.area
+            logger.info(f"Precio sugerido para {lote.cbml}: ${precio_sugerido:,.0f}")
+            return precio_sugerido
+        
+        logger.warning(f"No hay datos suficientes para calcular precio de {lote.cbml}")
+        return None
+    
+    @staticmethod
+    def obtener_estadisticas_zona(barrio: str = None, comuna: int = None) -> Dict:
+        """
+        Obtiene estadísticas de lotes en una zona específica
+        
+        Args:
+            barrio: Nombre del barrio (opcional)
+            comuna: Número de comuna (opcional)
+            
+        Returns:
+            Diccionario con estadísticas de la zona
+        """
+        queryset = Lote.objects.filter(is_verified=True, estado='active')
+        
+        if barrio:
+            queryset = queryset.filter(barrio__icontains=barrio)
+        if comuna:
+            queryset = queryset.filter(comuna=comuna)
+        
+        if not queryset.exists():
+            return {
+                'zona': barrio or f"Comuna {comuna}",
+                'total_lotes': 0,
+                'mensaje': 'No hay datos disponibles para esta zona'
+            }
+        
+        # Calcular estadísticas
+        total = queryset.count()
+        area_promedio = queryset.aggregate(Avg('area'))['area__avg']
+        valor_m2_promedio = queryset.filter(
+            valor_m2__isnull=False
+        ).aggregate(Avg('valor_m2'))['valor_m2__avg']
+        
+        # Distribución por estrato
+        por_estrato = queryset.values('estrato').annotate(
+            count=Count('id')
+        ).order_by('estrato')
+        
+        estadisticas = {
+            'zona': barrio or f"Comuna {comuna}",
+            'total_lotes': total,
+            'area_promedio': round(float(area_promedio), 2) if area_promedio else 0,
+            'valor_m2_promedio': round(float(valor_m2_promedio), 2) if valor_m2_promedio else 0,
+            'distribucion_estrato': {
+                f"estrato_{item['estrato']}": item['count']
+                for item in por_estrato if item['estrato']
+            }
+        }
+        
+        logger.info(f"Estadísticas de zona calculadas: {estadisticas['zona']}")
+        return estadisticas

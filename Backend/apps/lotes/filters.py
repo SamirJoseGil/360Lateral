@@ -1,50 +1,41 @@
 """
-Filtros para la aplicación de lotes.
+Filtros personalizados para lotes
 """
 import django_filters
-from django.db.models import Q
 from .models import Lote
 
-class LoteFilterSet(django_filters.FilterSet):
+class LoteFilter(django_filters.FilterSet):
     """
-    Conjunto de filtros para el modelo Lote.
-    
-    Permite filtrar lotes por:
-    - area_min, area_max: Rango de áreas
-    - estrato: Estrato socioeconómico
-    - status: Estado del lote (activo, pendiente, archivado)
-    - owner: Propietario del lote
-    - created_after, created_before: Fechas de creación
-    - search: Búsqueda en varios campos
+    Filtro para lotes con múltiples opciones de búsqueda
     """
-    # Rangos numéricos
+    # Filtros de rango
     area_min = django_filters.NumberFilter(field_name='area', lookup_expr='gte')
     area_max = django_filters.NumberFilter(field_name='area', lookup_expr='lte')
     
-    # Filtros por fecha
-    created_after = django_filters.DateFilter(field_name='created_at', lookup_expr='gte')
-    created_before = django_filters.DateFilter(field_name='created_at', lookup_expr='lte')
+    valor_min = django_filters.NumberFilter(field_name='valor_comercial', lookup_expr='gte')
+    valor_max = django_filters.NumberFilter(field_name='valor_comercial', lookup_expr='lte')
     
-    # Búsqueda en múltiples campos
-    search = django_filters.CharFilter(method='filter_search')
+    # Filtros de texto
+    barrio = django_filters.CharFilter(field_name='barrio', lookup_expr='icontains')
+    direccion = django_filters.CharFilter(field_name='direccion', lookup_expr='icontains')
+    
+    # Filtros exactos
+    comuna = django_filters.NumberFilter(field_name='comuna')
+    estrato = django_filters.NumberFilter(field_name='estrato')
+    status = django_filters.CharFilter(field_name='status')
+    tratamiento = django_filters.CharFilter(field_name='tratamiento_urbanistico')
+    uso_suelo = django_filters.CharFilter(field_name='uso_suelo')
+    
+    # Filtro booleano
+    is_verified = django_filters.BooleanFilter(field_name='is_verified')
     
     class Meta:
         model = Lote
         fields = [
-            'estrato', 'status', 'owner', 
-            'area_min', 'area_max', 
-            'created_after', 'created_before',
-            'search'
+            'area_min', 'area_max',
+            'valor_min', 'valor_max',
+            'barrio', 'direccion',
+            'comuna', 'estrato',
+            'status', 'tratamiento', 'uso_suelo',
+            'is_verified'
         ]
-    
-    def filter_search(self, queryset, name, value):
-        """
-        Filtra por término de búsqueda en múltiples campos.
-        """
-        return queryset.filter(
-            Q(nombre__icontains=value) |
-            Q(direccion__icontains=value) |
-            Q(codigo_catastral__icontains=value) |
-            Q(matricula__icontains=value) |
-            Q(cbml__icontains=value)
-        )

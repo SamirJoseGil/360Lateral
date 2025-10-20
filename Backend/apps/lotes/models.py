@@ -1,401 +1,508 @@
 """
-Modelos para la aplicación de lotes
+Modelos para el módulo de lotes
+Define Lote, LoteDocument, LoteHistory, Favorite, Tratamiento
 """
 from django.db import models
 from django.contrib.auth import get_user_model
-from django.core import validators
-from django.conf import settings  # ✅ AGREGADO: Import de settings
+from django.core.validators import MinValueValidator, MaxValueValidator
+from django.core.exceptions import ValidationError
+import uuid
+import logging
 
 User = get_user_model()
+logger = logging.getLogger(__name__)
+
 
 class Lote(models.Model):
     """
-    Modelo para representar un lote urbano
+    Modelo principal para lotes urbanos.
+    Almacena información catastral, urbanística y de valoración.
     """
-    
-    # Campos básicos de identificación
-    nombre = models.CharField(
-        "Nombre",
-        max_length=255,
-        help_text="Nombre o identificador del lote"
-    )
-    
-    cbml = models.CharField(
-        "CBML",
-        max_length=50,
-        unique=False,  # ✅ Permitir duplicados temporalmente
-        null=True,
-        blank=True,
-        help_text="Código de Bien de Medellín"
-    )
-    
-    direccion = models.CharField(
-        "Dirección",
-        max_length=255,
-        null=True,  # ✅ Permitir null
-        blank=True,
-        help_text="Dirección física del lote"
-    )
-    
-    # ✅ CRÍTICO: Mantener área como nullable
-    area = models.DecimalField(
-        "Área (m²)",
-        max_digits=12,
-        decimal_places=2,
-        null=True,  # ✅ Permitir null
-        blank=True,
-        help_text="Área del terreno en metros cuadrados"
-    )
-    
-    descripcion = models.TextField(
-        "Descripción",
-        blank=True,
-        null=True,
-        help_text="Descripción detallada del lote"
-    )
-    
-    # Información catastral
-    matricula = models.CharField(
-        "Matrícula inmobiliaria",
-        max_length=50,
-        unique=False,  # ✅ Permitir duplicados temporalmente
-        null=True,
-        blank=True,
-        help_text="Número de matrícula inmobiliaria"
-    )
-    
-    codigo_catastral = models.CharField(
-        "Código Catastral",
-        max_length=100,
-        null=True,
-        blank=True,
-        help_text="Código catastral del predio"
-    )
-    
-    barrio = models.CharField(
-        "Barrio",
-        max_length=100,
-        null=True,
-        blank=True,
-        help_text="Barrio donde se ubica el lote"
-    )
-    
-    estrato = models.PositiveSmallIntegerField(
-        "Estrato",
-        null=True,
-        blank=True,
-        validators=[
-            validators.MinValueValidator(1),  # ✅ CORREGIDO
-            validators.MaxValueValidator(6)   # ✅ CORREGIDO
-        ],
-        help_text="Estrato socioeconómico (1-6)"
-    )
-    
-    # Coordenadas
-    latitud = models.DecimalField(
-        "Latitud",
-        max_digits=10,
-        decimal_places=7,
-        null=True,
-        blank=True,
-        help_text="Coordenada de latitud del lote"
-    )
-    
-    longitud = models.DecimalField(
-        "Longitud",
-        max_digits=10,
-        decimal_places=7,
-        null=True,
-        blank=True,
-        help_text="Coordenada de longitud del lote"
-    )
-    
-    # Información POT
-    tratamiento_pot = models.CharField(
-        "Tratamiento POT",
-        max_length=100,
-        null=True,
-        blank=True,
-        help_text="Tratamiento según Plan de Ordenamiento Territorial"
-    )
-    
-    uso_suelo = models.CharField(
-        "Uso del Suelo",
-        max_length=100,
-        null=True,
-        blank=True,
-        help_text="Clasificación del uso del suelo"
-    )
-    
-    clasificacion_suelo = models.CharField(
-        "Clasificación del Suelo",
-        max_length=100,
-        null=True,
-        blank=True,
-        help_text="Clasificación del suelo (urbano, rural, etc.)"
-    )
-    
-    # Metadatos adicionales
-    metadatos = models.JSONField(
-        "Metadatos adicionales",
-        default=dict,
-        blank=True,
-        help_text="Información adicional en formato JSON"
-    )
-    
-    # Relación con usuario (propietario del lote en la plataforma)
-    usuario = models.ForeignKey(
-        User,
-        on_delete=models.CASCADE,
-        related_name='lotes',
-        verbose_name="Usuario propietario",
-        null=True,  # ✅ Permitir null temporalmente
-        blank=True
-    )
-    
-    # Campos de auditoría
-    fecha_creacion = models.DateTimeField(
-        "Fecha de creación",
-        auto_now_add=True
-    )
-    
-    fecha_actualizacion = models.DateTimeField(
-        "Fecha de actualización",
-        auto_now=True
-    )
-    
-    # Estado del lote
-    ESTADO_CHOICES = [
-        ('pending', 'Pendiente de Revisión'),
+    STATUS_CHOICES = [
         ('active', 'Activo'),
-        ('archived', 'Archivado'),
-        ('rejected', 'Rechazado'),
+        ('inactive', 'Inactivo'),
+        ('sold', 'Vendido'),
+        ('in_negotiation', 'En Negociación'),
+        ('reserved', 'Reservado'),
     ]
     
-    estado = models.CharField(
-        "Estado",
-        max_length=20,
-        choices=ESTADO_CHOICES,
-        default='pending',
-        help_text="Estado actual del lote"
+    TRATAMIENTO_CHOICES = [
+        ('consolidacion_1', 'Consolidación Nivel 1'),
+        ('consolidacion_2', 'Consolidación Nivel 2'),
+        ('consolidacion_3', 'Consolidación Nivel 3'),
+        ('desarrollo', 'Desarrollo'),
+        ('mejoramiento', 'Mejoramiento Integral'),
+        ('conservacion', 'Conservación'),
+    ]
+    
+    USO_SUELO_CHOICES = [
+        ('residencial', 'Residencial'),
+        ('comercial', 'Comercial'),
+        ('mixto', 'Mixto'),
+        ('industrial', 'Industrial'),
+        ('dotacional', 'Dotacional'),
+        ('otro', 'Otro'),
+    ]
+    
+    # Identificación
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    cbml = models.CharField(
+        max_length=14, 
+        unique=True, 
+        verbose_name='CBML',
+        db_index=True,
+        help_text='Código Base Municipal de Lote (14 dígitos)'
+    )
+    matricula = models.CharField(
+        max_length=20, 
+        blank=True, 
+        null=True,
+        verbose_name='Matrícula Inmobiliaria',
+        db_index=True
     )
     
-    # Campos de verificación administrativa
+    # Propietario
+    owner = models.ForeignKey(
+        User, 
+        on_delete=models.CASCADE, 
+        related_name='lotes',
+        verbose_name='Propietario'
+    )
+    
+    # Ubicación
+    direccion = models.CharField(max_length=255, verbose_name='Dirección')
+    barrio = models.CharField(max_length=100, blank=True, null=True, verbose_name='Barrio')
+    comuna = models.IntegerField(
+        validators=[MinValueValidator(1), MaxValueValidator(16)],
+        blank=True,
+        null=True,
+        verbose_name='Comuna'
+    )
+    estrato = models.IntegerField(
+        validators=[MinValueValidator(1), MaxValueValidator(6)],
+        blank=True,
+        null=True,
+        verbose_name='Estrato'
+    )
+    
+    # Geometría (coordenadas)
+    latitud = models.DecimalField(
+        max_digits=9, 
+        decimal_places=6, 
+        blank=True, 
+        null=True,
+        verbose_name='Latitud'
+    )
+    longitud = models.DecimalField(
+        max_digits=9, 
+        decimal_places=6, 
+        blank=True, 
+        null=True,
+        verbose_name='Longitud'
+    )
+    
+    # Dimensiones
+    area = models.DecimalField(
+        max_digits=10, 
+        decimal_places=2,
+        validators=[MinValueValidator(0)],
+        verbose_name='Área (m²)'
+    )
+    area_construida = models.DecimalField(
+        max_digits=10, 
+        decimal_places=2,
+        blank=True,
+        null=True,
+        validators=[MinValueValidator(0)],
+        verbose_name='Área Construida (m²)'
+    )
+    frente = models.DecimalField(
+        max_digits=8, 
+        decimal_places=2,
+        blank=True,
+        null=True,
+        validators=[MinValueValidator(0)],
+        verbose_name='Frente (m)'
+    )
+    fondo = models.DecimalField(
+        max_digits=8, 
+        decimal_places=2,
+        blank=True,
+        null=True,
+        validators=[MinValueValidator(0)],
+        verbose_name='Fondo (m)'
+    )
+    
+    # Normativa urbanística
+    tratamiento_urbanistico = models.CharField(
+        max_length=50,
+        choices=TRATAMIENTO_CHOICES,
+        blank=True,
+        null=True,
+        verbose_name='Tratamiento Urbanístico'
+    )
+    uso_suelo = models.CharField(
+        max_length=50,
+        choices=USO_SUELO_CHOICES,
+        blank=True,
+        null=True,
+        verbose_name='Uso del Suelo'
+    )
+    altura_maxima = models.DecimalField(
+        max_digits=5,
+        decimal_places=2,
+        blank=True,
+        null=True,
+        validators=[MinValueValidator(0)],
+        verbose_name='Altura Máxima (m)'
+    )
+    indice_ocupacion = models.DecimalField(
+        max_digits=3,
+        decimal_places=2,
+        blank=True,
+        null=True,
+        validators=[MinValueValidator(0), MaxValueValidator(1)],
+        verbose_name='Índice de Ocupación'
+    )
+    indice_construccion = models.DecimalField(
+        max_digits=4,
+        decimal_places=2,
+        blank=True,
+        null=True,
+        validators=[MinValueValidator(0)],
+        verbose_name='Índice de Construcción'
+    )
+    
+    # Valoración
+    avaluo_catastral = models.DecimalField(
+        max_digits=15,
+        decimal_places=2,
+        blank=True,
+        null=True,
+        validators=[MinValueValidator(0)],
+        verbose_name='Avalúo Catastral'
+    )
+    valor_comercial = models.DecimalField(
+        max_digits=15,
+        decimal_places=2,
+        blank=True,
+        null=True,
+        validators=[MinValueValidator(0)],
+        verbose_name='Valor Comercial'
+    )
+    valor_m2 = models.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        blank=True,
+        null=True,
+        validators=[MinValueValidator(0)],
+        verbose_name='Valor por m²'
+    )
+    
+    # Estado
+    status = models.CharField(
+        max_length=20,
+        choices=STATUS_CHOICES,
+        default='active',
+        verbose_name='Estado',
+        db_index=True
+    )
+    
+    # Metadatos
+    notas = models.TextField(blank=True, null=True, verbose_name='Notas')
+    datos_mapgis = models.JSONField(
+        default=dict,
+        blank=True,
+        verbose_name='Datos de MapGIS'
+    )
+    
+    # Verificación
     is_verified = models.BooleanField(
         default=False,
-        help_text="Indica si el lote ha sido verificado por un administrador"
+        verbose_name='Verificado'
     )
-    
+    verified_at = models.DateTimeField(
+        blank=True,
+        null=True,
+        verbose_name='Fecha de Verificación'
+    )
     verified_by = models.ForeignKey(
         User,
         on_delete=models.SET_NULL,
         null=True,
         blank=True,
         related_name='lotes_verificados',
-        help_text="Administrador que verificó el lote"
+        verbose_name='Verificado por'
     )
     
-    verified_at = models.DateTimeField(
-        null=True,
-        blank=True,
-        help_text="Fecha y hora de verificación"
-    )
-    
-    rejection_reason = models.TextField(
-        null=True,
-        blank=True,
-        help_text="Razón de rechazo si el estado es rejected"
-    )
+    # Timestamps
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name='Fecha de Creación')
+    updated_at = models.DateTimeField(auto_now=True, verbose_name='Última Actualización')
     
     class Meta:
-        verbose_name = "Lote"
-        verbose_name_plural = "Lotes"
-        ordering = ['-fecha_creacion']
+        verbose_name = 'Lote'
+        verbose_name_plural = 'Lotes'
+        ordering = ['-created_at']
+        db_table = 'lotes_lote'
         indexes = [
-            models.Index(fields=['usuario', 'estado']),
-            models.Index(fields=['is_verified']),
             models.Index(fields=['cbml']),
-            models.Index(fields=['fecha_creacion']),
+            models.Index(fields=['matricula']),
+            models.Index(fields=['owner', 'status']),
+            models.Index(fields=['barrio', 'comuna']),
+            models.Index(fields=['-created_at']),
         ]
     
     def __str__(self):
-        return f"{self.nombre} - {self.cbml or 'Sin CBML'}"
+        return f"Lote {self.cbml} - {self.direccion}"
     
     def clean(self):
-        """Validación personalizada"""
+        """Validación del modelo"""
         super().clean()
         
-        # Al menos CBML o matrícula debe estar presente
-        if not self.cbml and not self.matricula:
-            raise ValidationError(
-                'Debe proporcionar al menos el CBML o la matrícula del lote'
-            )
+        # Validar CBML
+        if self.cbml:
+            if len(self.cbml) != 14:
+                raise ValidationError({
+                    'cbml': 'El CBML debe tener exactamente 14 dígitos'
+                })
+            if not self.cbml.isdigit():
+                raise ValidationError({
+                    'cbml': 'El CBML debe contener solo números'
+                })
+        
+        # Validar área construida no mayor que área del lote
+        if self.area_construida and self.area:
+            if self.area_construida > self.area * 10:  # Considerando múltiples pisos
+                raise ValidationError({
+                    'area_construida': 'El área construida es demasiado grande para el área del lote'
+                })
     
     def save(self, *args, **kwargs):
-        # Limpiar el CBML (eliminar espacios, guiones, etc.)
-        if self.cbml:
-            self.cbml = re.sub(r'[^0-9]', '', self.cbml)
+        """Override save para validar y calcular valores"""
         self.full_clean()
+        
+        # Calcular valor por m² si no existe
+        if self.valor_comercial and self.area and not self.valor_m2:
+            self.valor_m2 = self.valor_comercial / self.area
+        
+        is_new = self.pk is None
         super().save(*args, **kwargs)
-    
-    def verify(self, admin_user):
-        """Marca el lote como verificado"""
-        from django.utils import timezone
         
-        self.is_verified = True
-        self.verified_by = admin_user
-        self.verified_at = timezone.now()
-        self.estado = 'active'
-        self.save()
+        if is_new:
+            logger.info(f"New lote created: {self.cbml} by {self.owner.email}")
+        else:
+            logger.debug(f"Lote updated: {self.cbml}")
     
-    def reject(self, admin_user, reason=''):
-        """Marca el lote como rechazado"""
-        from django.utils import timezone
-        
-        self.is_verified = False
-        self.verified_by = admin_user
-        self.verified_at = timezone.now()
-        self.estado = 'rejected'
-        self.rejection_reason = reason
-        self.save()
+    @property
+    def esta_disponible(self):
+        """Verifica si el lote está disponible"""
+        return self.status == 'active'
     
-    def archive(self, admin_user):
-        """Archiva el lote"""
-        from django.utils import timezone
+    def calcular_potencial_constructivo(self):
+        """Calcula el potencial constructivo del lote"""
+        if not self.area or not self.indice_construccion:
+            return None
         
-        self.estado = 'archived'
-        self.verified_by = admin_user
-        self.verified_at = timezone.now()
-        self.save()
+        area_maxima = float(self.area) * float(self.indice_construccion)
+        
+        potencial = {
+            'area_maxima_construccion': round(area_maxima, 2),
+            'area_lote': float(self.area),
+            'indice_construccion': float(self.indice_construccion),
+        }
+        
+        if self.altura_maxima and self.indice_ocupacion:
+            area_por_piso = float(self.area) * float(self.indice_ocupacion)
+            pisos_maximos = int(float(self.altura_maxima) / 3)  # Asumiendo 3m por piso
+            
+            potencial.update({
+                'pisos_maximos': pisos_maximos,
+                'area_por_piso': round(area_por_piso, 2),
+            })
+        
+        return potencial
 
-class Tratamiento(models.Model):
+
+class LoteDocument(models.Model):
     """
-    Modelo para representar los tratamientos urbanísticos definidos en el POT.
+    Documentos asociados a un lote (escrituras, planos, fotos, etc.)
     """
-    TIPOS_TRATAMIENTO = [
-        ('CN1', 'Consolidación Nivel 1'),
-        ('CN2', 'Consolidación Nivel 2'),
-        ('CN3', 'Consolidación Nivel 3'),
-        ('CN4', 'Consolidación Nivel 4'),
-        ('CN5', 'Consolidación Nivel 5'),
-        ('RU', 'Redesarrollo'),
-        ('D', 'Desarrollo'),
-        ('C', 'Conservación'),
+    DOCUMENT_TYPE_CHOICES = [
+        ('escritura', 'Escritura Pública'),
+        ('cedula_catastral', 'Cédula Catastral'),
+        ('plano', 'Plano'),
+        ('foto', 'Fotografía'),
+        ('levantamiento', 'Levantamiento Topográfico'),
+        ('certificado', 'Certificado'),
+        ('otro', 'Otro'),
     ]
     
-    codigo = models.CharField("Código", max_length=10, unique=True, help_text="Código único del tratamiento (ej: CN1)")
-    nombre = models.CharField("Nombre", max_length=100, choices=TIPOS_TRATAMIENTO, help_text="Nombre del tratamiento")
-    descripcion = models.TextField("Descripción", blank=True, null=True, help_text="Descripción detallada del tratamiento")
+    id = models.AutoField(primary_key=True)
+    lote = models.ForeignKey(
+        Lote,
+        on_delete=models.CASCADE,
+        related_name='documentos',
+        verbose_name='Lote'
+    )
+    tipo = models.CharField(
+        max_length=50,
+        choices=DOCUMENT_TYPE_CHOICES,
+        verbose_name='Tipo de Documento'
+    )
+    titulo = models.CharField(max_length=255, verbose_name='Título')
+    descripcion = models.TextField(blank=True, null=True, verbose_name='Descripción')
+    archivo = models.FileField(
+        upload_to='lotes/documentos/',
+        verbose_name='Archivo'
+    )
     
-    # Índices de aprovechamiento
-    indice_ocupacion = models.DecimalField("Índice de ocupación", max_digits=3, decimal_places=2, null=True, blank=True, help_text="Relación área ocupada / área del lote (0-1)")
-    indice_construccion = models.DecimalField("Índice de construcción", max_digits=3, decimal_places=1, null=True, blank=True, help_text="Relación área construida / área del lote")
-    altura_maxima = models.PositiveSmallIntegerField("Altura máxima (pisos)", null=True, blank=True, help_text="Número máximo de pisos permitidos")
-    
-    # Retiros
-    retiro_frontal = models.DecimalField("Retiro frontal (m)", max_digits=4, decimal_places=1, null=True, blank=True)
-    retiro_lateral = models.DecimalField("Retiro lateral (m)", max_digits=4, decimal_places=1, null=True, blank=True)
-    retiro_posterior = models.DecimalField("Retiro posterior (m)", max_digits=4, decimal_places=1, null=True, blank=True)
-    
-    # Campos adicionales
-    detalles = models.JSONField("Detalles adicionales", default=dict, blank=True, help_text="Otros detalles específicos del tratamiento")
-    fecha_actualizacion = models.DateTimeField("Última actualización", auto_now=True)
-    activo = models.BooleanField("Activo", default=True, help_text="Indica si este tratamiento sigue vigente")
-    
-    class Meta:
-        verbose_name = "Tratamiento Urbanístico"
-        verbose_name_plural = "Tratamientos Urbanísticos"
-        ordering = ['codigo']
-    
-    def __str__(self):
-        return f"{self.codigo} - {self.nombre}"
-
-
-class TratamientoNormativaLote(models.Model):
-    """
-    Modelo para almacenar las normativas de dimensiones mínimas de lotes según el tratamiento.
-    """
-    TIPOS_VIVIENDA = [
-        ('unifamiliar', 'Unifamiliar'),
-        ('bifamiliar_pisos_diferentes', 'Bifamiliar en pisos diferentes'),
-        ('bifamiliar_mismo_piso', 'Bifamiliar en el mismo piso'),
-        ('trifamiliar', 'Trifamiliar'),
-        ('multifamiliar', 'Multifamiliar'),
-    ]
-    
-    tratamiento = models.ForeignKey(Tratamiento, on_delete=models.CASCADE, related_name='normativas_lote')
-    tipo_vivienda = models.CharField("Tipo de vivienda", max_length=30, choices=TIPOS_VIVIENDA)
-    frente_minimo = models.DecimalField("Frente mínimo (m)", max_digits=5, decimal_places=2)
-    area_minima = models.DecimalField("Área mínima (m²)", max_digits=8, decimal_places=2)
+    uploaded_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        related_name='documentos_subidos',
+        verbose_name='Subido por'
+    )
+    uploaded_at = models.DateTimeField(auto_now_add=True, verbose_name='Fecha de Subida')
     
     class Meta:
-        verbose_name = "Normativa de Lote por Tratamiento"
-        verbose_name_plural = "Normativas de Lotes por Tratamiento"
-        unique_together = ['tratamiento', 'tipo_vivienda']
-        ordering = ['tratamiento', 'tipo_vivienda']
+        verbose_name = 'Documento de Lote'
+        verbose_name_plural = 'Documentos de Lote'
+        ordering = ['-uploaded_at']
+        db_table = 'lotes_lotedocument'
     
     def __str__(self):
-        return f"{self.tratamiento.nombre} - {self.get_tipo_vivienda_display()}"
+        return f"{self.get_tipo_display()} - {self.titulo}"
 
 
-class TratamientoAreaMinimaVivienda(models.Model):
+class LoteHistory(models.Model):
     """
-    Modelo para almacenar las áreas mínimas de vivienda según el tratamiento.
+    Historial de cambios de un lote para auditoría
     """
-    TIPOS_VIVIENDA = [
-        ('1_alcoba', '1 Alcoba'),
-        ('2_alcobas', '2 Alcobas'),
-        ('3_alcobas_vip', '3 Alcobas VIP'),
-        ('3_alcobas_vis', '3 Alcobas VIS'),
-        ('4_alcobas_vip', '4 Alcobas VIP'),
-        ('4_alcobas_vis', '4 Alcobas VIS'),
-    ]
+    id = models.AutoField(primary_key=True)
+    lote = models.ForeignKey(
+        Lote,
+        on_delete=models.CASCADE,
+        related_name='historial',
+        verbose_name='Lote'
+    )
+    campo_modificado = models.CharField(max_length=100, verbose_name='Campo Modificado')
+    valor_anterior = models.TextField(blank=True, null=True, verbose_name='Valor Anterior')
+    valor_nuevo = models.TextField(blank=True, null=True, verbose_name='Valor Nuevo')
     
-    tratamiento = models.ForeignKey(Tratamiento, on_delete=models.CASCADE, related_name='areas_minimas_vivienda')
-    tipo_vivienda = models.CharField("Tipo de vivienda", max_length=30, choices=TIPOS_VIVIENDA)
-    area_minima = models.DecimalField("Área mínima (m²)", max_digits=8, decimal_places=2)
+    modificado_por = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        related_name='modificaciones_lotes',
+        verbose_name='Modificado por'
+    )
+    fecha_modificacion = models.DateTimeField(auto_now_add=True, verbose_name='Fecha de Modificación')
+    motivo = models.TextField(blank=True, null=True, verbose_name='Motivo')
     
     class Meta:
-        verbose_name = "Área Mínima de Vivienda por Tratamiento"
-        verbose_name_plural = "Áreas Mínimas de Vivienda por Tratamiento"
-        unique_together = ['tratamiento', 'tipo_vivienda']
-        ordering = ['tratamiento', 'tipo_vivienda']
+        verbose_name = 'Historial de Lote'
+        verbose_name_plural = 'Historiales de Lote'
+        ordering = ['-fecha_modificacion']
+        db_table = 'lotes_lotehistory'
     
     def __str__(self):
-        return f"{self.tratamiento.nombre} - {self.get_tipo_vivienda_display()}"
+        return f"{self.lote.cbml} - {self.campo_modificado} ({self.fecha_modificacion})"
 
 
 class Favorite(models.Model):
-    """Modelo para lotes favoritos de usuarios"""
-    usuario = models.ForeignKey(
-        settings.AUTH_USER_MODEL,  # ✅ Ahora funciona correctamente
-        on_delete=models.CASCADE,
-        related_name='lotes_favoritos',
-        help_text="Usuario que marcó el lote como favorito"
-    )
-    lote = models.ForeignKey(
-        'Lote',
+    """
+    Lotes favoritos de los usuarios (para desarrolladores)
+    """
+    id = models.AutoField(primary_key=True)
+    user = models.ForeignKey(
+        User,
         on_delete=models.CASCADE,
         related_name='favoritos',
-        help_text="Lote marcado como favorito"
+        verbose_name='Usuario'
     )
-    created_at = models.DateTimeField(auto_now_add=True)
-    notas = models.TextField(
-        blank=True,
-        null=True,
-        help_text="Notas personales sobre el lote"
+    lote = models.ForeignKey(
+        Lote,
+        on_delete=models.CASCADE,
+        related_name='favoritos',
+        verbose_name='Lote'
     )
+    notas = models.TextField(blank=True, null=True, verbose_name='Notas Personales')
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name='Fecha de Agregado')
     
     class Meta:
-        db_table = 'lotes_favoritos'
-        verbose_name = "Lote Favorito"
-        verbose_name_plural = "Lotes Favoritos"
+        verbose_name = 'Favorito'
+        verbose_name_plural = 'Favoritos'
         ordering = ['-created_at']
-        unique_together = [['usuario', 'lote']]
-        indexes = [
-            models.Index(fields=['usuario', 'created_at'], name='lotes_fav_usuario_idx'),
-            models.Index(fields=['lote', 'created_at'], name='lotes_fav_lote_idx'),
-        ]
+        unique_together = ['user', 'lote']
+        db_table = 'lotes_favorite'
     
     def __str__(self):
-        return f"{self.usuario.email} - {self.lote.nombre}"
+        return f"{self.user.email} - {self.lote.cbml}"
+
+
+class Tratamiento(models.Model):
+    """
+    Modelo para tratamientos urbanísticos del POT
+    Define los parámetros normativos para cada tipo de tratamiento
+    """
+    codigo = models.CharField(max_length=10, unique=True, verbose_name='Código')
+    nombre = models.CharField(max_length=100, verbose_name='Nombre')
+    descripcion = models.TextField(blank=True, null=True, verbose_name='Descripción')
+    
+    # Índices urbanísticos
+    indice_ocupacion = models.DecimalField(
+        max_digits=3,
+        decimal_places=2,
+        blank=True,
+        null=True,
+        verbose_name='Índice de Ocupación'
+    )
+    indice_construccion = models.DecimalField(
+        max_digits=4,
+        decimal_places=2,
+        blank=True,
+        null=True,
+        verbose_name='Índice de Construcción'
+    )
+    altura_maxima = models.IntegerField(
+        blank=True,
+        null=True,
+        verbose_name='Altura Máxima (m)'
+    )
+    
+    # Retiros
+    retiro_frontal = models.DecimalField(
+        max_digits=5,
+        decimal_places=2,
+        blank=True,
+        null=True,
+        verbose_name='Retiro Frontal (m)'
+    )
+    retiro_lateral = models.DecimalField(
+        max_digits=5,
+        decimal_places=2,
+        blank=True,
+        null=True,
+        verbose_name='Retiro Lateral (m)'
+    )
+    retiro_posterior = models.DecimalField(
+        max_digits=5,
+        decimal_places=2,
+        blank=True,
+        null=True,
+        verbose_name='Retiro Posterior (m)'
+    )
+    
+    activo = models.BooleanField(default=True, verbose_name='Activo')
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    class Meta:
+        verbose_name = 'Tratamiento Urbanístico'
+        verbose_name_plural = 'Tratamientos Urbanísticos'
+        ordering = ['codigo']
+        db_table = 'lotes_tratamiento'
+    
+    def __str__(self):
+        return f"{self.codigo} - {self.nombre}"

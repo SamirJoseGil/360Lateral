@@ -1,223 +1,165 @@
-import json
-import os
-from typing import Dict, Any, Optional
-from django.conf import settings
+"""
+Servicio para cálculos de tratamientos urbanísticos
+"""
 import logging
+from typing import Dict, Optional
+from decimal import Decimal
+
+from ..models import Tratamiento
 
 logger = logging.getLogger(__name__)
 
+
 class TratamientosService:
     """
-    Servicio para gestión de tratamientos urbanísticos del POT de Medellín
+    Servicio para cálculos relacionados con tratamientos urbanísticos del POT
     """
     
-    def __init__(self):
-        self.tratamientos_data = None
-        self._cargar_tratamientos()
-    
-    def _cargar_tratamientos(self):
-        """Carga los datos de tratamientos desde el archivo JSON"""
-        try:
-            # Ruta al archivo de tratamientos
-            file_path = os.path.join(
-                os.path.dirname(__file__), 
-                '..', 
-                'data', 
-                'tratamientos_pot.json'
-            )
-            
-            with open(file_path, 'r', encoding='utf-8') as file:
-                self.tratamientos_data = json.load(file)
-                logger.info(f"Cargados {len(self.tratamientos_data)} tratamientos del POT")
-                
-        except FileNotFoundError:
-            logger.error("Archivo de tratamientos no encontrado")
-            self.tratamientos_data = {}
-        except json.JSONDecodeError as e:
-            logger.error(f"Error al parsear JSON de tratamientos: {e}")
-            self.tratamientos_data = {}
-        except Exception as e:
-            logger.error(f"Error inesperado al cargar tratamientos: {e}")
-            self.tratamientos_data = {}
-    
-    def obtener_tratamiento(self, nombre_tratamiento: str) -> Optional[Dict[str, Any]]:
+    @staticmethod
+    def obtener_tratamiento(codigo: str) -> Optional[Tratamiento]:
         """
-        Obtiene la información completa de un tratamiento específico
+        Obtiene un tratamiento por su código
         
         Args:
-            nombre_tratamiento: Nombre del tratamiento (ej: "Consolidación Nivel 4")
-        
+            codigo: Código del tratamiento (ej: 'CN1', 'RU', etc.)
+            
         Returns:
-            Dict con la información del tratamiento o None si no existe
+            Instancia de Tratamiento o None
         """
-        if not self.tratamientos_data:
+        try:
+            return Tratamiento.objects.get(codigo=codigo, activo=True)
+        except Tratamiento.DoesNotExist:
+            logger.warning(f"Tratamiento {codigo} no encontrado")
             return None
-            
-        # Buscar tratamiento exacto
-        if nombre_tratamiento in self.tratamientos_data:
-            return self.tratamientos_data[nombre_tratamiento]
-        
-        # Buscar tratamiento con variaciones (sin sensibilidad a mayúsculas/minúsculas)
-        nombre_lower = nombre_tratamiento.lower()
-        for tratamiento_key, tratamiento_data in self.tratamientos_data.items():
-            if tratamiento_key.lower() == nombre_lower:
-                return tratamiento_data
-        
-        logger.warning(f"Tratamiento no encontrado: {nombre_tratamiento}")
-        return None
     
-    def calcular_aprovechamiento(self, tratamiento_nombre: str, area_lote: float, 
-                               tipologia: str = "multifamiliar") -> Dict[str, Any]:
+    @staticmethod
+    def listar_tratamientos() -> Dict:
         """
-        Calcula el aprovechamiento urbanístico para un lote específico
-        
-        Args:
-            tratamiento_nombre: Nombre del tratamiento
-            area_lote: Área del lote en m²
-            tipologia: Tipo de vivienda (unifamiliar, multifamiliar, etc.)
+        Lista todos los tratamientos urbanísticos disponibles
         
         Returns:
-            Dict con los cálculos de aprovechamiento
+            Diccionario con tratamientos agrupados por tipo
         """
-        tratamiento = self.obtener_tratamiento(tratamiento_nombre)
-        if not tratamiento:
-            return {
-                "error": f"Tratamiento '{tratamiento_nombre}' no encontrado",
-                "tratamiento_valido": False
-            }
+        tratamientos = Tratamiento.objects.filter(activo=True).order_by('codigo')
         
-        try:
-            # Parámetros básicos
-            indice_ocupacion = tratamiento.get('indice_ocupacion', 0.7)
-            indice_construccion = tratamiento.get('indice_construccion', 2.0)
-            altura_maxima = tratamiento.get('altura_maxima', 3)
-            
-            # Cálculos principales
-            area_ocupacion = area_lote * indice_ocupacion
-            area_construccion_maxima = area_lote * indice_construccion
-            numero_pisos_maximo = int(altura_maxima)
-            
-            # Área mínima de lote según tipología
-            area_minima_lote = tratamiento.get('area_minima_lote', {}).get(tipologia, 60)
-            
-            # Verificar si cumple área mínima
-            cumple_area_minima = area_lote >= area_minima_lote
-            
-            # Estimación de unidades (basado en área promedio por unidad)
-            area_promedio_unidad = tratamiento.get('area_minima_vivienda', {}).get('2_alcobas', 45)
-            unidades_estimadas = int(area_construccion_maxima / area_promedio_unidad)
-            
-            resultado = {
-                "tratamiento_nombre": tratamiento_nombre,
-                "tratamiento_valido": True,
-                "area_lote": area_lote,
-                "tipologia": tipologia,
-                "parametros_normativos": {
-                    "indice_ocupacion": indice_ocupacion,
-                    "indice_construccion": indice_construccion,
-                    "altura_maxima": altura_maxima,
-                    "area_minima_lote": area_minima_lote
-                },
-                "calculos_aprovechamiento": {
-                    "area_ocupacion_maxima": round(area_ocupacion, 2),
-                    "area_construccion_maxima": round(area_construccion_maxima, 2),
-                    "numero_pisos_maximo": numero_pisos_maximo,
-                    "unidades_estimadas": unidades_estimadas,
-                    "cumple_area_minima": cumple_area_minima
-                },
-                "retiros": {
-                    "frontal": tratamiento.get('retiro_frontal', 3),
-                    "lateral": tratamiento.get('retiro_lateral', 3),
-                    "posterior": tratamiento.get('retiro_posterior', 3)
-                }
-            }
-            
-            logger.info(f"Cálculo exitoso para {tratamiento_nombre} - Área: {area_lote}m²")
-            return resultado
-            
-        except Exception as e:
-            logger.error(f"Error en cálculo de aprovechamiento: {e}")
-            return {
-                "error": f"Error en cálculo: {str(e)}",
-                "tratamiento_valido": False
-            }
-    
-    def obtener_tipologias_viables(self, tratamiento_nombre: str, area_lote: float, 
-                                 frente_lote: float = None) -> Dict[str, Any]:
-        """
-        Determina qué tipologías son viables para un lote específico
-        
-        Args:
-            tratamiento_nombre: Nombre del tratamiento
-            area_lote: Área del lote en m²
-            frente_lote: Frente del lote en metros (opcional)
-        
-        Returns:
-            Dict con las tipologías viables
-        """
-        tratamiento = self.obtener_tratamiento(tratamiento_nombre)
-        if not tratamiento:
-            return {"error": f"Tratamiento '{tratamiento_nombre}' no encontrado"}
-        
-        tipologias_viables = []
-        areas_minimas = tratamiento.get('area_minima_lote', {})
-        frentes_minimos = tratamiento.get('frente_minimo', {})
-        
-        for tipologia, area_minima in areas_minimas.items():
-            frente_minimo = frentes_minimos.get(tipologia, 6)
-            
-            # Verificar área
-            cumple_area = area_lote >= area_minima
-            
-            # Verificar frente si se proporciona
-            cumple_frente = True
-            if frente_lote is not None:
-                cumple_frente = frente_lote >= frente_minimo
-            
-            if cumple_area and cumple_frente:
-                aprovechamiento = self.calcular_aprovechamiento(
-                    tratamiento_nombre, area_lote, tipologia
-                )
-                
-                tipologias_viables.append({
-                    "tipologia": tipologia,
-                    "area_minima_requerida": area_minima,
-                    "frente_minimo_requerido": frente_minimo,
-                    "cumple_requisitos": True,
-                    "aprovechamiento": aprovechamiento.get('calculos_aprovechamiento', {})
-                })
-        
-        return {
-            "tratamiento_nombre": tratamiento_nombre,
-            "area_lote": area_lote,
-            "frente_lote": frente_lote,
-            "tipologias_viables": tipologias_viables,
-            "total_tipologias_viables": len(tipologias_viables)
+        resultado = {
+            'consolidacion': [],
+            'otros': []
         }
+        
+        for t in tratamientos:
+            info = {
+                'codigo': t.codigo,
+                'nombre': t.nombre,
+                'descripcion': t.descripcion,
+                'indice_ocupacion': float(t.indice_ocupacion) if t.indice_ocupacion else None,
+                'indice_construccion': float(t.indice_construccion) if t.indice_construccion else None,
+                'altura_maxima': t.altura_maxima,
+            }
+            
+            if t.codigo.startswith('CN'):
+                resultado['consolidacion'].append(info)
+            else:
+                resultado['otros'].append(info)
+        
+        logger.info(f"Listados {len(tratamientos)} tratamientos")
+        return resultado
     
-    def listar_tratamientos(self) -> Dict[str, Any]:
+    @staticmethod
+    def calcular_aprovechamiento(area_lote: float, tratamiento_codigo: str) -> Dict:
         """
-        Lista todos los tratamientos disponibles
+        Calcula el aprovechamiento urbanístico de un lote
         
+        Args:
+            area_lote: Área del lote en m²
+            tratamiento_codigo: Código del tratamiento aplicable
+            
         Returns:
-            Dict con todos los tratamientos y sus descripciones
+            Diccionario con cálculos de aprovechamiento
         """
-        if not self.tratamientos_data:
-            return {"error": "No hay tratamientos cargados"}
+        tratamiento = TratamientosService.obtener_tratamiento(tratamiento_codigo)
         
-        tratamientos_lista = {}
-        for nombre, datos in self.tratamientos_data.items():
-            tratamientos_lista[nombre] = {
-                "descripcion": datos.get('descripcion', ''),
-                "indice_ocupacion": datos.get('indice_ocupacion', 0),
-                "indice_construccion": datos.get('indice_construccion', 0),
-                "altura_maxima": datos.get('altura_maxima', 0)
+        if not tratamiento:
+            return {
+                'error': f'Tratamiento {tratamiento_codigo} no encontrado',
+                'area_lote': area_lote,
+                'tratamiento': tratamiento_codigo
+            }
+        
+        # Cálculos básicos
+        calculo = {
+            'area_lote': area_lote,
+            'tratamiento': {
+                'codigo': tratamiento.codigo,
+                'nombre': tratamiento.nombre,
+            }
+        }
+        
+        # Área máxima de construcción
+        if tratamiento.indice_construccion:
+            area_maxima = area_lote * float(tratamiento.indice_construccion)
+            calculo['area_maxima_construccion'] = round(area_maxima, 2)
+        
+        # Área por piso
+        if tratamiento.indice_ocupacion:
+            area_piso = area_lote * float(tratamiento.indice_ocupacion)
+            calculo['area_maxima_por_piso'] = round(area_piso, 2)
+        
+        # Número de pisos
+        if tratamiento.altura_maxima:
+            altura_piso = 3  # metros por piso estándar
+            pisos = int(tratamiento.altura_maxima / altura_piso)
+            calculo['numero_maximo_pisos'] = pisos
+        
+        # Retiros
+        if tratamiento.retiro_frontal:
+            calculo['retiro_frontal'] = float(tratamiento.retiro_frontal)
+        if tratamiento.retiro_lateral:
+            calculo['retiro_lateral'] = float(tratamiento.retiro_lateral)
+        if tratamiento.retiro_posterior:
+            calculo['retiro_posterior'] = float(tratamiento.retiro_posterior)
+        
+        logger.info(f"Aprovechamiento calculado para {area_lote}m² con tratamiento {tratamiento_codigo}")
+        return calculo
+    
+    @staticmethod
+    def obtener_tratamiento_por_cbml(cbml: str) -> Dict:
+        """
+        Obtiene el tratamiento aplicable a un predio por su CBML
+        
+        Args:
+            cbml: Código CBML del predio
+            
+        Returns:
+            Diccionario con información del tratamiento
+        """
+        from .mapgis_service import MapGISService
+        
+        mapgis = MapGISService()
+        resultado = mapgis.buscar_por_cbml(cbml)
+        
+        if not resultado.get('success'):
+            return {
+                'error': 'No se pudo obtener información de MapGIS',
+                'cbml': cbml
+            }
+        
+        data = resultado.get('data', {})
+        aprovechamiento = data.get('aprovechamiento_urbano', {})
+        
+        tratamiento_nombre = aprovechamiento.get('tratamiento')
+        
+        if tratamiento_nombre:
+            return {
+                'cbml': cbml,
+                'tratamiento': tratamiento_nombre,
+                'densidad_max': aprovechamiento.get('densidad_habitacional_max'),
+                'altura_max': aprovechamiento.get('altura_normativa'),
+                'indice_construccion': aprovechamiento.get('indice_construccion'),
+                'indice_ocupacion': aprovechamiento.get('indice_ocupacion'),
             }
         
         return {
-            "tratamientos": tratamientos_lista,
-            "total": len(tratamientos_lista)
+            'error': 'No se encontró información de tratamiento',
+            'cbml': cbml
         }
-
-# Instancia global
-tratamientos_service = TratamientosService()

@@ -1,74 +1,73 @@
 #!/bin/bash
+
 set -e
 
-echo "🚀 Starting Backend entrypoint script..."
+echo "🚀 Starting Lateral 360° Backend..."
 
-# Function to check if PostgreSQL is ready
-function postgres_ready() {
-python << END
-import sys
-import psycopg2
-try:
-    conn = psycopg2.connect(
-        dbname="${DB_NAME:-lateral360}",
-        user="${DB_USER:-postgres}",
-        password="${DB_PASSWORD:-postgres}",
-        host="${DB_HOST:-db}",
-        port="${DB_PORT:-5432}",
-    )
-    conn.close()
-except psycopg2.OperationalError:
-    sys.exit(1)
-sys.exit(0)
-END
-}
-
-# Function to check if Redis is ready
-function redis_ready() {
-python << END
-import sys
-import redis
-try:
-    r = redis.Redis(host="${REDIS_HOST:-redis}", port="${REDIS_PORT:-6379}", db=0)
-    r.ping()
-except redis.ConnectionError:
-    sys.exit(1)
-sys.exit(0)
-END
-}
-
-# Wait for PostgreSQL to be ready
-echo "🔄 Waiting for PostgreSQL..."
-until postgres_ready; do
-  echo >&2 "🔄 PostgreSQL is unavailable - waiting..."
-  sleep 2
+# Esperar a que PostgreSQL esté listo
+echo "⏳ Waiting for PostgreSQL..."
+timeout=30
+counter=0
+while ! nc -z ${DB_HOST:-db} ${DB_PORT:-5432}; do
+    sleep 1
+    counter=$((counter + 1))
+    if [ $counter -ge $timeout ]; then
+        echo "❌ PostgreSQL connection timeout"
+        exit 1
+    fi
 done
-echo >&2 "✅ PostgreSQL is up - continuing..."
+echo "✅ PostgreSQL is ready!"
 
-# Wait for Redis to be ready
-echo "🔄 Waiting for Redis..."
-until redis_ready; do
-  echo >&2 "🔄 Redis is unavailable - waiting..."
-  sleep 2
-done
-echo >&2 "✅ Redis is up - continuing..."
+# Ejecutar migraciones en orden correcto
+echo "🔄 Running migrations in correct order..."
 
-# Apply database migrations
-echo >&2 "🔧 Applying database migrations..."
+echo "1️⃣ Migrating users..."
+python manage.py makemigrations users --noinput || true
+python manage.py migrate users --noinput
+
+echo "2️⃣ Skipping common (no models)..."
+# Common no tiene modelos, solo utilidades
+
+echo "3️⃣ Migrating authentication..."
+python manage.py makemigrations authentication --noinput || true
+python manage.py migrate authentication --noinput || true
+
+echo "4️⃣ Migrating pot..."
+python manage.py makemigrations pot --noinput || true
+python manage.py migrate pot --noinput || true
+
+echo "5️⃣ Migrating lotes..."
+python manage.py makemigrations lotes --noinput || true
+python manage.py migrate lotes --noinput || true
+
+echo "6️⃣ Migrating documents..."
+python manage.py makemigrations documents --noinput || true
+python manage.py migrate documents --noinput || true
+
+echo "7️⃣ Migrating stats..."
+python manage.py makemigrations stats --noinput || true
+python manage.py migrate stats --noinput || true
+
+echo "8️⃣ Running remaining migrations..."
+python manage.py makemigrations --noinput || true
 python manage.py migrate --noinput
 
-# Collect static files
-echo >&2 "📦 Collecting static files..."
-python manage.py collectstatic --noinput --clear
+# Recolectar archivos estáticos
+echo "📦 Collecting static files..."
+python manage.py collectstatic --noinput --clear || true
 
-# Create cache table if needed
-echo >&2 "🗄️ Setting up cache table..."
-python manage.py createcachetable || true
+# Crear superusuario usando script Python dedicado
+echo "👤 Creating superuser if not exists..."
+python scripts/create_superuser.py || echo "⚠️  Warning: Could not create superuser"
 
-# Check URL configuration
-echo >&2 "🔍 Checking Django configuration..."
-python manage.py check || true
+# Opcional: Crear usuarios adicionales
+if [ "$CREATE_ADDITIONAL_USERS" = "true" ]; then
+    echo "👥 Creating additional users..."
+    python scripts/create_additional_users.py || echo "⚠️  Warning: Could not create additional users"
+fi
 
-# Start the Django application
-echo >&2 "🚀 Starting Django application..."
+echo "✅ Initialization complete!"
+echo "🎉 Starting Django server..."
+
+# Ejecutar comando pasado como argumentos
 exec "$@"

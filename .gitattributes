@@ -1,0 +1,20 @@
+# Asegurar que los archivos .sh siempre usen LF (Unix)
+*.sh text eol=lf
+
+# Python files
+*.py text eol=lf
+
+# Otros archivos de texto
+*.txt text
+*.md text
+*.yml text
+*.yaml text
+*.json text
+
+# Archivos binarios
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.pdf binary

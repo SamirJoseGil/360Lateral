@@ -1,3 +1,6 @@
+"""
+Configuración de la aplicación de autenticación
+"""
 from django.apps import AppConfig
 
 

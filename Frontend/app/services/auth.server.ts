@@ -1,8 +1,8 @@
 // filepath: c:\Users\samir\Documents\GitHub\360Lateral\Frontend\app\services\auth.server.ts
 import { fetchWithAuth } from "~/utils/auth.server";
+import { API_URL } from "~/utils/env.server";
 
-// Constante para la URL base de la API
-const API_URL = process.env.API_URL || "http://localhost:8000";
+console.log(`[Auth Service] Using API_URL: ${API_URL}`);
 
 // Tipos para autenticación
 export type LoginData = {

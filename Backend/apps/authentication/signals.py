@@ -1,5 +1,5 @@
 """
-Señales para eventos de autenticación
+Signals para autenticación
 """
 import logging
 from django.contrib.auth.signals import user_logged_in, user_logged_out, user_login_failed

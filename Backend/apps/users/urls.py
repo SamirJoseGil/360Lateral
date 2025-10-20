@@ -1,33 +1,40 @@
 """
-URLs para la gestión de usuarios
+URLs para la aplicación de usuarios
 """
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
-from . import views
-from .views import UserRequestViewSet
 
+from .views import (
+    UserListCreateView,
+    UserDetailView,
+    UserRequestViewSet,
+    me,
+    update_profile,
+    users_health_check,
+    check_user_exists,
+)
+
+app_name = 'users'
+
+# Router para UserRequest ViewSet
 router = DefaultRouter()
-router.register(r'requests', UserRequestViewSet)
+router.register(r'requests', UserRequestViewSet, basename='userrequest')
 
 urlpatterns = [
-    # Vista para listar todos los usuarios o crear uno nuevo
-    path('', views.user_list_create, name='user-list-create'),
+    # Rutas de usuarios
+    path('', UserListCreateView.as_view(), name='user-list-create'),
+    path('<uuid:pk>/', UserDetailView.as_view(), name='user-detail'),
     
-    # Debug endpoint para verificar si usuario existe
-    path('check/<uuid:user_id>/', views.check_user_exists, name='check-user-exists'),
+    # Ruta para usuario actual
+    path('me/', me, name='user-me'),
+    path('me/update/', update_profile, name='user-update-profile'),
     
-    # Health check para usuarios
-    path('health/', views.users_health_check, name='users-health-check'),
+    # Health check
+    path('health/', users_health_check, name='users-health-check'),
     
-    # Vista para obtener el usuario actualmente autenticado
-    path('me/', views.me, name='user-me'),
+    # Debug endpoint
+    path('check/<uuid:user_id>/', check_user_exists, name='check-user-exists'),
     
-    # Vista para actualizar perfil del usuario actual
-    path('me/update/', views.update_profile, name='user-update-profile'),
-    
-    # Vista para obtener detalles de un usuario específico - soporta UUID
-    path('<uuid:pk>/', views.user_detail, name='user-detail'),
-
-    # User request URLs
+    # Include UserRequest routes from router
     path('', include(router.urls)),
 ]

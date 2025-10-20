@@ -11,18 +11,17 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data/
     environment:
-      - POSTGRES_PASSWORD=${DB_PASSWORD:-postgres}
-      - POSTGRES_USER=${DB_USER:-postgres}
-      - POSTGRES_DB=${DB_NAME:-lateral360}
-      - POSTGRES_INITDB_ARGS=--encoding=UTF-8 --lc-collate=C --lc-ctype=C
+      - POSTGRES_PASSWORD=${DB_PASSWORD:-lateral360_password}
+      - POSTGRES_USER=${DB_USER:-lateral360_user}
+      - POSTGRES_DB=${DB_NAME:-lateral360_db}
+      - POSTGRES_HOST_AUTH_METHOD=trust
     ports:
-      - "${DB_PORT:-5432}:5432"
+      - "5432:5432"
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-postgres} -d ${DB_NAME:-lateral360}"]
-      interval: 10s
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-lateral360_user} -d ${DB_NAME:-lateral360_db}"]
+      interval: 5s
       timeout: 5s
-      retries: 5
-      start_period: 30s
+      retries: 10
     networks:
       - lateral360_network
 
@@ -32,16 +31,15 @@ services:
     container_name: lateral360_redis
     restart: unless-stopped
     ports:
-      - "${REDIS_PORT:-6379}:6379"
+      - "6379:6379"
     volumes:
       - redis_data:/data
-    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    command: redis-server --appendonly yes
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
-      interval: 10s
+      interval: 5s
       timeout: 5s
-      retries: 5
-      start_period: 30s
+      retries: 10
     networks:
       - lateral360_network
 
@@ -57,43 +55,40 @@ services:
       - ./Backend:/app:cached
       - static_volume:/app/static
       - media_volume:/app/media
-      - backend_logs:/app/logs
     ports:
-      - "${BACKEND_PORT:-8000}:8000"
+      - "8000:8000"
+    env_file:
+      - .env
     environment:
-      # Database
-      - DB_NAME=${DB_NAME:-lateral360}
-      - DB_USER=${DB_USER:-postgres}
-      - DB_PASSWORD=${DB_PASSWORD:-postgres}
+      - DOCKER_ENV=true
       - DB_HOST=db
       - DB_PORT=5432
-      # Redis
+      - DB_NAME=${DB_NAME:-lateral360_db}
+      - DB_USER=${DB_USER:-lateral360_user}
+      - DB_PASSWORD=${DB_PASSWORD:-lateral360_password}
       - REDIS_HOST=redis
       - REDIS_PORT=6379
-      # Django
-      - DJANGO_SETTINGS_MODULE=config.settings.development
-      - DEBUG=${DEBUG:-1}
-      - SECRET_KEY=${SECRET_KEY:-dev-secret-key-change-in-production}
-      - ALLOWED_HOSTS=localhost,127.0.0.1,0.0.0.0,backend,lateral360_backend,${BACKEND_DOMAIN:-}
-      # CORS expandido para Docker
-      - CORS_ALLOWED_ORIGINS=http://localhost:3000,http://127.0.0.1:3000,http://frontend:3000,http://lateral360_frontend:3000,http://0.0.0.0:3000
-      - CSRF_TRUSTED_ORIGINS=http://localhost:3000,http://127.0.0.1:3000,http://frontend:3000,http://lateral360_frontend:3000
+      - DJANGO_SETTINGS_MODULE=config.settings
+      - DJANGO_ENV=development
+      - DEBUG=True
+      - ALLOWED_HOSTS=localhost,127.0.0.1,backend,0.0.0.0,lateral360_backend
+      - DJANGO_SUPERUSER_EMAIL=${DJANGO_SUPERUSER_EMAIL:-admin@lateral360.com}
+      - DJANGO_SUPERUSER_USERNAME=${DJANGO_SUPERUSER_USERNAME:-admin}
+      - DJANGO_SUPERUSER_PASSWORD=${DJANGO_SUPERUSER_PASSWORD:-admin123}
+      - CREATE_ADDITIONAL_USERS=${CREATE_ADDITIONAL_USERS:-false}
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/"]
       interval: 30s
       timeout: 10s
-      retries: 3
-      start_period: 60s
+      retries: 5
+      start_period: 120s
     depends_on:
       db:
         condition: service_healthy
       redis:
         condition: service_healthy
     networks:
-      lateral360_network:
-        aliases:
-          - backend
-          - api
+      - lateral360_network
 
   # Frontend Remix
   frontend:
@@ -106,59 +101,43 @@ services:
     volumes:
       - ./Frontend:/app:cached
       - /app/node_modules
-      - frontend_logs:/app/logs
     ports:
-      - "${FRONTEND_PORT:-3000}:3000"
+      - "3000:3000"
+    env_file:
+      - .env
     environment:
       - NODE_ENV=development
-      # URLs para SSR (internas del contenedor)
-      - VITE_API_URL=http://backend:8000/api
-      # URLs para cliente (externas)
-      - VITE_API_URL_EXTERNAL=http://localhost:${BACKEND_PORT:-8000}/api
-      # Configuración del backend
-      - VITE_BACKEND_HOST=backend
-      - VITE_BACKEND_PORT=8000
-      - VITE_APP_NAME=${APP_NAME:-Lateral 360°}
-      # Desarrollo
-      - CHOKIDAR_USEPOLLING=true
       - PORT=3000
       - HOST=0.0.0.0
-      # Debug
-      - DEBUG=1
+      # ✅ CRÍTICO: Variables de API - usar nombre del servicio Docker
+      - BACKEND_URL=http://backend:8000
+      - API_URL=http://backend:8000
+      - BACKEND_HOST=backend
+      - BACKEND_PORT=8000
+      # Para el navegador (cliente)
+      - VITE_API_URL=http://localhost:8000
+      # Session
+      - SESSION_SECRET=${SESSION_SECRET:-your-secret-key-here-change-in-production}
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:3000/"]
       interval: 30s
       timeout: 10s
-      retries: 3
-      start_period: 60s
+      retries: 5
+      start_period: 90s
     depends_on:
       backend:
         condition: service_healthy
     networks:
-      lateral360_network:
-        aliases:
-          - frontend
-          - web
+      - lateral360_network
 
 # Volúmenes persistentes
 volumes:
   postgres_data:
-    driver: local
   redis_data:
-    driver: local
   static_volume:
-    driver: local
   media_volume:
-    driver: local
-  backend_logs:
-    driver: local
-  frontend_logs:
-    driver: local
 
 # Red personalizada
 networks:
   lateral360_network:
     driver: bridge
-    ipam:
-      config:
-        - subnet: 172.20.0.0/16

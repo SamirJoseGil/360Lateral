@@ -1,14 +1,19 @@
 """
-Servicios de la aplicación de lotes - CORREGIDO SIN INICIALIZACIÓN AUTOMÁTICA
+Servicios para el módulo de lotes
 """
 # ❌ NO instanciar servicios aquí, solo importar las clases
 # Esto evita problemas de inicialización circular
 
 from .mapgis_service import MapGISService
+from .tratamientos_service import TratamientosService
 from .lotes_service import LotesService
 
 # ✅ Exportar solo las clases, NO instancias
-__all__ = ['MapGISService', 'LotesService']
+__all__ = [
+    'MapGISService',
+    'TratamientosService',
+    'LotesService',
+]
 
 # ❌ ELIMINAR ESTA LÍNEA que causa el error:
 # mapgis_service = MapGISService()

@@ -1,3 +1,6 @@
+"""
+Configuración de la aplicación de lotes
+"""
 from django.apps import AppConfig
 
 

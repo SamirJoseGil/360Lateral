@@ -1,7 +1,8 @@
 import { fetchWithAuth } from "~/utils/auth.server";
+import { API_URL, logApiUrl } from "~/utils/env.server";
 
 // Constante para la URL base de la API
-const API_URL = process.env.API_URL || "http://localhost:8000";
+// const API_URL = process.env.API_URL || "http://localhost:8000";
 
 // Tipos actualizados según la documentación del API
 export type User = {
@@ -74,6 +75,7 @@ export async function getUsers(request: Request, options: {
     if (options.status) url.searchParams.set('status', options.status);
     
     console.log(`[Users] Fetching users from: ${url.toString()}`);
+    logApiUrl("getUsers");
     
     const { res: response, setCookieHeaders } = await fetchWithAuth(request, url.toString(), {
       method: 'GET',

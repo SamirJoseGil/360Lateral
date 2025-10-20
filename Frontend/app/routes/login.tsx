@@ -1,8 +1,10 @@
 import { Form, useActionData, Link, useNavigation } from "@remix-run/react";
 import { ActionFunctionArgs, LoaderFunctionArgs, json, redirect } from "@remix-run/node";
 import { useState } from "react";
-import { getUser } from "~/utils/auth.server";
+import { getUser, commitAuthCookies } from "~/utils/auth.server";
 import { recordEvent } from "~/services/stats.server";
+import { API_URL } from "~/utils/env.server";
+
 
 // Loader para redirigir si ya está autenticado
 export async function loader({ request }: LoaderFunctionArgs) {
@@ -52,9 +54,11 @@ function getDashboardRoute(role: string): string {
     }
 }
 
-// Acción de login CORREGIDA
+// Acción de login - USAR commitAuthCookies
 export async function action({ request }: ActionFunctionArgs) {
     console.log("=== LOGIN ACTION START ===");
+    console.log(`🔗 Using API_URL: ${API_URL}`);
+
     const formData = await request.formData();
 
     const email = (formData.get("email") as string)?.trim().toLowerCase();
@@ -70,7 +74,10 @@ export async function action({ request }: ActionFunctionArgs) {
     }
 
     try {
-        const response = await fetch("http://localhost:8000/api/auth/login/", {
+        const loginUrl = `${API_URL}/api/auth/login/`;
+        console.log(`📡 Fetching: ${loginUrl}`);
+
+        const response = await fetch(loginUrl, {
             method: "POST",
             headers: {
                 "Content-Type": "application/json",
@@ -79,11 +86,10 @@ export async function action({ request }: ActionFunctionArgs) {
             body: JSON.stringify({ email, password }),
         });
 
-        console.log(`API response status: ${response.status}`);
+        console.log(`✅ API response status: ${response.status}`);
 
-        // Leer respuesta una sola vez
         const responseText = await response.text();
-        console.log("API raw response:", responseText);
+        console.log("API raw response:", responseText.substring(0, 200));
 
         let data;
         try {
@@ -98,16 +104,13 @@ export async function action({ request }: ActionFunctionArgs) {
 
         if (!response.ok) {
             console.error("Login failed:", data);
-
             const errorMessage = data.message || data.detail || "Error de autenticación";
-
             return json(
                 { errors: { general: errorMessage } },
                 { status: response.status }
             );
         }
 
-        // Verificar estructura de respuesta
         if (!data.success || !data.data) {
             console.error("Invalid response structure:", data);
             return json(
@@ -118,7 +121,6 @@ export async function action({ request }: ActionFunctionArgs) {
 
         const { refresh, access, user } = data.data;
 
-        // Validar que tenemos todo lo necesario
         if (!refresh || !access || !user) {
             console.error("Missing required data:", { refresh: !!refresh, access: !!access, user: !!user });
             return json(
@@ -127,33 +129,39 @@ export async function action({ request }: ActionFunctionArgs) {
             );
         }
 
-        console.log(`Login successful for user: ${user.email} (role: ${user.role})`);
+        console.log(`✅ Login successful for user: ${user.email} (role: ${user.role})`);
+        console.log(`📝 Access token: ${access.substring(0, 20)}...`);
+        console.log(`📝 Refresh token: ${refresh.substring(0, 20)}...`);
 
-        // Determinar ruta de redirección
         const dashboardRoute = getDashboardRoute(user.role);
 
-        // Crear cookies con configuración correcta
-        const headers = new Headers();
-        const isProduction = process.env.NODE_ENV === 'production';
-        const cookieOptions = `Path=/; HttpOnly; SameSite=Lax${isProduction ? '; Secure' : ''}; Max-Age=604800`;
+        // ✅ CRÍTICO: Usar commitAuthCookies de auth.server.ts
+        console.log(`🍪 Creating auth cookies...`);
+        const headers = await commitAuthCookies({
+            access,
+            refresh
+        });
 
-        headers.append("Set-Cookie", `l360_access=${encodeURIComponent(access)}; ${cookieOptions}`);
-        headers.append("Set-Cookie", `l360_refresh=${encodeURIComponent(refresh)}; ${cookieOptions}`);
-        headers.append("Set-Cookie", `l360_user=${encodeURIComponent(JSON.stringify(user))}; ${cookieOptions}`);
+        // Verificar que los headers se crearon
+        const setCookies = headers.getSetCookie();
+        console.log(`✅ Set-Cookie headers created: ${setCookies.length}`);
+        setCookies.forEach((cookie, index) => {
+            console.log(`   Cookie ${index + 1}: ${cookie.substring(0, 50)}...`);
+        });
 
-        console.log(`Redirecting to: ${dashboardRoute}`);
+        console.log(`➡️  Redirecting to: ${dashboardRoute}`);
         console.log("=== LOGIN ACTION END (SUCCESS) ===");
 
         return redirect(dashboardRoute, { headers });
 
     } catch (error) {
-        console.error("Login error:", error);
+        console.error("❌ Login error:", error);
         console.log("=== LOGIN ACTION END (ERROR) ===");
 
         let errorMessage = "Error de conexión al servidor";
 
         if (error instanceof TypeError && error.message.includes('fetch')) {
-            errorMessage = "No se pudo conectar al servidor. Verifica tu conexión.";
+            errorMessage = `No se pudo conectar al servidor (${API_URL}). Verifica tu conexión.`;
         }
 
         return json(

@@ -1,477 +1,278 @@
 """
-Utilidades comunes para todas las aplicaciones - Optimizado
+Utilidades comunes para toda la aplicación
 """
-
+import logging
+import re
+from typing import Any, Dict, Optional
 from rest_framework.views import exception_handler
 from rest_framework.response import Response
 from rest_framework import status
-from django.core.exceptions import ValidationError
-from django.http import Http404
-from django.db import connections
-from django.core.cache import cache
-import logging
-import time
-import json
-import hashlib
-import secrets
-import string
-import uuid
-from datetime import datetime
 
-logger = logging.getLogger('security')
+logger = logging.getLogger(__name__)
 
-def custom_exception_handler(exc, context):
+
+def get_client_ip(request) -> str:
     """
-    Manejador personalizado de excepciones que:
-    1. Log errores de seguridad
-    2. Oculta información sensible
-    3. Proporciona respuestas consistentes
+    Obtiene la dirección IP del cliente de forma segura.
+    Considera proxies y load balancers.
+    
+    Args:
+        request: Django request object
+        
+    Returns:
+        str: Dirección IP del cliente
     """
-    
-    # Obtener la respuesta estándar de DRF
-    response = exception_handler(exc, context)
-    
-    # Obtener información del request
-    request = context.get('request')
-    user = getattr(request, 'user', None)
-    
-    if response is not None:
-        custom_response_data = {
-            'error': True,
-            'message': 'Ha ocurrido un error',
-            'details': None,
-            'status_code': response.status_code
-        }
-        
-        # Manejar diferentes tipos de errores
-        if response.status_code == 400:
-            custom_response_data['message'] = 'Datos inválidos'
-            # Solo mostrar detalles en desarrollo
-            from django.conf import settings
-            if settings.DEBUG:
-                custom_response_data['details'] = response.data
-                
-        elif response.status_code == 401:
-            custom_response_data['message'] = 'No autorizado'
-            logger.warning(f"Unauthorized access attempt from {get_client_ip(request)}")
-            
-        elif response.status_code == 403:
-            custom_response_data['message'] = 'Acceso denegado'
-            logger.warning(f"Permission denied for user {user} on {request.path}")
-            
-        elif response.status_code == 404:
-            custom_response_data['message'] = 'Recurso no encontrado'
-            
-        elif response.status_code == 405:
-            custom_response_data['message'] = 'Método no permitido'
-            
-        elif response.status_code == 429:
-            custom_response_data['message'] = 'Demasiadas solicitudes'
-            logger.warning(f"Rate limit exceeded for {get_client_ip(request)}")
-            
-        elif response.status_code >= 500:
-            custom_response_data['message'] = 'Error interno del servidor'
-            logger.error(f"Server error: {exc} for user {user} on {request.path}")
-            
-        response.data = custom_response_data
-    
-    return response
-
-
-def get_client_ip(request):
-    """Obtener IP del cliente de forma segura"""
-    if not request:
-        return 'unknown'
-        
     x_forwarded_for = request.META.get('HTTP_X_FORWARDED_FOR')
     if x_forwarded_for:
+        # Tomar la primera IP de la lista
         ip = x_forwarded_for.split(',')[0].strip()
     else:
         ip = request.META.get('REMOTE_ADDR', 'unknown')
     return ip
 
 
-def sanitize_filename(filename):
+def audit_log(
+    action: str,
+    user: Any,
+    details: Optional[Dict] = None,
+    ip_address: Optional[str] = None
+) -> None:
     """
-    Sanitizar nombres de archivo para prevenir ataques de path traversal
+    Registra una acción de auditoría en los logs.
+    
+    Args:
+        action: Tipo de acción (e.g., 'USER_LOGIN', 'USER_CREATED')
+        user: Usuario que realizó la acción
+        details: Detalles adicionales de la acción
+        ip_address: Dirección IP del cliente
     """
-    import os
-    import re
+    try:
+        user_email = getattr(user, 'email', 'anonymous')
+        user_id = getattr(user, 'id', 'unknown')
+        
+        log_message = f"AUDIT: {action} | User: {user_email} ({user_id})"
+        
+        if ip_address:
+            log_message += f" | IP: {ip_address}"
+        
+        if details:
+            log_message += f" | Details: {details}"
+        
+        logger.info(log_message)
+    except Exception as e:
+        logger.error(f"Error in audit_log: {str(e)}")
+
+
+def custom_exception_handler(exc, context):
+    """
+    Handler personalizado para excepciones de DRF.
+    Retorna respuestas en formato consistente.
     
-    # Remover caracteres peligrosos
-    filename = os.path.basename(filename)  # Remover cualquier path
-    filename = re.sub(r'[^\w\-_\.]', '', filename)  # Solo caracteres seguros
+    Args:
+        exc: Excepción que ocurrió
+        context: Contexto de la vista
+        
+    Returns:
+        Response: Respuesta con formato estándar
+    """
+    # Llamar al handler por defecto de DRF primero
+    response = exception_handler(exc, context)
     
-    # Limitar longitud
-    if len(filename) > 100:
-        name, ext = os.path.splitext(filename)
-        filename = name[:95] + ext
+    if response is not None:
+        # Personalizar el formato de respuesta
+        custom_response_data = {
+            'success': False,
+            'message': 'Error en la solicitud',
+            'errors': {}
+        }
+        
+        # Extraer el mensaje de error
+        if isinstance(response.data, dict):
+            # Si hay un campo 'detail', usarlo como mensaje principal
+            if 'detail' in response.data:
+                custom_response_data['message'] = str(response.data['detail'])
+                custom_response_data['errors'] = {
+                    'detail': str(response.data['detail'])
+                }
+            else:
+                # Usar todos los errores
+                custom_response_data['errors'] = response.data
+                
+                # Intentar obtener el primer mensaje de error
+                for field, messages in response.data.items():
+                    if isinstance(messages, list) and messages:
+                        custom_response_data['message'] = f"{field}: {messages[0]}"
+                        break
+                    elif isinstance(messages, str):
+                        custom_response_data['message'] = f"{field}: {messages}"
+                        break
+        else:
+            custom_response_data['message'] = str(response.data)
+            custom_response_data['errors'] = {'detail': str(response.data)}
+        
+        response.data = custom_response_data
     
-    # Prevenir nombres especiales de Windows
-    reserved_names = [
-        'CON', 'PRN', 'AUX', 'NUL', 'COM1', 'COM2', 'COM3', 'COM4', 'COM5',
-        'COM6', 'COM7', 'COM8', 'COM9', 'LPT1', 'LPT2', 'LPT3', 'LPT4',
-        'LPT5', 'LPT6', 'LPT7', 'LPT8', 'LPT9'
-    ]
+    # Loggear la excepción
+    logger.error(
+        f"Exception in {context.get('view', 'unknown')}: "
+        f"{exc.__class__.__name__}: {str(exc)}"
+    )
     
-    name_without_ext = os.path.splitext(filename)[0].upper()
-    if name_without_ext in reserved_names:
-        filename = f"file_{filename}"
+    return response
+
+
+def format_success_response(
+    data: Any = None,
+    message: str = "Operación exitosa",
+    status_code: int = status.HTTP_200_OK
+) -> Response:
+    """
+    Formatea una respuesta exitosa en formato estándar.
+    
+    Args:
+        data: Datos a retornar
+        message: Mensaje descriptivo
+        status_code: Código de estado HTTP
+        
+    Returns:
+        Response: Respuesta formateada
+    """
+    response_data = {
+        'success': True,
+        'message': message,
+    }
+    
+    if data is not None:
+        response_data['data'] = data
+    
+    return Response(response_data, status=status_code)
+
+
+def format_error_response(
+    errors: Dict = None,
+    message: str = "Error en la solicitud",
+    status_code: int = status.HTTP_400_BAD_REQUEST
+) -> Response:
+    """
+    Formatea una respuesta de error en formato estándar.
+    
+    Args:
+        errors: Diccionario de errores
+        message: Mensaje descriptivo
+        status_code: Código de estado HTTP
+        
+    Returns:
+        Response: Respuesta formateada
+    """
+    response_data = {
+        'success': False,
+        'message': message,
+    }
+    
+    if errors:
+        response_data['errors'] = errors
+    
+    return Response(response_data, status=status_code)
+
+
+def validate_required_fields(data: Dict, required_fields: list) -> Dict:
+    """
+    Valida que todos los campos requeridos estén presentes.
+    
+    Args:
+        data: Diccionario con los datos
+        required_fields: Lista de campos requeridos
+        
+    Returns:
+        Dict: Diccionario de errores (vacío si no hay errores)
+    """
+    errors = {}
+    
+    for field in required_fields:
+        if field not in data or not data[field]:
+            errors[field] = f"El campo {field} es requerido"
+    
+    return errors
+
+
+def sanitize_filename(filename: str) -> str:
+    """
+    Sanitiza un nombre de archivo para prevenir problemas de seguridad.
+    
+    Args:
+        filename: Nombre del archivo original
+        
+    Returns:
+        str: Nombre sanitizado
+    """
+    import unicodedata
+    
+    # Normalizar unicode
+    filename = unicodedata.normalize('NFKD', filename)
+    filename = filename.encode('ascii', 'ignore').decode('ascii')
+    
+    # Remover caracteres no permitidos
+    filename = re.sub(r'[^\w\s.-]', '', filename).strip()
+    
+    # Reemplazar espacios múltiples
+    filename = re.sub(r'\s+', '_', filename)
     
     return filename
 
 
-def generate_secure_filename(original_filename):
+def calculate_file_hash(file_obj) -> str:
     """
-    Generar un nombre de archivo seguro y único
+    Calcula el hash SHA256 de un archivo.
+    
+    Args:
+        file_obj: Objeto archivo de Django
+        
+    Returns:
+        str: Hash SHA256 del archivo
     """
-    import os
+    import hashlib
     
-    # Sanitizar nombre original
-    clean_name = sanitize_filename(original_filename)
+    sha256_hash = hashlib.sha256()
     
-    # Obtener extensión
-    _, ext = os.path.splitext(clean_name)
+    # Leer el archivo en chunks
+    for chunk in file_obj.chunks():
+        sha256_hash.update(chunk)
     
-    # Generar nombre único
-    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-    unique_id = str(uuid.uuid4().hex)[:8]
-    
-    return f"{timestamp}_{unique_id}{ext}"
+    return sha256_hash.hexdigest()
 
 
-def validate_file_content(file):
+def paginate_queryset(queryset, request, page_size=20):
     """
-    Validar contenido de archivo para detectar malware básico
+    Pagina un queryset según los parámetros de la request.
+    
+    Args:
+        queryset: QuerySet a paginar
+        request: Request object
+        page_size: Tamaño de página por defecto
+        
+    Returns:
+        tuple: (page_data, pagination_info)
     """
+    from django.core.paginator import Paginator, EmptyPage, PageNotAnInteger
+    
+    page = request.GET.get('page', 1)
+    size = int(request.GET.get('page_size', page_size))
+    
+    paginator = Paginator(queryset, size)
+    
     try:
-        # Leer una muestra del archivo
-        file.seek(0)
-        content = file.read(1024)  # Primeros 1KB
-        file.seek(0)
-        
-        # Patrones sospechosos básicos
-        suspicious_patterns = [
-            b'<script',
-            b'javascript:',
-            b'vbscript:',
-            b'<?php',
-            b'<%',
-            b'exec(',
-            b'eval(',
-            b'system(',
-            b'shell_exec(',
-        ]
-        
-        content_lower = content.lower()
-        for pattern in suspicious_patterns:
-            if pattern in content_lower:
-                raise ValidationError(f"Archivo contiene contenido sospechoso")
-        
-        return True
-        
-    except Exception as e:
-        logger.warning(f"File validation error: {str(e)}")
-        raise ValidationError("Error al validar archivo")
-
-
-def hash_sensitive_data(data):
-    """
-    Hash de datos sensibles para logging seguro
-    """
-    if not data:
-        return "empty"
+        page_obj = paginator.page(page)
+    except PageNotAnInteger:
+        page_obj = paginator.page(1)
+    except EmptyPage:
+        page_obj = paginator.page(paginator.num_pages)
     
-    return hashlib.sha256(str(data).encode()).hexdigest()[:16]
-
-
-def mask_sensitive_data(data, mask_char='*'):
-    """
-    Enmascarar datos sensibles manteniendo algunos caracteres visibles
-    """
-    if not data or len(data) < 3:
-        return mask_char * len(data) if data else ""
-    
-    if '@' in data:  # Email
-        local, domain = data.split('@', 1)
-        masked_local = local[:2] + mask_char * (len(local) - 2)
-        return f"{masked_local}@{domain}"
-    
-    # Otros datos - mostrar primeros y últimos caracteres
-    visible_chars = min(2, len(data) // 3)
-    masked_middle = mask_char * (len(data) - 2 * visible_chars)
-    return data[:visible_chars] + masked_middle + data[-visible_chars:]
-
-
-def check_password_strength(password):
-    """
-    Verificar fortaleza de contraseña más allá de las validaciones de Django
-    """
-    import re
-    
-    issues = []
-    
-    if len(password) < 12:
-        issues.append("Recomendado: usar al menos 12 caracteres")
-    
-    if not re.search(r'[A-Z]', password):
-        issues.append("Falta: al menos una mayúscula")
-    
-    if not re.search(r'[a-z]', password):
-        issues.append("Falta: al menos una minúscula")
-    
-    if not re.search(r'\d', password):
-        issues.append("Falta: al menos un número")
-    
-    if not re.search(r'[!@#$%^&*(),.?":{}|<>]', password):
-        issues.append("Falta: al menos un carácter especial")
-    
-    # Patrones comunes
-    common_patterns = [
-        r'(.)\1{2,}',  # 3+ caracteres repetidos
-        r'123|abc|qwe',  # Secuencias comunes
-        r'password|admin|user',  # Palabras comunes
-    ]
-    
-    for pattern in common_patterns:
-        if re.search(pattern, password.lower()):
-            issues.append("Evitar: patrones comunes o repetitivos")
-            break
-    
-    return {
-        'is_strong': len(issues) == 0,
-        'issues': issues,
-        'score': max(0, 100 - len(issues) * 20)
-    }
-
-
-def generate_secure_token(length=32):
-    """
-    Generar token seguro para diversos usos
-    """
-    alphabet = string.ascii_letters + string.digits
-    return ''.join(secrets.choice(alphabet) for _ in range(length))
-
-
-def validate_json_structure(data, required_fields=None, max_depth=5, current_depth=0):
-    """
-    Validar estructura JSON para prevenir ataques de JSON bombing
-    """
-    if current_depth > max_depth:
-        raise ValidationError("JSON structure too deep")
-    
-    if isinstance(data, dict):
-        if len(data) > 100:  # Limitar número de campos
-            raise ValidationError("Too many fields in JSON object")
-        
-        if required_fields:
-            missing_fields = set(required_fields) - set(data.keys())
-            if missing_fields:
-                raise ValidationError(f"Missing required fields: {', '.join(missing_fields)}")
-        
-        for key, value in data.items():
-            if not isinstance(key, str) or len(key) > 100:
-                raise ValidationError("Invalid field name")
-            
-            validate_json_structure(value, max_depth=max_depth, current_depth=current_depth + 1)
-    
-    elif isinstance(data, list):
-        if len(data) > 1000:  # Limitar tamaño de arrays
-            raise ValidationError("Array too large")
-        
-        for item in data:
-            validate_json_structure(item, max_depth=max_depth, current_depth=current_depth + 1)
-    
-    elif isinstance(data, str):
-        if len(data) > 10000:  # Limitar tamaño de strings
-            raise ValidationError("String too long")
-    
-    return True
-
-
-def audit_log(action, user, resource=None, details=None, ip_address=None):
-    """
-    Crear log de auditoría para acciones importantes
-    """
-    # Función auxiliar para hacer JSONEncoder personalizado
-    def json_custom_encoder(obj):
-        if isinstance(obj, uuid.UUID):
-            return str(obj)  # Convertir UUID a string
-        if hasattr(obj, 'isoformat'):  # Para objetos datetime
-            return obj.isoformat()
-        raise TypeError(f"Object of type {type(obj).__name__} is not JSON serializable")
-    
-    # Crear entrada de log
-    log_entry = {
-        'timestamp': datetime.now().isoformat(),
-        'action': action,
-        'user_id': str(user.id) if user and hasattr(user, 'id') else None,
-        'user_email': mask_sensitive_data(user.email) if user and hasattr(user, 'email') else None,
-        'resource': resource,
-        'details': details,
-        'ip_address': ip_address,
+    pagination_info = {
+        'count': paginator.count,
+        'num_pages': paginator.num_pages,
+        'current_page': page_obj.number,
+        'has_next': page_obj.has_next(),
+        'has_previous': page_obj.has_previous(),
     }
     
-    # Usar el encoder personalizado
-    logger.info(f"AUDIT: {json.dumps(log_entry, default=json_custom_encoder)}")
-    
-    return log_entry
-
-
-def secure_compare(a, b):
-    """
-    Comparación segura que previene timing attacks
-    """
-    import hmac
-    
-    if not isinstance(a, bytes):
-        a = str(a).encode('utf-8')
-    if not isinstance(b, bytes):
-        b = str(b).encode('utf-8')
-    
-    return hmac.compare_digest(a, b)
-
-
-def get_user_permissions_context(user):
-    """
-    Obtener contexto de permisos del usuario para logging
-    """
-    if not user or not user.is_authenticated:
-        return {'authenticated': False}
-    
-    return {
-        'authenticated': True,
-        'user_id': user.id,
-        'role': getattr(user, 'role', 'unknown'),
-        'is_staff': getattr(user, 'is_staff', False),
-        'is_superuser': getattr(user, 'is_superuser', False),
-    }
-
-
-# === HEALTH CHECK FUNCTIONS (migradas desde health_check) ===
-
-def check_database_health():
-    """
-    Verificar salud de conexión a base de datos
-    """
-    try:
-        with connections["default"].cursor() as cursor:
-            cursor.execute("SELECT 1")
-        return {
-            "status": "healthy",
-            "message": "Database connection successful"
-        }
-    except Exception as e:
-        return {
-            "status": "unhealthy", 
-            "message": f"Database connection failed: {str(e)}"
-        }
-
-
-def check_cache_health():
-    """
-    Verificar salud de conexión a cache/Redis
-    """
-    try:
-        cache.set('health_check_test', 'ok', timeout=10)
-        result = cache.get('health_check_test')
-        if result == 'ok':
-            return {
-                "status": "healthy",
-                "message": "Cache connection successful"
-            }
-        else:
-            raise Exception("Cache test failed")
-    except Exception as e:
-        return {
-            "status": "unhealthy",
-            "message": f"Cache connection failed: {str(e)}"
-        }
-
-
-def get_system_memory_info():
-    """
-    Obtener información de memoria del sistema
-    """
-    try:
-        import psutil
-        memory = psutil.virtual_memory()
-        return {
-            "total": memory.total,
-            "available": memory.available,
-            "percent": memory.percent,
-            "status": "healthy" if memory.percent < 90 else "warning"
-        }
-    except ImportError:
-        return {
-            "status": "unavailable",
-            "message": "psutil not installed"
-        }
-    except Exception as e:
-        return {
-            "status": "unhealthy",
-            "message": f"Memory check failed: {str(e)}"
-        }
-
-
-def comprehensive_health_check():
-    """
-    Health check completo del sistema
-    """
-    start_time = time.time()
-    
-    health_status = {
-        "status": "healthy",
-        "timestamp": datetime.now().isoformat(),
-        "services": {},
-        "system": {},
-        "response_time_ms": 0
-    }
-    
-    overall_status = True
-    
-    # Verificar base de datos
-    db_health = check_database_health()
-    health_status["services"]["database"] = db_health
-    if db_health["status"] != "healthy":
-        overall_status = False
-    
-    # Verificar cache
-    cache_health = check_cache_health()
-    health_status["services"]["cache"] = cache_health
-    # Cache no es crítico, no afecta overall_status
-    
-    # Verificar memoria
-    memory_info = get_system_memory_info()
-    health_status["system"]["memory"] = memory_info
-    if memory_info.get("percent", 0) >= 95:
-        overall_status = False
-    
-    # Estado final
-    health_status["status"] = "healthy" if overall_status else "unhealthy"
-    health_status["response_time_ms"] = round((time.time() - start_time) * 1000, 2)
-    
-    return health_status
-
-
-class SecurityHeadersMixin:
-    """
-    Mixin para añadir headers de seguridad a views
-    """
-    
-    def dispatch(self, request, *args, **kwargs):
-        response = super().dispatch(request, *args, **kwargs)
-        
-        # Headers de seguridad específicos
-        response['X-Content-Type-Options'] = 'nosniff'
-        response['X-Frame-Options'] = 'DENY'
-        response['X-XSS-Protection'] = '1; mode=block'
-        response['Referrer-Policy'] = 'strict-origin-when-cross-origin'
-        
-        # Cache control para datos sensibles
-        if hasattr(self, 'sensitive_data') and self.sensitive_data:
-            response['Cache-Control'] = 'no-store, no-cache, must-revalidate, private, max-age=0'
-            response['Pragma'] = 'no-cache'
-            response['Expires'] = '0'
-        
-        return response
+    return page_obj.object_list, pagination_info

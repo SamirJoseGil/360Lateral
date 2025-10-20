@@ -8,7 +8,7 @@ from pathlib import Path
 # Configurar Django
 backend_dir = Path(__file__).resolve().parent.parent
 sys.path.append(str(backend_dir))
-os.environ.setdefault("DJANGO_SETTINGS_MODULE", "config.settings.development")
+os.environ.setdefault("DJANGO_SETTINGS_MODULE", "config.settings")
 
 import django
 django.setup()
@@ -42,6 +42,7 @@ def create_users():
             'password': 'admin123',
             'is_staff': True,
             'is_superuser': True,
+            'department': 'Administración',  # ✅ Agregar department para admin
         },
         {
             'email': 'propietario@lateral360.com',

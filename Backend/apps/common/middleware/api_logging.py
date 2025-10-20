@@ -1,9 +1,9 @@
 """
-Middleware para registrar todas las solicitudes a la API.
+Middleware para logging de requests API
 """
 import json
-import time
 import logging
+import time
 import traceback
 from django.utils import timezone
 from django.utils.deprecation import MiddlewareMixin
@@ -13,15 +13,7 @@ logger = logging.getLogger('api.requests')
 
 class APILoggingMiddleware(MiddlewareMixin):
     """
-    Middleware que registra todas las solicitudes a la API, incluyendo:
-    - URL solicitada
-    - Método HTTP
-    - Código de estado de la respuesta
-    - Tiempo de respuesta
-    - Usuario que realizó la solicitud
-    - Datos de la solicitud (parametrizado)
-    - Datos de la respuesta (parametrizado)
-    - Dirección IP del cliente
+    Middleware que registra todas las peticiones API con información detallada.
     """
     
     def __init__(self, get_response=None):
@@ -76,7 +68,9 @@ class APILoggingMiddleware(MiddlewareMixin):
         return ip
     
     def process_request(self, request):
-        """Procesa la solicitud antes de que sea manejada por la vista."""
+        """Registrar inicio de la petición"""
+        request.start_time = time.time()
+        
         # Solo registrar solicitudes a la API
         if not self.should_log_path(request.path):
             return None
@@ -104,9 +98,9 @@ class APILoggingMiddleware(MiddlewareMixin):
             request.api_req_body = None if self.is_sensitive_path(request.path) else {'message': 'Cuerpo de solicitud no registrado por configuración'}
         
         return None
-        
+    
     def process_response(self, request, response):
-        """Procesa la respuesta después de que la vista la genera."""
+        """Registrar respuesta y tiempo de ejecución"""
         # Solo registrar solicitudes a la API
         if not self.should_log_path(request.path) and not self.should_log_error_only(request.path):
             return response
@@ -170,29 +164,12 @@ class APILoggingMiddleware(MiddlewareMixin):
         return response
     
     def process_exception(self, request, exception):
-        """Registra excepciones no manejadas en las vistas."""
-        if not self.should_log_path(request.path) and not self.should_log_error_only(request.path):
-            return None
-            
-        # Determinar el usuario
-        user = request.user if hasattr(request, 'user') else None
-        user_id = user.id if user and user.is_authenticated else None
-        username = user.username if user and user.is_authenticated else "anonymous"
-        
-        # Registrar la excepción
-        log_data = {
-            'timestamp': timezone.now().isoformat(),
-            'path': request.path,
-            'method': request.method,
-            'exception_type': type(exception).__name__,
-            'exception_message': str(exception),
-            'traceback': traceback.format_exc(),
-            'user_id': user_id,
-            'username': username,
-            'ip': self.get_client_ip(request)
-        }
-        
-        logger.error(f"API EXCEPTION: {request.method} {request.path} - {type(exception).__name__} - {username}", 
-                     extra=log_data)
-        
+        """Registrar excepciones"""
+        logger.error(
+            f"[API Exception] {request.method} {request.path} | "
+            f"Exception: {exception.__class__.__name__}: {str(exception)} | "
+            f"IP: {self.get_client_ip(request)} | "
+            f"User: {getattr(request.user, 'email', 'anonymous')}",
+            exc_info=True
+        )
         return None

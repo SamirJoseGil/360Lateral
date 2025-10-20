@@ -11,7 +11,7 @@ import os
 
 from django.core.asgi import get_asgi_application
 
-# Usar desarrollo por defecto, producción solo si se especifica explícitamente
-os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'config.settings.development')
+# Usar el archivo de settings unificado
+os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'config.settings')
 
 application = get_asgi_application()

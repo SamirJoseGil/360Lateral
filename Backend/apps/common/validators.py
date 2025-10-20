@@ -1,223 +1,259 @@
-from django.core.exceptions import ValidationError
-from django.core.validators import FileExtensionValidator
-from django.utils.deconstruct import deconstructible
-from pathlib import Path
+"""
+Validadores personalizados para toda la aplicación
+"""
+import os
 import re
+from django.core.exceptions import ValidationError
+from django.utils.translation import gettext_lazy as _
 
 
-@deconstructible
-class SecureFileValidator:
+def validate_file_extension(value):
     """
-    Validador completo para archivos subidos que verifica:
-    - Extensión permitida
-    - Tipo MIME real
-    - Tamaño máximo
-    - Nombre de archivo seguro
+    Valida que la extensión del archivo esté permitida.
+    
+    Args:
+        value: Archivo a validar
+        
+    Raises:
+        ValidationError: Si la extensión no está permitida
     """
+    ext = os.path.splitext(value.name)[1].lower()
     
-    def __init__(self, 
-                 allowed_extensions=None, 
-                 max_size=10*1024*1024,  # 10MB default
-                 allowed_mimes=None):
-        
-        self.allowed_extensions = allowed_extensions or [
-            '.pdf', '.doc', '.docx', '.jpg', '.jpeg', '.png', '.txt'
-        ]
-        self.max_size = max_size
-        self.allowed_mimes = allowed_mimes or {
-            '.pdf': 'application/pdf',
-            '.doc': 'application/msword',
-            '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-            '.jpg': 'image/jpeg',
-            '.jpeg': 'image/jpeg',
-            '.png': 'image/png',
-            '.txt': 'text/plain'
-        }
-    
-    def __call__(self, file):
-        self.validate_filename(file.name)
-        self.validate_extension(file.name)
-        self.validate_size(file)
-        self.validate_mime_type(file)
-        
-    def validate_filename(self, filename):
-        """Validar que el nombre de archivo sea seguro"""
-        # Caracteres peligrosos
-        dangerous_chars = ['..', '/', '\\', '<', '>', '|', ':', '*', '?', '"']
-        
-        for char in dangerous_chars:
-            if char in filename:
-                raise ValidationError(f"Nombre de archivo contiene caracteres no permitidos: {char}")
-        
-        # Verificar longitud
-        if len(filename) > 255:
-            raise ValidationError("Nombre de archivo muy largo (máximo 255 caracteres)")
-            
-        # Verificar que no sea solo espacios o puntos
-        if not filename.strip(' .'):
-            raise ValidationError("Nombre de archivo inválido")
-    
-    def validate_extension(self, filename):
-        """Validar extensión del archivo"""
-        ext = Path(filename).suffix.lower()
-        if ext not in self.allowed_extensions:
-            allowed = ', '.join(self.allowed_extensions)
-            raise ValidationError(f"Extensión {ext} no permitida. Extensiones permitidas: {allowed}")
-    
-    def validate_size(self, file):
-        """Validar tamaño del archivo"""
-        if file.size > self.max_size:
-            max_size_mb = self.max_size / (1024 * 1024)
-            raise ValidationError(f"Archivo muy grande. Tamaño máximo: {max_size_mb:.1f}MB")
-    
-    def validate_mime_type(self, file):
-        """Validar tipo MIME real del archivo"""
-        try:
-            # Leer una pequeña muestra para verificar el tipo MIME
-            file.seek(0)
-            sample = file.read(1024)
-            file.seek(0)
-            
-            if len(sample) == 0:
-                raise ValidationError("Archivo vacío")
-            
-            # Verificar tipo MIME usando python-magic si está disponible
-            try:
-                import magic # type: ignore
-                mime_type = magic.from_buffer(sample, mime=True)
-                ext = Path(file.name).suffix.lower()
-                
-                expected_mime = self.allowed_mimes.get(ext)
-                if expected_mime and mime_type != expected_mime:
-                    # Algunas excepciones comunes
-                    exceptions = {
-                        'text/plain': ['application/octet-stream'],
-                        'image/jpeg': ['image/jpg']
-                    }
-                    
-                    if expected_mime not in exceptions or mime_type not in exceptions[expected_mime]:
-                        raise ValidationError(
-                            f"Tipo de archivo no coincide con extensión. "
-                            f"Esperado: {expected_mime}, Encontrado: {mime_type}"
-                        )
-                        
-            except ImportError:
-                # Si python-magic no está disponible, hacer validaciones básicas
-                self._basic_mime_validation(sample, file.name)
-                
-        except Exception as e:
-            raise ValidationError(f"Error al validar archivo: {str(e)}")
-    
-    def _basic_mime_validation(self, sample, filename):
-        """Validación básica de tipo MIME sin python-magic"""
-        ext = Path(filename).suffix.lower()
-        
-        # Signatures básicas de archivos
-        signatures = {
-            '.pdf': [b'%PDF'],
-            '.jpg': [b'\xff\xd8\xff'],
-            '.jpeg': [b'\xff\xd8\xff'],
-            '.png': [b'\x89PNG\r\n\x1a\n'],
-            '.doc': [b'\xd0\xcf\x11\xe0'],
-            '.docx': [b'PK\x03\x04']
-        }
-        
-        expected_signatures = signatures.get(ext, [])
-        if expected_signatures:
-            valid = any(sample.startswith(sig) for sig in expected_signatures)
-            if not valid:
-                raise ValidationError(f"El contenido del archivo no coincide con la extensión {ext}")
-
-
-def validate_no_script_injection(value):
-    """Validar que el texto no contenga scripts maliciosos"""
-    if not isinstance(value, str):
-        return value
-        
-    # Patrones peligrosos básicos
-    dangerous_patterns = [
-        r'<script[^>]*>.*?</script>',
-        r'javascript:',
-        r'vbscript:',
-        r'onload\s*=',
-        r'onerror\s*=',
-        r'onclick\s*=',
-        r'<iframe',
-        r'<object',
-        r'<embed'
+    # Extensiones permitidas
+    valid_extensions = [
+        '.pdf', '.doc', '.docx',  # Documentos
+        '.jpg', '.jpeg', '.png', '.gif',  # Imágenes
+        '.xlsx', '.xls', '.csv',  # Hojas de cálculo
+        '.txt', '.zip'  # Otros
     ]
     
-    for pattern in dangerous_patterns:
-        if re.search(pattern, value, re.IGNORECASE | re.DOTALL):
-            raise ValidationError("Contenido contiene código potencialmente peligroso")
-    
-    return value
+    if ext not in valid_extensions:
+        raise ValidationError(
+            _('Extensión de archivo no permitida. Extensiones válidas: %(extensions)s'),
+            params={'extensions': ', '.join(valid_extensions)},
+        )
 
 
-def validate_safe_html(value):
-    """Validar y limpiar HTML básico permitiendo solo tags seguros"""
-    if not isinstance(value, str):
-        return value
+def validate_file_size(value):
+    """
+    Valida que el tamaño del archivo no exceda el máximo permitido.
     
-    # Lista de tags HTML permitidos (básicos y seguros)
-    allowed_tags = ['p', 'br', 'strong', 'em', 'u', 'ol', 'ul', 'li', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6']
+    Args:
+        value: Archivo a validar
+        
+    Raises:
+        ValidationError: Si el archivo es demasiado grande
+    """
+    filesize = value.size
+    max_size_mb = 10
+    max_size_bytes = max_size_mb * 1024 * 1024
     
-    # Verificar que no haya tags no permitidos
-    tag_pattern = r'<([a-zA-Z][a-zA-Z0-9]*)\b[^>]*>'
-    found_tags = re.findall(tag_pattern, value, re.IGNORECASE)
+    if filesize > max_size_bytes:
+        raise ValidationError(
+            _('El tamaño máximo de archivo es %(max_size)s MB. Tu archivo tiene %(file_size)s MB'),
+            params={
+                'max_size': max_size_mb,
+                'file_size': round(filesize / (1024 * 1024), 2)
+            },
+        )
+
+
+def validate_image_file(value):
+    """
+    Valida que el archivo sea una imagen válida.
     
-    for tag in found_tags:
-        if tag.lower() not in allowed_tags:
-            raise ValidationError(f"Tag HTML no permitido: <{tag}>")
+    Args:
+        value: Archivo a validar
+        
+    Raises:
+        ValidationError: Si el archivo no es una imagen válida
+    """
+    ext = os.path.splitext(value.name)[1].lower()
+    valid_image_extensions = ['.jpg', '.jpeg', '.png', '.gif', '.bmp']
     
-    return value
+    if ext not in valid_image_extensions:
+        raise ValidationError(
+            _('El archivo debe ser una imagen (jpg, jpeg, png, gif, bmp)')
+        )
+
+
+def validate_cbml(value):
+    """
+    Valida el formato del CBML (Código Base Municipal de Lote).
+    Formato esperado: 14 dígitos numéricos
+    
+    Args:
+        value: CBML a validar
+        
+    Returns:
+        bool: True si es válido
+        
+    Raises:
+        ValidationError: Si el formato es inválido
+    """
+    if not value:
+        raise ValidationError(_('El CBML es requerido'))
+    
+    # Limpiar espacios
+    value = str(value).strip()
+    
+    # Verificar longitud
+    if len(value) != 14:
+        raise ValidationError(
+            _('El CBML debe tener exactamente 14 dígitos. Actual: %(length)s'),
+            params={'length': len(value)}
+        )
+    
+    # Verificar que sea numérico
+    if not value.isdigit():
+        raise ValidationError(_('El CBML debe contener solo números'))
+    
+    return True
+
+
+def validate_matricula(value):
+    """
+    Valida el formato de matrícula inmobiliaria.
+    Formato esperado: XXX-XXXXXX (3 dígitos, guion, 6 dígitos)
+    
+    Args:
+        value: Matrícula a validar
+        
+    Returns:
+        bool: True si es válida
+        
+    Raises:
+        ValidationError: Si el formato es inválido
+    """
+    if not value:
+        raise ValidationError(_('La matrícula es requerida'))
+    
+    # Limpiar espacios
+    value = str(value).strip()
+    
+    # Patrón: XXX-XXXXXX
+    pattern = r'^\d{3}-\d{6}$'
+    
+    if not re.match(pattern, value):
+        raise ValidationError(
+            _('La matrícula debe tener el formato XXX-XXXXXX (ejemplo: 001-123456)')
+        )
+    
+    return True
 
 
 def validate_phone_number(value):
-    """Validar formato de número telefónico"""
+    """
+    Valida formato de número telefónico colombiano.
+    
+    Args:
+        value: Número a validar
+        
+    Raises:
+        ValidationError: Si el formato es inválido
+    """
     if not value:
-        return value
+        return  # Permitir vacío si el campo es opcional
     
-    # Patrón para números telefónicos (formato flexible)
-    phone_pattern = r'^\+?[\d\s\-\(\)]{7,15}$'
+    # Limpiar el número
+    cleaned = re.sub(r'\s+', '', str(value))
+    cleaned = cleaned.replace('(', '').replace(')', '').replace('-', '')
     
-    if not re.match(phone_pattern, value):
-        raise ValidationError(
-            "Formato de teléfono inválido. "
-            "Use formato: +57 123 456 7890 o similar"
-        )
-    
-    return value
-
-
-def validate_strong_password(password):
-    """Validar que la contraseña sea fuerte"""
-    if len(password) < 8:
-        raise ValidationError("La contraseña debe tener al menos 8 caracteres")
-    
-    if not re.search(r'[A-Z]', password):
-        raise ValidationError("La contraseña debe contener al menos una mayúscula")
-    
-    if not re.search(r'[a-z]', password):
-        raise ValidationError("La contraseña debe contener al menos una minúscula")
-    
-    if not re.search(r'\d', password):
-        raise ValidationError("La contraseña debe contener al menos un número")
-    
-    if not re.search(r'[!@#$%^&*(),.?":{}|<>]', password):
-        raise ValidationError("La contraseña debe contener al menos un carácter especial")
-    
-    # Verificar patrones comunes débiles
-    weak_patterns = [
-        r'123456',
-        r'password',
-        r'qwerty',
-        r'abc123',
-        r'admin'
+    # Patrones válidos para Colombia
+    # Celular: +57 3XX XXX XXXX o 3XX XXX XXXX
+    # Fijo: +57 X XXX XXXX o X XXX XXXX
+    patterns = [
+        r'^\+57\d{10}$',  # +573001234567
+        r'^\d{10}$',       # 3001234567
+        r'^\+57\d{7}$',    # +5712345678 (fijo)
+        r'^\d{7}$',        # 1234567 (fijo)
     ]
     
-    for pattern in weak_patterns:
-        if re.search(pattern, password.lower()):
-            raise ValidationError("La contraseña contiene patrones comunes inseguros")
+    is_valid = any(re.match(pattern, cleaned) for pattern in patterns)
     
-    return password
+    if not is_valid:
+        raise ValidationError(
+            _('Número telefónico inválido. Formato válido: +57 300 123 4567 o 300 123 4567')
+        )
+
+
+def validate_nit(value):
+    """
+    Valida formato de NIT colombiano.
+    
+    Args:
+        value: NIT a validar
+        
+    Raises:
+        ValidationError: Si el formato es inválido
+    """
+    if not value:
+        raise ValidationError(_('El NIT es requerido'))
+    
+    # Limpiar el NIT
+    cleaned = re.sub(r'[^\d]', '', str(value))
+    
+    # Debe tener entre 9 y 10 dígitos
+    if len(cleaned) < 9 or len(cleaned) > 10:
+        raise ValidationError(
+            _('El NIT debe tener entre 9 y 10 dígitos')
+        )
+    
+    return True
+
+
+def validate_email_domain(value):
+    """
+    Valida que el email no sea de dominios temporales/desechables.
+    
+    Args:
+        value: Email a validar
+        
+    Raises:
+        ValidationError: Si el dominio no está permitido
+    """
+    blocked_domains = [
+        'tempmail.com',
+        'throwaway.email',
+        'guerrillamail.com',
+        '10minutemail.com',
+        'mailinator.com',
+    ]
+    
+    if not value:
+        return
+    
+    domain = value.split('@')[-1].lower()
+    
+    if domain in blocked_domains:
+        raise ValidationError(
+            _('No se permiten direcciones de email temporales')
+        )
+
+
+def validate_positive_number(value):
+    """
+    Valida que el número sea positivo.
+    
+    Args:
+        value: Número a validar
+        
+    Raises:
+        ValidationError: Si el número no es positivo
+    """
+    if value is not None and value < 0:
+        raise ValidationError(_('El valor debe ser positivo'))
+
+
+def validate_percentage(value):
+    """
+    Valida que el valor esté entre 0 y 100.
+    
+    Args:
+        value: Valor a validar
+        
+    Raises:
+        ValidationError: Si el valor no está en el rango
+    """
+    if value is not None and (value < 0 or value > 100):
+        raise ValidationError(_('El valor debe estar entre 0 y 100'))

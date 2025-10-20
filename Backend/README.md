@@ -1,232 +1,554 @@
-# 🚀 Backend API - Lateral 360°
+# Backend - Lateral 360°
 
-API REST desarrollada con Django para la gestión de lotes inmobiliarios, usuarios y documentos.
+## Descripción
 
----
+Backend de la plataforma Lateral 360° construido con Django 4.2.7 y Django REST Framework. Proporciona una API RESTful completa para la gestión de lotes urbanos, autenticación de usuarios, análisis urbanístico y gestión documental para proyectos inmobiliarios en Medellín, Colombia.
 
-## 🌐 Endpoints Principales
+## 🚀 Características Principales
 
-**Autenticación** (app `authentication`)
-- `POST /api/auth/register/` — Registro de usuario
-- `POST /api/auth/login/` — Inicio de sesión
-- `POST /api/auth/logout/` — Cierre de sesión
-- `POST /api/auth/change-password/` — Cambiar contraseña
-- `POST /api/auth/password-reset/` — Solicitar reset de contraseña
-- `GET /api/auth/csrf/` — Obtener token CSRF
-
-**Usuarios** (app `users`)
-- `GET /api/users/me/` — Perfil de usuario autenticado
-- `GET /api/users/` — Listar usuarios
-- `GET /api/users/{id}/` — Detalles de usuario
-- `PUT /api/users/{id}/` — Actualizar usuario
-- `DELETE /api/users/{id}/` — Eliminar usuario
-
-**Lotes**
-- `GET /api/lotes/` — Listar lotes
-- `GET /api/lotes/{id}/` — Detalles de lote
-- `POST /api/lotes/` — Crear lote
-- `PUT /api/lotes/{id}/` — Actualizar lote
-- `DELETE /api/lotes/{id}/` — Eliminar lote
-
-**Scraping MapGIS**
-- `POST /api/lotes/scrap/cbml/` — Consultar por CBML
-- `POST /api/lotes/scrap/matricula/` — Consultar por matrícula
-- `POST /api/lotes/scrap/direccion/` — Consultar por dirección
-- `GET /api/lotes/health/mapgis/` — Health check MapGIS
-- `POST /api/lotes/test/mapgis/session/` — Test sesión MapGIS
-- `POST /api/lotes/test/mapgis/real/` — Test conexión real MapGIS
-- `GET /api/lotes/investigate/mapgis/` — Investigar endpoints MapGIS
-- `POST /api/lotes/test/mapgis/complete/` — Test extracción completa MapGIS
-- `POST /api/lotes/restricciones/completas/` — Consulta restricciones ambientales
-
-**Tratamientos POT**
-- `GET /api/lotes/tratamientos/` — Listar tratamientos POT
-- `POST /api/lotes/aprovechamiento/` — Calcular aprovechamiento urbanístico
-- `POST /api/lotes/tipologias/` — Obtener tipologías viables
-
-**Documentos**
-- `GET /api/documentos/` — Listar documentos
-- `GET /api/documentos/{id}/` — Detalles de documento
-- `POST /api/documentos/` — Subir documento
-- `DELETE /api/documentos/{id}/` — Eliminar documento
-
----
-
-## 🔐 Validaciones de Integridad
-
-### Validación de Duplicados
-
-El sistema implementa validaciones estrictas para evitar duplicados:
-
-#### Usuarios
-- **Email único**: No se permite registrar usuarios con emails duplicados
-- **Validación en creación y actualización**: Se verifica en tiempo real
-- **Mensajes claros**: Respuestas específicas indicando el conflicto
-
-```json
-// Error de email duplicado
-{
-  "success": false,
-  "error": "Ya existe un usuario registrado con el email: usuario@ejemplo.com"
-}
-```
-
-#### Lotes
-- **CBML único**: Cada lote debe tener un Código Básico Municipal de Lote único
-- **Matrícula única**: No se permiten matrículas duplicadas
-- **Validación obligatoria**: Al menos uno de estos campos debe proporcionarse
-- **Validación en todas las operaciones**: Creación, actualización y importación desde MapGIS
-
-```json
-// Error de CBML duplicado
-{
-  "error": "Ya existe un lote registrado con el CBML: 05001010203040506"
-}
-
-// Error de matrícula duplicada
-{
-  "error": "Ya existe un lote registrado con la matrícula: 123-456789"
-}
-
-// Error por falta de identificadores
-{
-  "error": "Debe proporcionar al menos el CBML o la matrícula del lote"
-}
-```
-
-### Manejo de Errores
-
-- **IntegrityError**: Captura errores de base de datos por restricciones
-- **Logging detallado**: Registro de todos los intentos de duplicación
-- **Respuestas consistentes**: Formato uniforme en mensajes de error
-- **Códigos HTTP apropiados**: 400 para errores de validación, 500 para errores internos
-
----
+- **Autenticación JWT** con refresh tokens y manejo de sesiones
+- **Gestión de Lotes Urbanos** con integración a MapGIS de Medellín
+- **Análisis Urbanístico Automatizado** según POT de Medellín
+- **Gestión de Documentos** con validación y almacenamiento seguro
+- **Sistema de Roles** (Admin, Owner, Developer)
+- **API RESTful Documentada** con Swagger/OpenAPI
+- **Health Checks** para monitoreo de servicios
+- **Auditoría Completa** de acciones del sistema
+- **Rate Limiting** para seguridad
+- **Logging Avanzado** de todas las operaciones
 
 ## 📋 Tabla de Contenidos
 
-- [🚀 Inicio Rápido](#-inicio-rápido)
-- [⚙️ Configuración](#️-configuración)
-- [📁 Estructura del Proyecto](#-estructura-del-proyecto)
-- [🔐 Autenticación](#-autenticación)
-- [🌐 API Endpoints](#-api-endpoints)
-- [🗄️ Base de Datos](#️-base-de-datos)
-- [🧪 Testing](#-testing)
-- [🔧 Utilidades](#-utilidades)
-- [📚 Documentación Detallada](#-documentación-detallada)
-  - [👥 API de Usuarios](info/users.md)
-  - [🏗️ API de Lotes](info/lotes.md)
-  - [📄 API de Documentos](info/documentos.md)
-  - [🗺️ Integración MapGIS](info/mapgis.md)
+- [Arquitectura](#arquitectura)
+- [Instalación](#instalación)
+- [Configuración](#configuración)
+- [Módulos de Aplicación](#módulos-de-aplicación)
+- [API Endpoints](#api-endpoints)
+- [Autenticación](#autenticación)
+- [Testing](#testing)
+- [Deployment](#deployment)
+- [Troubleshooting](#troubleshooting)
 
-## 🚀 Inicio Rápido
+## 🏗️ Arquitectura
 
-### Con Docker (Recomendado)
+### Estructura de Directorios
 
-```bash
-# Desde la raíz del proyecto
-docker-compose up backend db redis
+```
+Backend/
+├── apps/                      # Aplicaciones Django
+│   ├── authentication/       # Autenticación JWT - Ver README
+│   ├── users/               # Gestión de usuarios y perfiles - Ver README
+│   ├── lotes/               # Gestión de lotes urbanos - Ver README
+│   ├── pot/                 # Plan de Ordenamiento Territorial
+│   ├── documents/           # Gestión de documentos
+│   ├── stats/               # Estadísticas y analytics - Ver README
+│   └── common/              # Utilidades comunes - Ver README
+├── config/                   # Configuración Django
+│   ├── settings.py          # Settings unificado con auto-detección de entorno
+│   ├── urls.py              # URLs principales
+│   ├── wsgi.py              # WSGI config
+│   └── asgi.py              # ASGI config
+├── scripts/                  # Scripts de utilidad
+├── media/                    # Archivos subidos por usuarios
+├── staticfiles/             # Archivos estáticos recolectados
+├── logs/                     # Logs de aplicación
+├── requirements.txt          # Dependencias Python
+├── manage.py                # CLI de Django
+├── .env                     # Variables de entorno (no en git)
+├── .env.example             # Ejemplo de variables de entorno
+├── Dockerfile               # Configuración Docker
+├── docker-compose.yml       # Orquestación de servicios
+├── entrypoint.sh            # Script de inicialización Docker
+└── README.md                # Esta documentación
 ```
 
-### Desarrollo Local
+### Stack Tecnológico
 
-#### Prerequisitos
-- Python 3.11+
-- PostgreSQL 13+
-- Redis (opcional, para cache)
+- **Framework**: Django 4.2.7
+- **API**: Django REST Framework 3.14+
+- **Base de Datos**: PostgreSQL 15+
+- **Cache**: Redis 7+
+- **Autenticación**: JWT (djangorestframework-simplejwt)
+- **Documentación**: drf-spectacular (OpenAPI 3.0)
+- **Testing**: Django TestCase + Coverage
+- **Deployment**: Docker + Docker Compose
 
-#### Instalación
+## 🔧 Instalación
 
+### Prerequisitos
+
+- Python 3.12+
+- PostgreSQL 15+
+- Redis 7+ (opcional para cache)
+- Git
+
+### Instalación Local (Sin Docker)
+
+1. **Clonar el repositorio**
 ```bash
-# 1. Navegar al directorio del backend
 cd Backend
+```
 
-# 2. Crear entorno virtual
+2. **Crear y activar entorno virtual**
+```bash
 python -m venv venv
 
-# 3. Activar entorno virtual
 # Windows
 venv\Scripts\activate
+
 # Linux/Mac
 source venv/bin/activate
+```
 
-# 4. Instalar dependencias
+3. **Instalar dependencias**
+```bash
 pip install -r requirements.txt
-# Asegurarse de que django-filter esté instalado
-pip install django-filter
+```
 
-# 5. Configurar variables de entorno
-copy .env.example .env
+4. **Configurar variables de entorno**
+```bash
+# Copiar archivo de ejemplo
+cp .env.example .env
+
 # Editar .env con tus configuraciones
+# DB_PASSWORD=tu_password
+# SECRET_KEY=tu_secret_key
+```
 
-# 6. Verificar configuración
-python -c "import os; os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'config.settings.development'); from django.conf import settings; print('DEBUG:', settings.DEBUG)"
+5. **Configurar base de datos PostgreSQL**
+```bash
+# Crear base de datos
+psql -U postgres
+CREATE DATABASE lateral360;
+CREATE USER lateral360_user WITH PASSWORD 'tu_password';
+GRANT ALL PRIVILEGES ON DATABASE lateral360 TO lateral360_user;
+\q
+```
 
-# 7. Crear migraciones
-python manage.py makemigrations users
-python manage.py makemigrations
-
-# 8. Aplicar migraciones
+6. **Ejecutar migraciones**
+```bash
 python manage.py migrate
+```
 
-# 9. Crear superusuario
+7. **Crear superusuario**
+```bash
 python manage.py createsuperuser
+```
 
-# 10. Ejecutar servidor de desarrollo
+8. **Recolectar archivos estáticos**
+```bash
+python manage.py collectstatic --noinput
+```
+
+9. **Iniciar servidor de desarrollo**
+```bash
 python manage.py runserver
 ```
+
+El servidor estará disponible en `http://localhost:8000`
+
+### Instalación con Docker
+
+1. **Configurar variables de entorno**
+```bash
+cp .env.example .env
+# Editar .env según necesidades
+```
+
+2. **Construir y levantar servicios**
+```bash
+docker-compose up --build
+```
+
+3. **Ejecutar migraciones (en otro terminal)**
+```bash
+docker-compose exec backend python manage.py migrate
+```
+
+4. **Crear superusuario**
+```bash
+docker-compose exec backend python manage.py createsuperuser
+```
+
+El servidor estará disponible en `http://localhost:8000`
 
 ## ⚙️ Configuración
 
 ### Variables de Entorno
 
-Crea un archivo `.env` en el directorio Backend:
+El archivo `.env` debe contener las siguientes variables:
 
 ```env
 # Django Configuration
-SECRET_KEY=tu-clave-secreta-muy-segura
-DEBUG=True
-ALLOWED_HOSTS=localhost,127.0.0.1
+DJANGO_ENV=development                    # development, production, testing
+DEBUG=True                                # False en producción
+SECRET_KEY=your-secret-key-here          # Generar clave segura
+ALLOWED_HOSTS=localhost,127.0.0.1        # Dominios permitidos
 
 # Database Configuration
 DB_NAME=lateral360
 DB_USER=postgres
-DB_PASSWORD=tu-password
-DB_HOST=localhost
+DB_PASSWORD=tu_password_seguro
+DB_HOST=localhost                         # 'db' en Docker
 DB_PORT=5432
 
-# Redis Configuration (opcional)
-REDIS_URL=redis://localhost:6379/1
+# Redis Configuration (Opcional)
+REDIS_HOST=localhost                      # 'redis' en Docker
+REDIS_PORT=6379
+REDIS_PASSWORD=
 
 # JWT Configuration
-JWT_SECRET_KEY=tu-jwt-secret-key
-JWT_ACCESS_TOKEN_LIFETIME=15
-JWT_REFRESH_TOKEN_LIFETIME=7
+JWT_ACCESS_MINUTES=60                     # Tiempo de vida del access token
+JWT_REFRESH_DAYS=7                        # Tiempo de vida del refresh token
 
-# Email Configuration
-EMAIL_BACKEND=django.core.mail.backends.console.EmailBackend
+# CORS Configuration
+CORS_ALLOWED_ORIGINS=http://localhost:3000,http://127.0.0.1:3000
+CSRF_TRUSTED_ORIGINS=http://localhost:3000,http://127.0.0.1:3000
+
+# API Configuration
+API_PAGE_SIZE=20                          # Tamaño de página por defecto
+
+# File Upload
+MAX_UPLOAD_SIZE=10485760                  # 10MB en bytes
+
+# Email Configuration (Producción)
 EMAIL_HOST=smtp.gmail.com
 EMAIL_PORT=587
-EMAIL_USE_TLS=True
-EMAIL_HOST_USER=tu-email@gmail.com
-EMAIL_HOST_PASSWORD=tu-app-password
+EMAIL_HOST_USER=your-email@domain.com
+EMAIL_HOST_PASSWORD=your-app-password
 
-# Media and Static Files
-MEDIA_URL=/media/
-STATIC_URL=/static/
+# Docker
+DOCKER_ENV=false                          # true en Docker
+
+# Admin
+ADMIN_ENABLED=True                        # Habilitar Django Admin
 ```
 
-### Configuraciones por Entorno
+### Settings Unificado
 
-El proyecto usa configuraciones separadas:
+El sistema utiliza un archivo de settings unificado (`config/settings.py`) que auto-detecta el entorno basado en `DJANGO_ENV`:
 
-- **Development**: `config/settings/development.py`
-- **Production**: `config/settings/production.py`
-- **Testing**: `config/settings/testing.py`
+- **development**: DEBUG=True, logs detallados, email a consola
+- **production**: DEBUG=False, seguridad máxima, SSL, email SMTP
+- **testing**: Sin validaciones de password, base de datos en memoria
+
+## 📦 Módulos de Aplicación
+
+### 1. Authentication (`apps.authentication`)
+
+Gestión de autenticación con JWT.
+
+**Características:**
+- Login/Logout con JWT
+- Registro de usuarios
+- Refresh de tokens
+- Cambio de contraseña
+- Rate limiting anti-bruteforce
+
+**Endpoints principales:**
+```
+POST   /api/auth/login/           # Iniciar sesión
+POST   /api/auth/logout/          # Cerrar sesión
+POST   /api/auth/register/        # Registrar usuario
+GET    /api/auth/me/              # Usuario actual
+POST   /api/auth/change-password/ # Cambiar contraseña
+POST   /api/auth/token/refresh/   # Renovar token
+POST   /api/auth/token/verify/    # Verificar token
+```
+
+📖 **[Ver documentación completa](apps/authentication/README.md)**
+
+### 2. Users (`apps.users`)
+
+Gestión de perfiles de usuario y roles.
+
+**Características:**
+- Modelo de usuario personalizado
+- Perfiles según rol (Owner, Developer, Admin)
+- Sistema de solicitudes de usuario
+- Gestión de permisos
+
+**Modelo User:**
+- Campos comunes: email, username, first_name, last_name, phone, company
+- Campos Owner: document_type, document_number, lots_count
+- Campos Developer: company_name, nit, experience_years, portfolio
+- Campos Admin: department, permissions_scope
+
+**Endpoints principales:**
+```
+GET    /api/users/                # Lista de usuarios
+POST   /api/users/                # Crear usuario (admin)
+GET    /api/users/{id}/           # Detalle de usuario
+PUT    /api/users/{id}/           # Actualizar usuario
+DELETE /api/users/{id}/           # Eliminar usuario
+GET    /api/users/me/             # Usuario actual
+PUT    /api/users/me/update/      # Actualizar perfil
+GET    /api/users/requests/       # Solicitudes de usuario
+```
+
+📖 **[Ver documentación completa](apps/users/README.md)**
+
+### 3. Lotes (`apps.lotes`)
+
+Gestión de lotes urbanos con integración a MapGIS.
+
+**Características:**
+- Registro y búsqueda de lotes
+- Integración con MapGIS de Medellín
+- Análisis urbanístico automatizado
+- Cálculo de potencial constructivo
+- Gestión de documentos asociados
+- Historial de cambios
+
+**Modelo Lote:**
+- Identificación: cbml, matricula, direccion
+- Dimensiones: area, frente, fondo, ubicacion
+- Urbanismo: tratamiento, uso_suelo, indices
+- Valoración: avaluo_catastral, valor_comercial
+
+**Endpoints principales:**
+```
+GET    /api/lotes/                      # Lista de lotes
+POST   /api/lotes/                      # Crear lote
+GET    /api/lotes/{id}/                 # Detalle de lote
+PUT    /api/lotes/{id}/                 # Actualizar lote
+DELETE /api/lotes/{id}/                 # Eliminar lote
+POST   /api/lotes/public/cbml/          # Buscar por CBML
+POST   /api/lotes/public/matricula/     # Buscar por matrícula
+POST   /api/lotes/public/direccion/     # Buscar por dirección
+GET    /api/lotes/{id}/analisis/        # Análisis urbanístico
+GET    /api/lotes/{id}/documentos/      # Documentos del lote
+GET    /api/lotes/{id}/historial/       # Historial de cambios
+```
+
+📖 **[Ver documentación completa](apps/lotes/README.md)**
+
+### 4. POT (`apps.pot`)
+
+Plan de Ordenamiento Territorial de Medellín.
+
+**Características:**
+- Consulta de normativa urbanística
+- Tratamientos urbanísticos
+- Uso de suelo
+- Índices de construcción
+- Validación de normativa
+
+### 5. Documents (`apps.documents`)
+
+Gestión de documentos asociados a lotes.
+
+**Características:**
+- Upload de documentos
+- Validación de formato y tamaño
+- Categorización por tipo
+- Control de acceso por usuario
+- Versionado de documentos
+
+**Tipos de documentos:**
+- escritura: Escritura pública
+- cedula_catastral: Cédula catastral
+- plano: Planos arquitectónicos
+- foto: Fotografías del lote
+- otro: Otros documentos
+
+### 6. Stats (`apps.stats`)
+
+Estadísticas y analytics del sistema.
+
+**Características:**
+- Registro de eventos de usuario
+- Estadísticas de uso
+- Métricas de rendimiento
+- Reportes personalizados
+- Dashboard de analytics
+
+**Endpoints principales:**
+```
+POST   /api/stats/events/         # Registrar evento
+GET    /api/stats/summary/        # Resumen de estadísticas
+GET    /api/stats/user/{id}/      # Analytics de usuario
+```
+
+📖 **[Ver documentación completa](apps/stats/README.md)**
+
+### 7. Common (`apps.common`)
+
+Utilidades comunes y middleware.
+
+**Componentes:**
+- `APILoggingMiddleware`: Log de requests
+- `custom_exception_handler`: Manejo de excepciones
+- Validadores personalizados
+- Health checks
+- Utilidades de auditoría
+
+**Endpoints de health check:**
+```
+GET    /health/                   # Health check general
+GET    /health/database/          # Estado de base de datos
+GET    /health/redis/             # Estado de Redis
+```
+
+📖 **[Ver documentación completa](apps/common/README.md)**
+
+## 🔐 Autenticación
+
+### Flujo de Autenticación
+
+1. **Login**: Usuario envía credenciales
+2. **Tokens**: Servidor retorna access y refresh token
+3. **Requests**: Cliente incluye access token en header
+4. **Refresh**: Al expirar access, usar refresh token
+5. **Logout**: Invalidar refresh token
+
+### Uso de Tokens
+
+**Header de autenticación:**
+```
+Authorization: Bearer <access_token>
+```
+
+**Ejemplo en JavaScript:**
+```javascript
+const response = await fetch('/api/lotes/', {
+    headers: {
+        'Authorization': `Bearer ${accessToken}`,
+        'Content-Type': 'application/json'
+    }
+});
+```
+
+### Configuración JWT
+
+```python
+SIMPLE_JWT = {
+    'ACCESS_TOKEN_LIFETIME': timedelta(minutes=60),
+    'REFRESH_TOKEN_LIFETIME': timedelta(days=7),
+    'ROTATE_REFRESH_TOKENS': True,
+    'BLACKLIST_AFTER_ROTATION': True,
+}
+```
+
+## 📚 API Documentation
+
+### Swagger UI
+
+Documentación interactiva disponible en:
+
+- **Swagger UI**: `http://localhost:8000/api/docs/`
+- **ReDoc**: `http://localhost:8000/api/redoc/`
+- **OpenAPI Schema**: `http://localhost:8000/api/schema/`
+
+### Formato de Respuestas
+
+**Respuesta exitosa:**
+```json
+{
+    "success": true,
+    "message": "Operación exitosa",
+    "data": { ... }
+}
+```
+
+**Respuesta con error:**
+```json
+{
+    "success": false,
+    "message": "Error en la operación",
+    "errors": {
+        "field": ["Mensaje de error específico"]
+    }
+}
+```
+
+### Paginación
+
+Las listas usan paginación por defecto:
+
+```json
+{
+    "count": 100,
+    "next": "http://api.example.com/api/lotes/?page=2",
+    "previous": null,
+    "results": [...]
+}
+```
+
+**Query params:**
+- `page`: Número de página
+- `page_size`: Tamaño de página (max 100)
+
+### Filtrado y Búsqueda
+
+**Filtros:**
+```
+GET /api/lotes/?status=active&comuna=14
+```
+
+**Búsqueda:**
+```
+GET /api/lotes/?search=poblado
+```
+
+**Ordenamiento:**
+```
+GET /api/lotes/?ordering=-created_at
+```
+
+## 🧪 Testing
+
+### Ejecutar Tests
 
 ```bash
-# Cambiar entorno
-export DJANGO_SETTINGS_MODULE=config.settings.production
+# Todos los tests
+python manage.py test
+
+# Tests de un módulo
+python manage.py test apps.authentication
+
+# Tests con coverage
+coverage run manage.py test
+coverage report
+coverage html  # Genera reporte HTML en htmlcov/
+```
+
+### Estructura de Tests
+
+Cada app tiene su carpeta de tests:
+
+```
+apps/authentication/tests/
+├── __init__.py
+├── test_models.py
+├── test_views.py
+├── test_serializers.py
+└── test_permissions.py
+```
+
+### Ejemplo de Test
+
+```python
+from django.test import TestCase
+from rest_framework.test import APIClient
+from apps.users.models import User
+
+class LoteViewTest(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+        self.user = User.objects.create_user(
+            email='test@example.com',
+            password='Test123!',
+            role='owner'
+        )
+        self.client.force_authenticate(user=self.user)
+    
+    def test_create_lote(self):
+        response = self.client.post('/api/lotes/', {
+            'cbml': '01010010010010',
+            'area': 500.00
+        })
+        self.assertEqual(response.status_code, 201)
 ```
 
 ## 🗄️ Base de Datos
@@ -234,221 +556,238 @@ export DJANGO_SETTINGS_MODULE=config.settings.production
 ### Migraciones
 
 ```bash
-# Crear migraciones
+# Detectar cambios en modelos
 python manage.py makemigrations
+
+# Ver SQL de migración
+python manage.py sqlmigrate app_name 0001
 
 # Aplicar migraciones
 python manage.py migrate
 
-# Ver estado de migraciones
+# Listar migraciones
 python manage.py showmigrations
 
 # Revertir migración
 python manage.py migrate app_name 0001
 ```
 
-### Comandos de Base de Datos
+### Backup y Restore
 
+**Backup:**
 ```bash
-# Volcar datos
+# PostgreSQL
+pg_dump -U postgres lateral360 > backup.sql
+
+# Django fixtures
 python manage.py dumpdata > backup.json
+```
 
-# Cargar datos
+**Restore:**
+```bash
+# PostgreSQL
+psql -U postgres lateral360 < backup.sql
+
+# Django fixtures
 python manage.py loaddata backup.json
+```
 
-# Shell de Django
+## 📊 Logging
+
+### Configuración de Logs
+
+Los logs se guardan en `logs/`:
+- `development.log` - Logs de desarrollo
+- `production.log` - Logs de producción
+- `errors.log` - Solo errores
+- `security.log` - Eventos de seguridad
+
+### Niveles de Log
+
+```python
+import logging
+logger = logging.getLogger(__name__)
+
+logger.debug('Información de debugging')
+logger.info('Información general')
+logger.warning('Advertencia')
+logger.error('Error')
+logger.critical('Error crítico')
+```
+
+## 🚀 Deployment
+
+### Checklist Pre-Deploy
+
+- [ ] Actualizar `SECRET_KEY` con valor seguro
+- [ ] Configurar `DEBUG=False`
+- [ ] Actualizar `ALLOWED_HOSTS`
+- [ ] Configurar base de datos de producción
+- [ ] Configurar Redis para cache
+- [ ] Configurar email SMTP
+- [ ] Ejecutar `collectstatic`
+- [ ] Ejecutar migraciones
+- [ ] Configurar logs
+- [ ] Configurar backups automáticos
+- [ ] Configurar SSL/TLS
+- [ ] Configurar firewall
+- [ ] Configurar monitoreo
+
+### Deploy con Docker
+
+```bash
+# Producción
+docker-compose -f docker-compose.prod.yml up -d
+
+# Verificar servicios
+docker-compose ps
+
+# Ver logs
+docker-compose logs -f backend
+```
+
+### Deploy Manual
+
+```bash
+# Instalar dependencias
+pip install -r requirements.txt
+
+# Recolectar estáticos
+python manage.py collectstatic --noinput
+
+# Ejecutar migraciones
+python manage.py migrate --noinput
+
+# Iniciar con Gunicorn
+gunicorn config.wsgi:application --bind 0.0.0.0:8000
+```
+
+## 🔍 Troubleshooting
+
+### Error: UnicodeDecodeError en PostgreSQL
+
+**Causa**: Encoding incorrecto en archivo `.env` o contraseña con caracteres especiales.
+
+**Solución**:
+```bash
+# Recrear .env con UTF-8
+# O cambiar contraseña de PostgreSQL
+psql -U postgres
+ALTER USER postgres WITH PASSWORD 'password_simple';
+```
+
+### Error: "No module named 'dotenv'"
+
+**Causa**: Falta instalar python-dotenv.
+
+**Solución**:
+```bash
+pip install python-dotenv
+```
+
+### Error: "Connection refused" a PostgreSQL
+
+**Causa**: PostgreSQL no está corriendo o mal configurado.
+
+**Solución**:
+```bash
+# Verificar que PostgreSQL esté corriendo
+sudo systemctl status postgresql
+
+# Verificar conexión
+psql -U postgres -h localhost
+```
+
+### Error: Migraciones en conflicto
+
+**Causa**: Migraciones inconsistentes.
+
+**Solución**:
+```bash
+# Ver estado de migraciones
+python manage.py showmigrations
+
+# Fake migración inicial si es necesario
+python manage.py migrate --fake-initial
+```
+
+### Error: "Static files not found"
+
+**Causa**: No se ejecutó collectstatic.
+
+**Solución**:
+```bash
+python manage.py collectstatic --noinput
+```
+
+## 📈 Performance
+
+### Optimizaciones
+
+1. **Database Indexing**: Índices en campos frecuentes
+2. **Query Optimization**: select_related, prefetch_related
+3. **Caching**: Redis para datos frecuentes
+4. **Static Files**: Servidos por Nginx en producción
+5. **Connection Pooling**: Reutilización de conexiones
+6. **Async Operations**: Operaciones asíncronas cuando sea posible
+
+### Monitoreo
+
+```bash
+# Tiempo de queries
 python manage.py shell
+from django.db import connection
+print(connection.queries)
 
-# SQL Shell
-python manage.py dbshell
+# Profiling
+python -m cProfile manage.py runserver
 ```
 
-### Modelos Principales
+## 🔒 Seguridad
 
-#### Usuario (User)
-```python
-# Campos principales
-- email (único) # ✅ Validación implementada
-- first_name, last_name
-- role (admin, owner, developer)
-- phone, company
-- is_verified
-```
+### Best Practices
 
-#### Lote
-```python
-# Campos principales
-- nombre, descripcion
-- cbml (único) # ✅ Validación implementada
-- matricula (único) # ✅ Validación implementada
-- precio, area
-- ubicacion (coordenadas)
-- estado (disponible, vendido, reservado)
-- propietario (Usuario)
-```
+1. **Nunca** commitear `.env` al repositorio
+2. Usar contraseñas fuertes para base de datos
+3. Mantener dependencias actualizadas
+4. Implementar rate limiting
+5. Validar todos los inputs
+6. Sanitizar outputs
+7. Usar HTTPS en producción
+8. Implementar CORS correctamente
+9. Mantener logs de auditoría
+10. Realizar backups regulares
 
-#### Documento
-```python
-# Campos principales
-- archivo
-- tipo (contrato, plano, escritura)
-- lote (relacionado)
-- fecha_subida
-```
+### Security Headers
 
-## 🔐 Autenticación
+En producción se configuran automáticamente:
+- HTTPS redirect
+- HSTS
+- XSS Protection
+- Content Type nosniff
+- X-Frame-Options
 
-### Sistema de Usuarios
+## 📞 Soporte
 
-El sistema usa autenticación basada en JWT con roles:
+### Recursos
 
-- **Admin**: Acceso completo al sistema
-- **Owner**: Gestión de sus propios lotes
-- **Developer**: Acceso de lectura y reportes
+- **Documentación Django**: https://docs.djangoproject.com/
+- **Django REST Framework**: https://www.django-rest-framework.org/
+- **PostgreSQL**: https://www.postgresql.org/docs/
+- **Redis**: https://redis.io/documentation
 
-### Endpoints de Autenticación
+### Contribuir
 
-```bash
-# Registro
-POST /api/auth/register/
-{
-  "username": "usuario",
-  "email": "user@example.com",
-  "password": "password123",
-  "first_name": "Nombre",
-  "last_name": "Apellido"
-}
+1. Fork el repositorio
+2. Crear rama feature (`git checkout -b feature/nueva-funcionalidad`)
+3. Commit cambios (`git commit -am 'Agregar nueva funcionalidad'`)
+4. Push a la rama (`git push origin feature/nueva-funcionalidad`)
+5. Crear Pull Request
 
-# Login
-POST /api/auth/login/
-{
-  "email": "user@example.com",
-  "password": "password123"
-}
+## 📝 Licencia
 
-# Logout
-POST /api/auth/logout/
-# Headers: Authorization: Bearer <token>
+Copyright © 2024 Lateral 360°. Todos los derechos reservados.
 
-# Perfil actual
-GET /api/auth/users/me/
-# Headers: Authorization: Bearer <token>
-```
+---
 
-### Middleware de Autenticación
-
-```python
-# En views.py
-from rest_framework.permissions import IsAuthenticated
-
-class MiView(APIView):
-    permission_classes = [IsAuthenticated]
-```
-
-## 📁 Estructura del Proyecto
-
-```plaintext
-Backend/
-│
-├── config/                  # Configuración del proyecto Django
-│   ├── __init__.py
-│   ├── settings/            # Archivos de configuración por entorno
-│   │   ├── __init__.py
-│   │   ├── development.py   # Configuración para desarrollo
-│   │   ├── production.py    # Configuración para producción
-│   │   └── testing.py       # Configuración para pruebas
-│   │
-│   ├── urls.py              # Rutas del proyecto
-│   └── wsgi.py              # Punto de entrada para WSGI
-│
-├── app/                     # Aplicación principal
-│   ├── __init__.py
-│   ├── admin.py             # Configuración del admin de Django
-│   ├── apps.py              # Configuración de la aplicación
-│   ├── migrations/          # Migraciones de la base de datos
-│   ├── models.py            # Modelos de la base de datos
-│   ├── serializers.py       # Serializadores para la API
-│   ├── tests.py             # Pruebas de la aplicación
-│   └── views.py             # Vistas de la API
-│
-├── manage.py                # Script de administración de Django
-├── requirements.txt         # Dependencias del proyecto
-└── .env.example             # Ejemplo de archivo de variables de entorno
-```
-
-## 🌐 API Endpoints
-
-### Autenticación
-
-- `POST /api/auth/register/`: Registro de usuario
-- `POST /api/auth/login/`: Inicio de sesión
-- `POST /api/auth/logout/`: Cierre de sesión
-- `POST /api/auth/change-password/`: Cambiar contraseña
-- `POST /api/auth/password-reset/`: Solicitar reset de contraseña
-- `GET /api/auth/csrf/`: Obtener token CSRF
-
-### Usuarios
-
-- `GET /api/users/me/`: Obtener perfil de usuario
-- `GET /api/users/`: Listar usuarios
-- `GET /api/users/{id}/`: Obtener detalles de un usuario
-- `PUT /api/users/{id}/`: Actualizar usuario
-- `DELETE /api/users/{id}/`: Eliminar usuario
-
-### Lotes
-
-- `GET /api/lotes/`: Listar lotes
-- `GET /api/lotes/{id}/`: Obtener detalles de un lote
-- `POST /api/lotes/`: Crear un nuevo lote
-- `PUT /api/lotes/{id}/`: Actualizar un lote
-- `DELETE /api/lotes/{id}/`: Eliminar un lote
-
-### Documentos
-
-- `GET /api/documentos/`: Listar documentos
-- `GET /api/documentos/{id}/`: Obtener detalles de un documento
-- `POST /api/documentos/`: Subir un nuevo documento
-- `DELETE /api/documentos/{id}/`: Eliminar un documento
-
-## 🧪 Testing
-
-### Pruebas Unitarias
-
-```bash
-# Ejecutar pruebas
-python manage.py test
-
-# Ver cobertura
-coverage report
-```
-
-### Pruebas Manuales
-
-- Probar endpoints con Postman o curl
-- Verificar funcionamiento en el navegador
-
-## 🔧 Utilidades
-
-### Comandos Útiles
-
-```bash
-# Crear superusuario
-python manage.py createsuperuser
-
-# Ejecutar servidor
-python manage.py runserver
-
-# Abrir shell de Django
-python manage.py shell
-```
-
-### Scripts
-
-- `backup.sh`: Script para hacer backup de la base de datos
-- `restore.sh`: Script para restaurar la base de datos desde un backup
-
-### Notas
-
-- Asegúrate de tener PostgreSQL y Redis corriendo si no usas Docker.
-- Configura correctamente el archivo `.env` antes de iniciar el servidor.
-- **Nuevas validaciones**: El sistema ahora previene duplicados automáticamente.
+**Desarrollado con ❤️ para la transformación digital del sector inmobiliario en Medellín**

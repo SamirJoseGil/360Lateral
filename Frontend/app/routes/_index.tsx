@@ -4,25 +4,23 @@ import type { LoaderFunctionArgs } from "@remix-run/node";
 import { getUser } from "~/utils/auth.server";
 import { recordEvent } from "~/services/stats.server";
 
-export async function loader({ request }: LoaderFunctionArgs) {
-  const user = await getUser(request);
+export const loader = async ({ request }: LoaderFunctionArgs) => {
+  console.log("=== INDEX LOADER START ===");
 
   try {
-    await recordEvent(request, {
-      type: "view",
-      name: "homepage",
-      value: {
-        user_id: user?.id || "anonymous",
-      },
-    });
+    const user = await getUser(request);
+    console.log("User loaded:", user ? user.email : "No user");
+    console.log("=== INDEX LOADER END ===");
 
-    // CRÍTICO: NO usar headers de no-cache aquí
     return json({ user });
   } catch (error) {
-    console.error("Error registrando visita:", error);
-    return json({ user });
+    console.error("Error in index loader:", error);
+    console.log("=== INDEX LOADER END (ERROR) ===");
+
+    // No redirigir, solo retornar null
+    return json({ user: null });
   }
-}
+};
 
 export default function Index() {
   const { user } = useLoaderData<typeof loader>();

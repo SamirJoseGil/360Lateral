@@ -1,42 +1,63 @@
 # ==============================================
-# 🏗️ DOCKERFILE PARA REMIX - OPTIMIZADO
+# 🎨 DOCKERFILE PARA REMIX - MULTI-STAGE
 # ==============================================
 
-# Stage 1: Build dependencies
-FROM node:20-alpine AS deps
-RUN apk add --no-cache libc6-compat
-WORKDIR /app
-COPY package*.json ./
-RUN npm ci --only=production && npm cache clean --force
+FROM node:20-alpine AS base
 
-# Stage 2: Development
-FROM node:20-alpine AS development
+# Instalar dependencias del sistema
 RUN apk add --no-cache libc6-compat curl
+
+# Stage: Development
+FROM base AS development
+
 WORKDIR /app
 
-# Copy dependencies from deps stage
-COPY --from=deps /app/node_modules ./node_modules
-COPY package*.json ./
+# Copiar package files
+COPY package.json package-lock.json* ./
 
-# Install all dependencies (including dev)
-RUN npm install
+# Instalar dependencias
+RUN npm ci
 
-# Copy source code
+# Copiar código fuente
 COPY . .
 
-# Create non-root user
-RUN addgroup --system --gid 1001 nodejs && \
-    adduser --system --uid 1001 remix && \
-    chown -R remix:nodejs /app
-
-USER remix
-
-# Expose port
+# Exponer puerto
 EXPOSE 3000
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
     CMD curl -f http://localhost:3000/ || exit 1
 
-# Start development server en puerto 3000 específicamente
-CMD ["npm", "run", "dev", "--", "--host", "0.0.0.0", "--port", "3000"]
+# Comando de desarrollo
+CMD ["npm", "run", "dev"]
+
+# Stage: Production Build
+FROM base AS builder
+
+WORKDIR /app
+
+COPY package.json package-lock.json* ./
+RUN npm ci
+
+COPY . .
+RUN npm run build
+
+# Stage: Production
+FROM base AS production
+
+WORKDIR /app
+
+# Copiar package files y instalar solo dependencias de producción
+COPY package.json package-lock.json* ./
+RUN npm ci --production
+
+# Copiar build desde builder stage
+COPY --from=builder /app/build ./build
+COPY --from=builder /app/public ./public
+
+EXPOSE 3000
+
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+    CMD curl -f http://localhost:3000/ || exit 1
+
+CMD ["npm", "start"]
