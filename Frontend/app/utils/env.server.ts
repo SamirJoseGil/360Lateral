@@ -11,9 +11,6 @@ const isDocker = process.env.DOCKER_ENV === 'true' || process.env.BACKEND_HOST =
 
 /**
  * ✅ CRÍTICO: URL de la API según el contexto de ejecución
- * - SSR en Docker: Usa URL interna (backend:8000)
- * - SSR local: Usa localhost:8000
- * - Cliente: Usa URL externa (localhost:8000)
  */
 export const API_URL = isServer
   ? (isDocker 
@@ -38,12 +35,21 @@ export const ENV = {
 export const isProd = ENV.NODE_ENV === "production";
 export const isDev = ENV.NODE_ENV === "development";
 
-// Helper para logging de debug
-export const logApiUrl = (context: string) => {
-  if (isDev && isServer) {
-    console.log(`[${context}] API_URL: ${API_URL} (isServer: ${isServer}, isDocker: ${isDocker})`);
-  }
-};
+// ✅ SOLO loguear una vez al inicio y solo en desarrollo
+let hasLoggedOnce = false;
+
+export const logApiUrl: (context?: string) => void = (isDev && isServer)
+  ? (context?: string) => {
+      if (!hasLoggedOnce) {
+        console.log('🔧 [ENV CONFIG]', {
+          isDocker,
+          API_URL,
+          BACKEND_HOST: ENV.BACKEND_HOST,
+        });
+        hasLoggedOnce = true;
+      }
+    }
+  : () => {}; // No-op en producción
 
 // Información de debug consolidada
 export const getEnvDebugInfo = () => {
@@ -55,14 +61,3 @@ export const getEnvDebugInfo = () => {
     isProduction: isProd,
   };
 };
-
-// Log inicial en desarrollo
-if (isDev && isServer) {
-  console.log('🔧 [ENV CONFIG - env.server.ts]', {
-    isDocker,
-    isServer,
-    API_URL,
-    BACKEND_HOST: process.env.BACKEND_HOST,
-    BACKEND_PORT: process.env.BACKEND_PORT,
-  });
-}

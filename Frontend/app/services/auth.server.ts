@@ -1,6 +1,7 @@
 // filepath: c:\Users\samir\Documents\GitHub\360Lateral\Frontend\app\services\auth.server.ts
 import { fetchWithAuth } from "~/utils/auth.server";
 import { API_URL } from "~/utils/env.server";
+import { getSession, destroySession } from "~/utils/session.server";
 
 console.log(`[Auth Service] Using API_URL: ${API_URL}`);
 
@@ -140,12 +141,15 @@ export async function confirmPasswordReset(token: string, password: string, pass
   }
 }
 
-// Función para logout
-export async function logoutUser(request: Request, refreshToken?: string) {
+// Función para logout CORREGIDA
+export async function logoutUser(request: Request) {
   console.log("[Auth] Logging out user");
 
+  const session = await getSession(request);
+  const refreshToken = session.get("refresh_token");
+
   try {
-    const { res, setCookieHeaders } = await fetchWithAuth(request, `${API_URL}/api/auth/logout/`, {
+    const { res } = await fetchWithAuth(request, `${API_URL}/api/auth/logout/`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'
@@ -157,21 +161,19 @@ export async function logoutUser(request: Request, refreshToken?: string) {
     if (!res.ok && res.status !== 401) {
       console.warn(`[Auth] Logout returned ${res.status}, but continuing with local logout`);
     }
-
-    return {
-      success: true,
-      message: "Logout exitoso",
-      headers: setCookieHeaders
-    };
   } catch (error) {
     console.error("[Auth] Error in logoutUser:", error);
-    // Para logout, continuamos aunque haya errores
-    return {
-      success: true,
-      message: "Logout local exitoso",
-      headers: new Headers()
-    };
+    // Continuamos con el logout local aunque falle el del backend
   }
+
+  // Destruir sesión local
+  return {
+    success: true,
+    message: "Logout exitoso",
+    headers: new Headers({
+      "Set-Cookie": await destroySession(session)
+    })
+  };
 }
 
 // Helper para validar contraseñas

@@ -1,7 +1,6 @@
 import { createCookie, redirect } from "@remix-run/node";
-import { API_URL } from "~/utils/env.server";
-
-console.log(`[Auth Utils] Using API_URL: ${API_URL}`);
+import { getSession, destroySession, commitSession } from "./session.server";
+import { API_URL, isDev } from "./env.server";
 
 export type Role = "admin" | "owner" | "developer";
 
@@ -43,10 +42,8 @@ const refreshTokenCookie = createCookie("l360_refresh", {
 
 export async function getAccessTokenFromCookies(request: Request): Promise<string | null> {
   const cookieHeader = request.headers.get("Cookie");
-  console.log(`[getAccessTokenFromCookies] Cookie header: ${cookieHeader ? 'present' : 'missing'}`);
   
   const token = await accessTokenCookie.parse(cookieHeader);
-  console.log(`[getAccessTokenFromCookies] Token: ${token ? 'found' : 'not found'}`);
   
   return token;
 }
@@ -63,11 +60,10 @@ export async function commitAuthCookies({
   access: string;
   refresh: string;
 }) {
-  console.log(`[commitAuthCookies] ===== CREATING COOKIES =====`);
-  console.log(`[commitAuthCookies] Access token length: ${access.length}`);
-  console.log(`[commitAuthCookies] Refresh token length: ${refresh.length}`);
-  console.log(`[commitAuthCookies] Environment: ${process.env.NODE_ENV}`);
-  console.log(`[commitAuthCookies] isProd: ${isProd}`);
+  // ✅ REDUCIR logs - solo en desarrollo y solo si hay error
+  if (isDev) {
+    console.log(`[Auth] Creating cookies (access: ${access.substring(0, 20)}...)`);
+  }
   
   const headers = new Headers();
   
@@ -75,22 +71,12 @@ export async function commitAuthCookies({
     const accessCookie = await accessTokenCookie.serialize(access);
     const refreshCookie = await refreshTokenCookie.serialize(refresh);
     
-    console.log(`[commitAuthCookies] ✅ Access cookie created (${accessCookie.length} chars)`);
-    console.log(`[commitAuthCookies] Cookie preview: ${accessCookie.substring(0, 100)}...`);
-    console.log(`[commitAuthCookies] ✅ Refresh cookie created (${refreshCookie.length} chars)`);
-    
     headers.append("Set-Cookie", accessCookie);
     headers.append("Set-Cookie", refreshCookie);
     
-    // Verificar que los headers se agregaron
-    const setCookies = headers.getSetCookie();
-    console.log(`[commitAuthCookies] ✅ Total Set-Cookie headers: ${setCookies.length}`);
-    
-    console.log(`[commitAuthCookies] ===== COOKIES CREATED SUCCESSFULLY =====`);
-    
     return headers;
   } catch (error) {
-    console.error(`[commitAuthCookies] ❌ ERROR creating cookies:`, error);
+    console.error(`[Auth] ❌ ERROR creating cookies:`, error);
     throw error;
   }
 }
@@ -150,9 +136,6 @@ function setCachedUser(token: string, user: ApiUser | null) {
 export async function getUser(request: Request): Promise<ApiUser | null> {
   const url = new URL(request.url);
   
-  // ✅ CRÍTICO: Logging para debugging
-  console.log(`[getUser] Using API_URL: ${API_URL} (isServer: ${typeof window === 'undefined'})`);
-  
   // No autenticar en rutas públicas
   if (url.pathname === "/logout" || url.searchParams.has('logout')) {
     return null;
@@ -161,22 +144,19 @@ export async function getUser(request: Request): Promise<ApiUser | null> {
   try {
     const token = await getAccessTokenFromCookies(request);
     if (!token) {
-      console.log("[getUser] No access token found in cookies");
+      // ✅ ELIMINAR log repetitivo
+      // console.log("[getUser] No access token found in cookies");
       return null;
     }
-
-    console.log(`[getUser] Token found, length: ${token.length}`);
 
     // Verificar caché
     const cached = getCachedUser(token);
     if (cached !== undefined) {
-      console.log("[getUser] Returning cached user");
       return cached;
     }
 
-    // ✅ CRÍTICO: Validar con API usando API_URL
+    // Validar con API usando API_URL
     const apiUrl = `${API_URL}/api/auth/me/`;
-    console.log(`[getUser] Verifying token at: ${apiUrl}`);
     
     const response = await fetch(apiUrl, {
       headers: {
@@ -189,15 +169,19 @@ export async function getUser(request: Request): Promise<ApiUser | null> {
       const responseData = await response.json();
       const userData = responseData.data || responseData;
       
-      console.log(`[getUser] ✅ Token verified for: ${userData.email}`);
+      // ✅ Solo loguear en desarrollo
+      if (isDev) {
+        console.log(`[Auth] ✅ Token verified for: ${userData.email}`);
+      }
       
       // Guardar en caché
       setCachedUser(token, userData);
       return userData;
     } else {
-      console.log(`[getUser] ❌ Token verification failed: ${response.status}`);
-      const errorText = await response.text();
-      console.log(`[getUser] Error response: ${errorText}`);
+      // ✅ Solo loguear errores
+      if (response.status !== 401) {
+        console.log(`[Auth] ❌ Token verification failed: ${response.status}`);
+      }
     }
     
     // Token inválido, limpiar caché
@@ -218,77 +202,60 @@ export async function fetchWithAuth(
   url: string,
   options: RequestInit = {}
 ): Promise<{ res: Response; setCookieHeaders: Headers }> {
-  const accessToken = await getAccessTokenFromCookies(request);
+  // ✅ CORRECCIÓN: Obtener token de cookies, no de sesión
+  let accessToken = await getAccessTokenFromCookies(request);
   const refreshToken = await getRefreshTokenFromCookies(request);
 
-  console.log(`[fetchWithAuth] Fetching: ${url}`);
-
-  if (!accessToken) {
-    throw new Response("Authentication required", { status: 401 });
-  }
-
   const headers = new Headers(options.headers);
-  headers.set('Authorization', `Bearer ${accessToken}`);
-  
-  // Solo establecer Content-Type si no es FormData
-  if (!(options.body instanceof FormData)) {
-    headers.set('Content-Type', 'application/json');
+  headers.set("Content-Type", "application/json");
+
+  if (accessToken) {
+    headers.set("Authorization", `Bearer ${accessToken}`);
   }
 
-  try {
-    const response = await fetch(url, { ...options, headers });
+  let response = await fetch(url, { ...options, headers });
 
-    // Token expirado, intentar refresh
-    if (response.status === 401 && refreshToken) {
-      console.log("[Auth] Token expired, refreshing...");
-      
+  // Si el token expiró, intentar renovarlo
+  if (response.status === 401 && refreshToken) {
+    console.log("[Auth] Access token expired, attempting refresh");
+
+    try {
       const refreshResponse = await fetch(`${API_URL}/api/auth/token/refresh/`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ refresh: refreshToken }),
       });
 
       if (refreshResponse.ok) {
         const refreshData = await refreshResponse.json();
-        const newAccessToken = refreshData.access;
-        
-        // Limpiar caché con token antiguo
-        clearUserCache(accessToken);
+        accessToken = refreshData.access;
 
-        // Reintentar con nuevo token
-        const retryHeaders = new Headers(options.headers);
-        retryHeaders.set('Authorization', `Bearer ${newAccessToken}`);
-        if (!(options.body instanceof FormData)) {
-          retryHeaders.set('Content-Type', 'application/json');
+        // ✅ CORRECCIÓN: Actualizar cookies con el nuevo token
+        if (!accessToken) {
+          throw new Error("Failed to refresh access token");
         }
-
-        const retryResponse = await fetch(url, { ...options, headers: retryHeaders });
-
-        // Crear headers para actualizar cookies
         const setCookieHeaders = await commitAuthCookies({
-          access: newAccessToken,
-          refresh: refreshData.refresh || refreshToken,
+          access: accessToken,
+          refresh: refreshToken as string
         });
 
-        return { res: retryResponse, setCookieHeaders };
-      } else {
-        clearUserCache(accessToken);
-        throw new Response("Authentication required", { status: 401 });
-      }
-    }
+        // Reintentar la petición original con el nuevo token
+        headers.set("Authorization", `Bearer ${accessToken}`);
+        response = await fetch(url, { ...options, headers });
 
-    return { res: response, setCookieHeaders: new Headers() };
-    
-  } catch (error) {
-    console.error(`[Auth] Error in fetchWithAuth for ${url}:`, error);
-    
-    if (error instanceof Response) throw error;
-    if (error instanceof TypeError && error.message.includes('fetch')) {
-      throw new Error(`Network error: Unable to connect to ${url}`);
+        return { res: response, setCookieHeaders };
+      } else {
+        // Si falló el refresh, limpiar cookies
+        console.log("[Auth] Refresh token failed, clearing cookies");
+        const clearHeaders = await clearAuthCookies();
+        return { res: response, setCookieHeaders: clearHeaders };
+      }
+    } catch (error) {
+      console.error("[Auth] Error refreshing token:", error);
     }
-    
-    throw new Response("Internal server error", { status: 500 });
   }
+
+  return { res: response, setCookieHeaders: new Headers() };
 }
 
 // =============================================================================
@@ -342,10 +309,11 @@ export async function loginAction(request: Request) {
 
 export async function logoutAction(request: Request) {
   try {
-    const token = await getAccessTokenFromCookies(request);
-    const refreshToken = await getRefreshTokenFromCookies(request);
+    const session = await getSession(request);
+    const refreshToken = session.get("refresh_token");
     
     // Limpiar caché
+    const token = await getAccessTokenFromCookies(request);
     if (token) clearUserCache(token);
     
     // Intentar logout en backend

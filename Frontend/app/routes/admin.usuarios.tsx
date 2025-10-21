@@ -4,6 +4,7 @@ import { useLoaderData, Form, useNavigation, useSubmit, Link } from "@remix-run/
 import { useState } from "react";
 import { getUser } from "~/utils/auth.server";
 import { getAllUsers, deleteUser, updateUserStatus, updateUser, type User } from "~/services/users.server";
+import { recordEvent } from "~/services/stats.server";
 
 type LoaderData = {
     user: any;
@@ -13,17 +14,42 @@ type LoaderData = {
 };
 
 export async function loader({ request }: LoaderFunctionArgs): Promise<ReturnType<typeof json<LoaderData>>> {
-    // Verificar que el usuario esté autenticado y sea admin
-    const user = await getUser(request);
-    if (!user || user.role !== "admin") {
-        return redirect("/");
-    }
-
-    const url = new URL(request.url);
-    const searchQuery = url.searchParams.get("search") || "";
-
     try {
-        // Usar la API real del backend
+        // Verificar autenticación
+        const user = await getUser(request);
+
+        if (!user) {
+            console.log("[Admin Usuarios] No user found, redirecting");
+            return redirect("/login?message=Sesión expirada");
+        }
+
+        if (user.role !== "admin") {
+            console.log(`[Admin Usuarios] User is not admin (${user.role}), redirecting`);
+            return redirect("/unauthorized");
+        }
+
+        // ✅ LOGGING: Verificar que el usuario está autenticado
+        console.log(`[Admin Usuarios] User authenticated: ${user.email} (${user.role})`);
+
+        // Registrar evento con manejo de errores
+        try {
+            await recordEvent(request, {
+                type: "view",
+                name: "admin_usuarios_page",
+                value: {
+                    user_id: user.id,
+                    role: user.role,
+                    timestamp: new Date().toISOString()
+                }
+            });
+        } catch (statsError) {
+            console.warn("[Admin Usuarios] Error recording stats:", statsError);
+        }
+
+        const url = new URL(request.url);
+        const searchQuery = url.searchParams.get("search") || "";
+
+        // Obtener usuarios con manejo de errores
         const { users: usersList, headers } = await getAllUsers(request, searchQuery);
 
         // Calcular el nombre completo para cada usuario
@@ -44,14 +70,17 @@ export async function loader({ request }: LoaderFunctionArgs): Promise<ReturnTyp
             searchQuery,
             error: undefined
         }, { headers });
+
     } catch (error) {
-        console.error("Error loading users:", error);
-        return json({
-            user,
-            users: [],
-            searchQuery,
-            error: "Error al cargar usuarios"
-        });
+        console.error("[Admin Usuarios] Loader error:", error);
+
+        // Si es un error de autenticación, redirigir
+        if (error instanceof Response) {
+            throw error;
+        }
+
+        // Para otros errores, mostrar página de error
+        throw new Response("Error cargando usuarios", { status: 500 });
     }
 }
 

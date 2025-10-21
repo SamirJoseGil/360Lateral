@@ -4,23 +4,21 @@ import type { LoaderFunctionArgs } from "@remix-run/node";
 import { getUser } from "~/utils/auth.server";
 import { recordEvent } from "~/services/stats.server";
 
-export const loader = async ({ request }: LoaderFunctionArgs) => {
-  console.log("=== INDEX LOADER START ===");
+export async function loader({ request }: LoaderFunctionArgs) {
+  // ✅ ELIMINAR logs excesivos
+  // console.log("=== INDEX LOADER START ===");
 
-  try {
-    const user = await getUser(request);
-    console.log("User loaded:", user ? user.email : "No user");
-    console.log("=== INDEX LOADER END ===");
+  const user = await getUser(request);
 
-    return json({ user });
-  } catch (error) {
-    console.error("Error in index loader:", error);
-    console.log("=== INDEX LOADER END (ERROR) ===");
+  // ✅ Solo loguear si es necesario
+  // console.log("User loaded:", user ? user.email : "No user");
+  console.log("=== INDEX LOADER END ===");
 
-    // No redirigir, solo retornar null
-    return json({ user: null });
-  }
-};
+  return json({
+    user,
+    // ...other data...
+  });
+}
 
 export default function Index() {
   const { user } = useLoaderData<typeof loader>();

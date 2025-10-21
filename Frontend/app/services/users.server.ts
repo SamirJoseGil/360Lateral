@@ -74,8 +74,11 @@ export async function getUsers(request: Request, options: {
     if (options.role) url.searchParams.set('role', options.role);
     if (options.status) url.searchParams.set('status', options.status);
     
-    console.log(`[Users] Fetching users from: ${url.toString()}`);
     logApiUrl("getUsers");
+    
+    // ✅ LOGGING: Ver qué token se está enviando
+    const token = await import("~/utils/auth.server").then(m => m.getAccessTokenFromCookies(request));
+    console.log(`[Users] Token present: ${!!token}, length: ${token?.length || 0}`);
     
     const { res: response, setCookieHeaders } = await fetchWithAuth(request, url.toString(), {
       method: 'GET',
@@ -86,6 +89,11 @@ export async function getUsers(request: Request, options: {
     
     if (!response.ok) {
       console.error(`[Users] Error fetching users:`, response.status, response.statusText);
+      
+      // ✅ LOGGING ADICIONAL: Ver el cuerpo de la respuesta de error
+      const errorBody = await response.text();
+      console.error(`[Users] Error body:`, errorBody);
+      
       throw new Error(`Error fetching users: ${response.status} ${response.statusText}`);
     }
     

@@ -9,42 +9,59 @@ import { PageViewTracker } from "~/components/StatsTracker";
 
 // Loader para verificar autenticación y rol de administrador
 export async function loader({ request }: LoaderFunctionArgs) {
-    console.log("Admin layout loader - processing request");
-
-    // Verificar que el usuario esté autenticado y sea admin
-    const user = await getUser(request);
-    if (!user) {
-        console.log("Admin layout loader - no user, redirecting to home");
-        return redirect("/");
-    }
-
-    if (user.role !== "admin") {
-        console.log(`Admin layout loader - user is not admin (${user.role}), redirecting`);
-        // Redirigir a la ruta apropiada según el rol
-        const roleMappings: Record<string, string> = {
-            "owner": "/owner",
-            "developer": "/developer",
-            "admin": "/admin"
-        };
-        return redirect(roleMappings[user.role] || "/");
-    }
-
-    // Registrar evento de acceso al panel de administrador
     try {
-        await recordEvent(request, {
-            type: "view",
-            name: "admin_panel_access",
-            value: {
-                user_id: user.id,
-                role: user.role
-            }
-        });
-    } catch (error) {
-        console.error("Error al registrar evento de acceso a admin:", error);
-        // No interrumpimos el flujo por un error de registro de evento
-    }
+        const user = await getUser(request);
 
-    return json({ user });
+        if (!user) {
+            console.log("Admin layout loader - no user, redirecting to home");
+            return redirect("/");
+        }
+
+        if (user.role !== "admin") {
+            console.log(`Admin layout loader - user is not admin (${user.role}), redirecting`);
+            // Redirigir a la ruta apropiada según el rol
+            const roleMappings: Record<string, string> = {
+                "owner": "/owner",
+                "developer": "/developer",
+                "admin": "/admin"
+            };
+            return redirect(roleMappings[user.role] || "/");
+        }
+
+        // ✅ SOLO registrar evento una vez por carga del layout
+        const url = new URL(request.url);
+
+        // Solo registrar si no es una recarga o navegación secundaria
+        const isInitialLoad = !request.headers.get('purpose')?.includes('prefetch');
+
+        if (isInitialLoad) {
+            try {
+                await recordEvent(request, {
+                    type: "view",
+                    name: "admin_layout",
+                    value: {
+                        pathname: url.pathname,
+                        search: url.search,
+                        timestamp: new Date().toISOString(),
+                        user_id: user.id,
+                        role: user.role
+                    }
+                });
+            } catch (statsError) {
+                console.warn("[Admin Layout] Error recording stats:", statsError);
+            }
+        }
+
+        return json({ user });
+    } catch (error) {
+        console.error("[Admin Layout] Loader error:", error);
+
+        if (error instanceof Response) {
+            throw error;
+        }
+
+        throw redirect('/login?message=Sesión expirada');
+    }
 }
 
 // Componente para el layout de administrador

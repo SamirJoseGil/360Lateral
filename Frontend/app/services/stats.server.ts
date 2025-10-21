@@ -1,7 +1,5 @@
 import { fetchWithAuth, getAccessTokenFromCookies } from "~/utils/auth.server";
-import { API_URL } from "~/utils/env.server";
-
-console.log(`[Stats Service] Using API_URL: ${API_URL}`);
+import { API_URL, isDev } from "~/utils/env.server";
 
 // Generar UUID simple para sesiones
 function uuid() {
@@ -83,15 +81,56 @@ export interface ChartData {
 // === FUNCIONES PRINCIPALES SEGÚN DOCUMENTACIÓN ===
 
 // Función para registrar un evento estadístico
+// Cache para prevenir eventos duplicados en corto tiempo
+const recentEvents = new Map<string, number>();
+const DUPLICATE_THRESHOLD = 1000; // 1 segundo
+
+function getEventKey(eventData: EventData, userId?: string): string {
+  return `${eventData.type}:${eventData.name}:${userId || 'anonymous'}`;
+}
+
+function isDuplicateEvent(eventKey: string): boolean {
+  const lastTime = recentEvents.get(eventKey);
+  const now = Date.now();
+  
+  if (lastTime && (now - lastTime) < DUPLICATE_THRESHOLD) {
+    return true;
+  }
+  
+  recentEvents.set(eventKey, now);
+  
+  // Limpiar eventos antiguos cada 100 registros
+  if (recentEvents.size > 100) {
+    const cutoff = now - DUPLICATE_THRESHOLD;
+    for (const [key, time] of recentEvents.entries()) {
+      if (time < cutoff) {
+        recentEvents.delete(key);
+      }
+    }
+  }
+  
+  return false;
+}
+
 export async function recordEvent(
   request: Request,
   eventData: EventData
 ): Promise<boolean> {
   try {
-    console.log(`[Stats] Recording event: ${eventData.type}:${eventData.name}`);
+    const userId = eventData.value?.user_id as string | undefined;
+    const eventKey = getEventKey(eventData, userId);
+    
+    if (isDuplicateEvent(eventKey)) {
+      return true; // ✅ Sin log en producción
+    }
+    
+    // ✅ Solo loguear en desarrollo
+    if (isDev) {
+      console.log(`[API Stats] Enviando a ${API_URL}/api/stats/events/record/`);
+      console.log(`[API Stats] Datos:`, JSON.stringify(eventData));
+    }
     
     const url = `${API_URL}/api/stats/events/record/`;
-    console.log(`[Stats] Posting to: ${url}`);
     
     const response = await fetch(url, {
       method: 'POST',
@@ -102,11 +141,16 @@ export async function recordEvent(
     });
 
     if (!response.ok) {
-      console.warn(`[Stats] Event recording returned ${response.status}`);
+      if (isDev) {
+        console.warn(`[Stats] Event recording returned ${response.status}`);
+      }
       return false;
     }
 
-    console.log(`[Stats] Event recorded successfully`);
+    if (isDev) {
+      console.log(`[API Stats] Respuesta: ${response.status}`);
+    }
+    
     return true;
   } catch (error) {
     console.error('[Stats] Error recording event:', error);

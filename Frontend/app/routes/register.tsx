@@ -1,9 +1,12 @@
-import { Form, useActionData, useLoaderData, Link } from "@remix-run/react";
+import { Form, useActionData, Link } from "@remix-run/react";
 import { ActionFunctionArgs, LoaderFunctionArgs, json, redirect } from "@remix-run/node";
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { getUser } from "~/utils/auth.server";
-import { recordEvent } from "~/services/stats.server";
+import { commitSession, getSession } from "~/utils/session.server";
+import { API_URL } from "~/utils/env.server";
 import React from "react";
+import { recordEvent } from "~/services/stats.server";
+import { commitAuthCookies } from "~/utils/auth.server";
 
 // Función helper para obtener la ruta del dashboard según el rol
 function getDashboardRoute(role: string): string {
@@ -47,7 +50,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
     return json({});
 }
 
-// Acción de registro CORREGIDA
+// Acción de registro CORREGIDA para usar sesión del servidor
 export async function action({ request }: ActionFunctionArgs) {
     console.log("=== REGISTER ACTION START ===");
     const formData = await request.formData();
@@ -108,9 +111,9 @@ export async function action({ request }: ActionFunctionArgs) {
             ...(company && { company })
         };
 
-        console.log("Sending registration payload (password hidden)");
+        console.log("Sending registration to:", `${API_URL}/api/auth/register/`);
 
-        const registerResponse = await fetch("http://localhost:8000/api/auth/register/", {
+        const registerResponse = await fetch(`${API_URL}/api/auth/register/`, {
             method: "POST",
             headers: {
                 "Content-Type": "application/json",
@@ -191,21 +194,19 @@ export async function action({ request }: ActionFunctionArgs) {
 
         console.log(`Registration complete for: ${user.email} (role: ${user.role})`);
 
+        // ✅ CORRECCIÓN: Usar commitAuthCookies en lugar de sesión de Remix
+        const headers = await commitAuthCookies({
+            access,
+            refresh
+        });
+
         // Determinar ruta de redirección
         const finalRedirectTo = getDashboardRoute(user.role);
-
-        // Crear cookies
-        const headers = new Headers();
-        const isProduction = process.env.NODE_ENV === 'production';
-        const cookieOptions = `Path=/; HttpOnly; SameSite=Lax${isProduction ? '; Secure' : ''}; Max-Age=604800`;
-
-        headers.append("Set-Cookie", `l360_access=${encodeURIComponent(access)}; ${cookieOptions}`);
-        headers.append("Set-Cookie", `l360_refresh=${encodeURIComponent(refresh)}; ${cookieOptions}`);
-        headers.append("Set-Cookie", `l360_user=${encodeURIComponent(JSON.stringify(user))}; ${cookieOptions}`);
 
         console.log(`Redirecting to: ${finalRedirectTo}`);
         console.log("=== REGISTER ACTION END (SUCCESS) ===");
 
+        // Retornar con las cookies correctas
         return redirect(finalRedirectTo, { headers });
 
     } catch (error) {
