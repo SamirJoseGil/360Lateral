@@ -164,9 +164,9 @@ export default function AnalysisDetail() {
     }
 
     return (
-        <div>
+        <div className="py-24">
             {/* Encabezado */}
-            <div className="flex justify-between items-center mb-6">
+            <div className="flex justify-between items-center mb-6 ">
                 <div>
                     <h1 className="text-2xl font-bold mb-1">{analysis.name}</h1>
                     <div className="flex items-center">

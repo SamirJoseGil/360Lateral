@@ -8,6 +8,7 @@ from django.core.validators import MinValueValidator, MaxValueValidator
 from django.core.exceptions import ValidationError
 import uuid
 import logging
+from django.utils import timezone
 
 User = get_user_model()
 logger = logging.getLogger(__name__)
@@ -15,312 +16,244 @@ logger = logging.getLogger(__name__)
 
 class Lote(models.Model):
     """
-    Modelo principal para lotes urbanos.
-    Almacena información catastral, urbanística y de valoración.
+    Modelo simplificado de Lote - CORREGIDO sin campo comuna
     """
-    STATUS_CHOICES = [
-        ('active', 'Activo'),
-        ('inactive', 'Inactivo'),
-        ('sold', 'Vendido'),
-        ('in_negotiation', 'En Negociación'),
-        ('reserved', 'Reservado'),
-    ]
-    
-    TRATAMIENTO_CHOICES = [
-        ('consolidacion_1', 'Consolidación Nivel 1'),
-        ('consolidacion_2', 'Consolidación Nivel 2'),
-        ('consolidacion_3', 'Consolidación Nivel 3'),
-        ('desarrollo', 'Desarrollo'),
-        ('mejoramiento', 'Mejoramiento Integral'),
-        ('conservacion', 'Conservación'),
-    ]
-    
-    USO_SUELO_CHOICES = [
-        ('residencial', 'Residencial'),
-        ('comercial', 'Comercial'),
-        ('mixto', 'Mixto'),
-        ('industrial', 'Industrial'),
-        ('dotacional', 'Dotacional'),
-        ('otro', 'Otro'),
-    ]
-    
-    # Identificación
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    
+    # ✅ CAMPOS ESENCIALES (obligatorios)
+    nombre = models.CharField(
+        max_length=200,
+        help_text="Nombre identificativo del lote"
+    )
+    direccion = models.CharField(
+        max_length=500,
+        help_text="Dirección completa del lote"
+    )
+    area = models.DecimalField(
+        max_digits=12, 
+        decimal_places=2,
+        null=True, 
+        blank=True,
+        help_text="Área del lote en metros cuadrados"
+    )
+    
+    # ✅ CAMPOS IMPORTANTES (opcionales)
     cbml = models.CharField(
-        max_length=14, 
-        unique=True, 
-        verbose_name='CBML',
-        db_index=True,
-        help_text='Código Base Municipal de Lote (14 dígitos)'
+        max_length=50, 
+        blank=True, 
+        null=True,
+        help_text="Código CBML del lote"
     )
     matricula = models.CharField(
-        max_length=20, 
+        max_length=50, 
         blank=True, 
         null=True,
-        verbose_name='Matrícula Inmobiliaria',
-        db_index=True
+        help_text="Matrícula inmobiliaria"
     )
-    
-    # Propietario
-    owner = models.ForeignKey(
-        User, 
-        on_delete=models.CASCADE, 
-        related_name='lotes',
-        verbose_name='Propietario'
-    )
-    
-    # Ubicación
-    direccion = models.CharField(max_length=255, verbose_name='Dirección')
-    barrio = models.CharField(max_length=100, blank=True, null=True, verbose_name='Barrio')
-    comuna = models.IntegerField(
-        validators=[MinValueValidator(1), MaxValueValidator(16)],
+    codigo_catastral = models.CharField(
+        max_length=100,
         blank=True,
         null=True,
-        verbose_name='Comuna'
+        help_text="Código catastral"
+    )
+    descripcion = models.TextField(
+        blank=True, 
+        null=True,
+        help_text="Descripción detallada del lote"
+    )
+    barrio = models.CharField(
+        max_length=100, 
+        blank=True, 
+        null=True,
+        help_text="Barrio donde se ubica el lote"
     )
     estrato = models.IntegerField(
-        validators=[MinValueValidator(1), MaxValueValidator(6)],
-        blank=True,
-        null=True,
-        verbose_name='Estrato'
-    )
-    
-    # Geometría (coordenadas)
-    latitud = models.DecimalField(
-        max_digits=9, 
-        decimal_places=6, 
         blank=True, 
         null=True,
-        verbose_name='Latitud'
+        choices=[
+            (1, 'Estrato 1'),
+            (2, 'Estrato 2'),
+            (3, 'Estrato 3'),
+            (4, 'Estrato 4'),
+            (5, 'Estrato 5'),
+            (6, 'Estrato 6'),
+        ],
+        help_text="Estrato socioeconómico"
+    )
+    
+    # ✅ CAMPOS AUTOMÁTICOS (se llenan después, todos opcionales)
+    latitud = models.DecimalField(
+        max_digits=10, 
+        decimal_places=8, 
+        blank=True, 
+        null=True,
+        help_text="Coordenada de latitud"
     )
     longitud = models.DecimalField(
-        max_digits=9, 
-        decimal_places=6, 
+        max_digits=11, 
+        decimal_places=8, 
         blank=True, 
         null=True,
-        verbose_name='Longitud'
+        help_text="Coordenada de longitud"
     )
-    
-    # Dimensiones
-    area = models.DecimalField(
-        max_digits=10, 
-        decimal_places=2,
-        validators=[MinValueValidator(0)],
-        verbose_name='Área (m²)'
-    )
-    area_construida = models.DecimalField(
-        max_digits=10, 
-        decimal_places=2,
-        blank=True,
+    clasificacion_suelo = models.CharField(
+        max_length=100, 
+        blank=True, 
         null=True,
-        validators=[MinValueValidator(0)],
-        verbose_name='Área Construida (m²)'
-    )
-    frente = models.DecimalField(
-        max_digits=8, 
-        decimal_places=2,
-        blank=True,
-        null=True,
-        validators=[MinValueValidator(0)],
-        verbose_name='Frente (m)'
-    )
-    fondo = models.DecimalField(
-        max_digits=8, 
-        decimal_places=2,
-        blank=True,
-        null=True,
-        validators=[MinValueValidator(0)],
-        verbose_name='Fondo (m)'
-    )
-    
-    # Normativa urbanística
-    tratamiento_urbanistico = models.CharField(
-        max_length=50,
-        choices=TRATAMIENTO_CHOICES,
-        blank=True,
-        null=True,
-        verbose_name='Tratamiento Urbanístico'
+        help_text="Clasificación del suelo según POT"
     )
     uso_suelo = models.CharField(
-        max_length=50,
-        choices=USO_SUELO_CHOICES,
-        blank=True,
+        max_length=100, 
+        blank=True, 
         null=True,
-        verbose_name='Uso del Suelo'
+        help_text="Uso permitido del suelo"
     )
-    altura_maxima = models.DecimalField(
-        max_digits=5,
-        decimal_places=2,
-        blank=True,
+    tratamiento_pot = models.CharField(
+        max_length=100, 
+        blank=True, 
         null=True,
-        validators=[MinValueValidator(0)],
-        verbose_name='Altura Máxima (m)'
-    )
-    indice_ocupacion = models.DecimalField(
-        max_digits=3,
-        decimal_places=2,
-        blank=True,
-        null=True,
-        validators=[MinValueValidator(0), MaxValueValidator(1)],
-        verbose_name='Índice de Ocupación'
-    )
-    indice_construccion = models.DecimalField(
-        max_digits=4,
-        decimal_places=2,
-        blank=True,
-        null=True,
-        validators=[MinValueValidator(0)],
-        verbose_name='Índice de Construcción'
+        help_text="Tratamiento urbanístico según POT"
     )
     
-    # Valoración
-    avaluo_catastral = models.DecimalField(
-        max_digits=15,
-        decimal_places=2,
-        blank=True,
-        null=True,
-        validators=[MinValueValidator(0)],
-        verbose_name='Avalúo Catastral'
+    # ✅ CAMPOS DE SISTEMA (automáticos)
+    owner = models.ForeignKey(
+        'users.User',
+        on_delete=models.CASCADE,
+        related_name='lotes_owned',
+        help_text="Propietario del lote"
     )
-    valor_comercial = models.DecimalField(
-        max_digits=15,
-        decimal_places=2,
-        blank=True,
-        null=True,
-        validators=[MinValueValidator(0)],
-        verbose_name='Valor Comercial'
-    )
-    valor_m2 = models.DecimalField(
-        max_digits=12,
-        decimal_places=2,
-        blank=True,
-        null=True,
-        validators=[MinValueValidator(0)],
-        verbose_name='Valor por m²'
-    )
-    
-    # Estado
     status = models.CharField(
         max_length=20,
-        choices=STATUS_CHOICES,
-        default='active',
-        verbose_name='Estado',
-        db_index=True
+        choices=[
+            ('pending', 'Pendiente'),
+            ('active', 'Activo'),
+            ('archived', 'Archivado'),
+        ],
+        default='pending',
+        help_text="Estado del lote en el sistema"
     )
-    
-    # Metadatos
-    notas = models.TextField(blank=True, null=True, verbose_name='Notas')
-    datos_mapgis = models.JSONField(
-        default=dict,
-        blank=True,
-        verbose_name='Datos de MapGIS'
-    )
-    
-    # Verificación
     is_verified = models.BooleanField(
         default=False,
-        verbose_name='Verificado'
+        help_text="Si el lote ha sido verificado por un administrador"
     )
-    verified_at = models.DateTimeField(
-        blank=True,
-        null=True,
-        verbose_name='Fecha de Verificación'
-    )
-    verified_by = models.ForeignKey(
-        User,
-        on_delete=models.SET_NULL,
-        null=True,
-        blank=True,
-        related_name='lotes_verificados',
-        verbose_name='Verificado por'
-    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
     
-    # Timestamps
-    created_at = models.DateTimeField(auto_now_add=True, verbose_name='Fecha de Creación')
-    updated_at = models.DateTimeField(auto_now=True, verbose_name='Última Actualización')
-    
+    # ✅ METADATOS ADICIONALES (opcional)
+    metadatos = models.JSONField(
+        default=dict, 
+        blank=True,
+        help_text="Información adicional en formato JSON"
+    )
+
     class Meta:
+        db_table = 'lotes'
         verbose_name = 'Lote'
         verbose_name_plural = 'Lotes'
         ordering = ['-created_at']
-        db_table = 'lotes_lote'
         indexes = [
+            models.Index(fields=['owner', '-created_at']),
+            models.Index(fields=['status', 'is_verified']),
             models.Index(fields=['cbml']),
             models.Index(fields=['matricula']),
-            models.Index(fields=['owner', 'status']),
-            models.Index(fields=['barrio', 'comuna']),
-            models.Index(fields=['-created_at']),
         ]
-    
+
     def __str__(self):
-        return f"Lote {self.cbml} - {self.direccion}"
-    
+        return f"{self.nombre} - {self.direccion}"
+
     def clean(self):
-        """Validación del modelo"""
+        """Validaciones del modelo"""
         super().clean()
         
-        # Validar CBML
-        if self.cbml:
-            if len(self.cbml) != 14:
-                raise ValidationError({
-                    'cbml': 'El CBML debe tener exactamente 14 dígitos'
-                })
-            if not self.cbml.isdigit():
-                raise ValidationError({
-                    'cbml': 'El CBML debe contener solo números'
-                })
+        # Validar que nombre no esté vacío
+        if not self.nombre or not self.nombre.strip():
+            raise ValidationError({'nombre': 'El nombre del lote es requerido'})
         
-        # Validar área construida no mayor que área del lote
-        if self.area_construida and self.area:
-            if self.area_construida > self.area * 10:  # Considerando múltiples pisos
-                raise ValidationError({
-                    'area_construida': 'El área construida es demasiado grande para el área del lote'
-                })
-    
+        # Validar que dirección no esté vacía
+        if not self.direccion or not self.direccion.strip():
+            raise ValidationError({'direccion': 'La dirección es requerida'})
+        
+        # Validar área si se proporciona
+        if self.area is not None and self.area <= 0:
+            raise ValidationError({'area': 'El área debe ser mayor a 0'})
+        
+        # Validar estrato si se proporciona
+        if self.estrato is not None and (self.estrato < 1 or self.estrato > 6):
+            raise ValidationError({'estrato': 'El estrato debe estar entre 1 y 6'})
+
     def save(self, *args, **kwargs):
-        """Override save para validar y calcular valores"""
-        self.full_clean()
-        
-        # Calcular valor por m² si no existe
-        if self.valor_comercial and self.area and not self.valor_m2:
-            self.valor_m2 = self.valor_comercial / self.area
-        
-        is_new = self.pk is None
-        super().save(*args, **kwargs)
-        
-        if is_new:
-            logger.info(f"New lote created: {self.cbml} by {self.owner.email}")
-        else:
-            logger.debug(f"Lote updated: {self.cbml}")
-    
-    @property
-    def esta_disponible(self):
-        """Verifica si el lote está disponible"""
-        return self.status == 'active'
-    
-    def calcular_potencial_constructivo(self):
-        """Calcula el potencial constructivo del lote"""
-        if not self.area or not self.indice_construccion:
-            return None
-        
-        area_maxima = float(self.area) * float(self.indice_construccion)
-        
-        potencial = {
-            'area_maxima_construccion': round(area_maxima, 2),
-            'area_lote': float(self.area),
-            'indice_construccion': float(self.indice_construccion),
-        }
-        
-        if self.altura_maxima and self.indice_ocupacion:
-            area_por_piso = float(self.area) * float(self.indice_ocupacion)
-            pisos_maximos = int(float(self.altura_maxima) / 3)  # Asumiendo 3m por piso
+        """Limpiar datos antes de guardar"""
+        # Limpiar strings
+        if self.nombre:
+            self.nombre = self.nombre.strip()
+        if self.direccion:
+            self.direccion = self.direccion.strip()
+        if self.cbml:
+            self.cbml = self.cbml.strip()
+        if self.matricula:
+            self.matricula = self.matricula.strip()
+        if self.barrio:
+            self.barrio = self.barrio.strip()
             
-            potencial.update({
-                'pisos_maximos': pisos_maximos,
-                'area_por_piso': round(area_por_piso, 2),
-            })
+        super().save(*args, **kwargs)
+
+    # ✅ MÉTODOS ÚTILES SIMPLIFICADOS
+    @property
+    def tiene_coordenadas(self):
+        """Verificar si tiene coordenadas"""
+        return self.latitud is not None and self.longitud is not None
+
+    @property
+    def informacion_completa(self):
+        """Verificar si tiene información básica completa"""
+        return all([
+            self.nombre,
+            self.direccion,
+            self.area,
+        ])
+
+    def actualizar_desde_mapgis(self, datos_mapgis):
+        """Actualizar lote con datos de MapGIS"""
+        if not datos_mapgis:
+            return False
+            
+        actualizado = False
         
-        return potencial
+        # Mapear campos de MapGIS
+        if datos_mapgis.get('area') and not self.area:
+            self.area = datos_mapgis['area']
+            actualizado = True
+            
+        if datos_mapgis.get('cbml') and not self.cbml:
+            self.cbml = datos_mapgis['cbml']
+            actualizado = True
+            
+        if datos_mapgis.get('clasificacion_suelo') and not self.clasificacion_suelo:
+            self.clasificacion_suelo = datos_mapgis['clasificacion_suelo']
+            actualizado = True
+            
+        if datos_mapgis.get('uso_suelo') and not self.uso_suelo:
+            self.uso_suelo = datos_mapgis['uso_suelo']
+            actualizado = True
+            
+        if datos_mapgis.get('tratamiento_pot') and not self.tratamiento_pot:
+            self.tratamiento_pot = datos_mapgis['tratamiento_pot']
+            actualizado = True
+            
+        if datos_mapgis.get('barrio') and not self.barrio:
+            self.barrio = datos_mapgis['barrio']
+            actualizado = True
+            
+        # Guardar metadatos de MapGIS
+        if not self.metadatos.get('mapgis_data'):
+            self.metadatos['mapgis_data'] = datos_mapgis
+            self.metadatos['mapgis_imported_at'] = timezone.now().isoformat()
+            actualizado = True
+            
+        if actualizado:
+            self.save()
+            
+        return actualizado
 
 
 class LoteDocument(models.Model):

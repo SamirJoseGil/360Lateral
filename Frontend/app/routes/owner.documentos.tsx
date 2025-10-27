@@ -5,8 +5,7 @@ import type { LoaderFunctionArgs } from "@remix-run/node";
 import { getUser } from "~/utils/auth.server";
 import { fetchWithAuth } from "~/utils/auth.server";
 import type { Document } from "~/services/documents.server";
-import DocumentDetailModal from "~/components/DocumentDetailModal";
-import { API_URL } from "~/utils/api.server";
+import { API_URL } from "~/utils/env.server";
 
 // Loader function to fetch user documents
 export async function loader({ request }: LoaderFunctionArgs) {
@@ -42,21 +41,23 @@ export async function loader({ request }: LoaderFunctionArgs) {
         }
 
         // Fetch documents
-        console.log("[Documentos] Fetching from endpoint:", endpoint);
+        console.log("[Documentos] Fetching from:", endpoint);
         const { res: response, setCookieHeaders } = await fetchWithAuth(request, endpoint);
 
         if (!response.ok) {
             const errorText = await response.text();
-            console.error("[Documentos] Error fetching documents:", response.status, errorText);
-            throw new Error(`Error fetching documents: ${response.status} ${errorText}`);
+            console.error("[Documentos] Error:", response.status, errorText);
+            throw new Error(`Error fetching documents: ${response.status}`);
         }
 
         const data = await response.json();
-        console.log(`[Documentos] Received ${data.results?.length || 0} documents`);
+        const documents = Array.isArray(data) ? data : (data.results || []);
+
+        console.log(`[Documentos] Loaded ${documents.length} documents`);
 
         return json({
-            documents: data.results || [],
-            count: data.count || 0,
+            documents,
+            count: data.count || documents.length,
             user: {
                 id: user.id,
                 name: user.name || user.email
@@ -76,13 +77,16 @@ export async function loader({ request }: LoaderFunctionArgs) {
 
 // Document types for filtering
 const documentTypes = [
-    { value: "", label: "Todos" },
-    { value: "general", label: "General" },
-    { value: "plano", label: "Plano" },
-    { value: "contrato", label: "Contrato" },
-    { value: "licencia", label: "Licencia" },
-    { value: "factura", label: "Factura" },
-    { value: "otro", label: "Otro" }
+    { value: "", label: "Todos los tipos" },
+    { value: "ctl", label: "Certificado de Tradición y Libertad" },
+    { value: "planos", label: "Planos Arquitectónicos" },
+    { value: "topografia", label: "Levantamiento Topográfico" },
+    { value: "licencia_construccion", label: "Licencia de Construcción" },
+    { value: "escritura_publica", label: "Escritura Pública" },
+    { value: "certificado_libertad", label: "Certificado de Libertad" },
+    { value: "avaluo_comercial", label: "Avalúo Comercial" },
+    { value: "estudio_suelos", label: "Estudio de Suelos" },
+    { value: "otros", label: "Otros Documentos" },
 ];
 
 export default function DocumentosPage() {
@@ -93,10 +97,6 @@ export default function DocumentosPage() {
     const [documents, setDocuments] = useState<Document[]>(
         'documents' in loaderData ? loaderData.documents : []
     );
-    const [selectedDocument, setSelectedDocument] = useState<Document | null>(null);
-    const [showDetailModal, setShowDetailModal] = useState(false);
-
-    // Filter state
     const [documentType, setDocumentType] = useState(searchParams.get("tipo") || "");
     const [searchQuery, setSearchQuery] = useState(searchParams.get("buscar") || "");
 
@@ -119,12 +119,6 @@ export default function DocumentosPage() {
         setSearchParams(params);
     }, [documentType, searchQuery]);
 
-    // Handle opening document detail modal
-    const openDocumentDetail = (document: Document) => {
-        setSelectedDocument(document);
-        setShowDetailModal(true);
-    };
-
     // Format file size for display
     const formatFileSize = (bytes?: number): string => {
         if (!bytes) return 'Desconocido';
@@ -139,9 +133,7 @@ export default function DocumentosPage() {
         const options: Intl.DateTimeFormatOptions = {
             year: 'numeric',
             month: 'short',
-            day: 'numeric',
-            hour: '2-digit',
-            minute: '2-digit'
+            day: 'numeric'
         };
         return new Date(dateString).toLocaleDateString('es-ES', options);
     };
@@ -152,39 +144,23 @@ export default function DocumentosPage() {
 
         if (mime_type?.includes('image')) {
             return (
-                <svg className="w-10 h-10 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                <svg className="w-12 h-12 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                </svg>
-            );
-        }
-
-        if (document_type === 'plano' || mime_type?.includes('dwg') || mime_type?.includes('dxf')) {
-            return (
-                <svg className="w-10 h-10 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" />
                 </svg>
             );
         }
 
         if (mime_type?.includes('pdf')) {
             return (
-                <svg className="w-10 h-10 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                <svg className="w-12 h-12 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
-                </svg>
-            );
-        }
-
-        if (document_type === 'contrato') {
-            return (
-                <svg className="w-10 h-10 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                 </svg>
             );
         }
 
         // Default document icon
         return (
-            <svg className="w-10 h-10 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+            <svg className="w-12 h-12 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
             </svg>
         );
@@ -192,33 +168,48 @@ export default function DocumentosPage() {
 
     // Helper to get document type display name
     const getDocumentTypeLabel = (type: string): string => {
-        const typeMap: { [key: string]: string } = {
-            'general': 'General',
-            'plano': 'Plano',
-            'contrato': 'Contrato',
-            'licencia': 'Licencia',
-            'factura': 'Factura',
-            'otro': 'Otro'
+        const found = documentTypes.find(t => t.value === type);
+        return found?.label || type;
+    };
+
+    const getDocumentTypeColor = (type: string): string => {
+        const colors: { [key: string]: string } = {
+            'ctl': 'bg-purple-100 text-purple-800',
+            'planos': 'bg-blue-100 text-blue-800',
+            'topografia': 'bg-green-100 text-green-800',
+            'licencia_construccion': 'bg-yellow-100 text-yellow-800',
+            'escritura_publica': 'bg-indigo-100 text-indigo-800',
+            'certificado_libertad': 'bg-pink-100 text-pink-800',
+            'avaluo_comercial': 'bg-orange-100 text-orange-800',
+            'estudio_suelos': 'bg-teal-100 text-teal-800',
+            'otros': 'bg-gray-100 text-gray-800',
         };
-        return typeMap[type] || type;
+        return colors[type] || 'bg-gray-100 text-gray-800';
     };
 
     return (
-        <div className="p-6">
-            <h1 className="text-2xl font-bold mb-6">Mis Documentos</h1>
+        <div className="p-6 pt-32">
+            {/* Header */}
+            <div className="mb-8">
+                <h1 className="text-3xl font-bold text-gray-900">Mis Documentos</h1>
+                <p className="mt-2 text-sm text-gray-600">
+                    Gestiona todos tus documentos cargados en la plataforma
+                </p>
+            </div>
 
-            {/* Filters */}
-            <div className="bg-white shadow rounded-lg p-5 mb-6">
-                <div className="flex flex-wrap items-center space-y-2 sm:space-y-0 sm:space-x-4">
-                    <div className="w-full sm:w-auto">
-                        <label htmlFor="document-type" className="block text-sm font-medium text-gray-700 mb-1">
+            {/* Filtros mejorados */}
+            <div className="bg-white shadow-sm rounded-xl border border-gray-200 p-6 mb-6">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {/* Selector de tipo */}
+                    <div>
+                        <label htmlFor="document-type" className="block text-sm font-medium text-gray-700 mb-2">
                             Tipo de documento
                         </label>
                         <select
                             id="document-type"
                             value={documentType}
                             onChange={(e) => setDocumentType(e.target.value)}
-                            className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                            className="block w-full rounded-lg border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm"
                         >
                             {documentTypes.map((type) => (
                                 <option key={type.value} value={type.value}>
@@ -228,18 +219,19 @@ export default function DocumentosPage() {
                         </select>
                     </div>
 
-                    <div className="w-full sm:w-auto flex-grow">
-                        <label htmlFor="search-query" className="block text-sm font-medium text-gray-700 mb-1">
-                            Buscar
+                    {/* Buscador */}
+                    <div>
+                        <label htmlFor="search-query" className="block text-sm font-medium text-gray-700 mb-2">
+                            Buscar documentos
                         </label>
-                        <div className="relative rounded-md shadow-sm">
+                        <div className="relative">
                             <input
                                 type="text"
                                 id="search-query"
                                 value={searchQuery}
                                 onChange={(e) => setSearchQuery(e.target.value)}
-                                placeholder="Buscar por título, descripción..."
-                                className="block w-full rounded-md border-gray-300 pl-10 focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                                placeholder="Buscar por título o descripción..."
+                                className="block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500 text-sm"
                             />
                             <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                                 <svg className="h-5 w-5 text-gray-400" viewBox="0 0 20 20" fill="currentColor">
@@ -253,7 +245,7 @@ export default function DocumentosPage() {
 
             {/* Error message if any */}
             {'error' in loaderData && loaderData.error && (
-                <div className="bg-red-50 border-l-4 border-red-400 p-4 mb-6">
+                <div className="bg-red-50 border-l-4 border-red-400 p-4 mb-6 rounded-lg">
                     <div className="flex">
                         <div className="flex-shrink-0">
                             <svg className="h-5 w-5 text-red-400" viewBox="0 0 20 20" fill="currentColor">
@@ -267,101 +259,138 @@ export default function DocumentosPage() {
                 </div>
             )}
 
-            {/* Documents count */}
-            <div className="mb-4 flex justify-between items-center">
+            {/* Contador de documentos */}
+            <div className="mb-6 flex justify-between items-center">
                 <p className="text-sm text-gray-700">
-                    Mostrando <span className="font-medium">{documents.length}</span> documentos
-                    {'count' in loaderData && documents.length !== loaderData.count && (
-                        <> de <span className="font-medium">{loaderData.count}</span> total</>
-                    )}
+                    <span className="font-semibold">{documents.length}</span> documento{documents.length !== 1 ? 's' : ''} encontrado{documents.length !== 1 ? 's' : ''}
                 </p>
+
+                {/* Botón para subir documentos */}
+                <Link
+                    to="/owner/lotes"
+                    className="inline-flex items-center px-4 py-2 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 transition-colors shadow-sm"
+                >
+                    <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                    </svg>
+                    Subir Documentos
+                </Link>
             </div>
 
-            {/* Document grid */}
+            {/* Grid de documentos mejorado */}
             {documents.length === 0 ? (
-                <div className="bg-white shadow rounded-lg p-10 text-center">
-                    <svg className="mx-auto h-12 w-12 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M19 20H5a2 2 0 01-2-2V6a2 2 0 012-2h10a2 2 0 012 2v1M19 10v2m0 4v2m-4-8v10m4-10h-4m4 10H9" />
+                <div className="bg-white shadow-sm rounded-xl border-2 border-dashed border-gray-300 p-12 text-center">
+                    <svg className="mx-auto h-16 w-16 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                     </svg>
-                    <h3 className="mt-2 text-sm font-medium text-gray-900">No se encontraron documentos</h3>
-                    <p className="mt-1 text-sm text-gray-500">
+                    <h3 className="mt-4 text-lg font-medium text-gray-900">No se encontraron documentos</h3>
+                    <p className="mt-2 text-sm text-gray-500">
                         {searchQuery || documentType
-                            ? "Prueba con otros filtros de búsqueda."
-                            : "Aún no has subido ningún documento."}
+                            ? "Prueba ajustando los filtros de búsqueda"
+                            : "Comienza subiendo documentos desde tus lotes"}
                     </p>
+                    {!searchQuery && !documentType && (
+                        <div className="mt-6">
+                            <Link
+                                to="/owner/lotes"
+                                className="inline-flex items-center px-6 py-3 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 transition-colors shadow-sm"
+                            >
+                                Ir a Mis Lotes
+                            </Link>
+                        </div>
+                    )}
                 </div>
             ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                     {documents.map((doc) => (
                         <div
                             key={doc.id}
-                            className="bg-white rounded-lg shadow overflow-hidden hover:shadow-md transition-shadow cursor-pointer"
-                            onClick={() => openDocumentDetail(doc)}
+                            className="bg-white rounded-xl shadow-sm hover:shadow-md transition-all duration-200 overflow-hidden border border-gray-200 group"
                         >
-                            <div className="p-5">
-                                <div className="flex items-start">
-                                    <div className="flex-shrink-0">
+                            {/* Header del card con icono */}
+                            <div className="p-6 bg-gradient-to-br from-gray-50 to-white">
+                                <div className="flex items-start justify-between">
+                                    <div className="flex-shrink-0 bg-white rounded-lg p-3 shadow-sm group-hover:shadow-md transition-shadow">
                                         {getDocumentIcon(doc)}
                                     </div>
-                                    <div className="ml-4 flex-1">
-                                        <h3 className="text-lg font-medium text-gray-900 truncate" title={doc.title}>
-                                            {doc.title}
-                                        </h3>
-                                        <div className="mt-1 flex items-center">
-                                            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-                                                {getDocumentTypeLabel(doc.document_type)}
-                                            </span>
-                                            <span className="ml-2 text-sm text-gray-500">
-                                                {formatFileSize(doc.file_size)}
-                                            </span>
-                                        </div>
-                                        {doc.description && (
-                                            <p className="mt-2 text-sm text-gray-600 line-clamp-2" title={doc.description}>
-                                                {doc.description}
-                                            </p>
-                                        )}
-                                    </div>
+                                    <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-medium ${getDocumentTypeColor(doc.document_type)}`}>
+                                        {getDocumentTypeLabel(doc.document_type)}
+                                    </span>
                                 </div>
-                                <div className="mt-4 flex justify-between items-center">
-                                    <div className="text-xs text-gray-500">
-                                        {doc.lote && (
-                                            <Link
-                                                to={`/owner/lote/${doc.lote}`}
-                                                className="text-indigo-600 hover:text-indigo-900"
-                                                onClick={(e) => e.stopPropagation()}
-                                            >
-                                                Lote #{doc.lote}
-                                            </Link>
-                                        )}
-                                    </div>
-                                    <div className="text-xs text-gray-500">
-                                        {formatDate(doc.created_at)}
-                                    </div>
-                                </div>
+
+                                <h3 className="mt-4 text-lg font-semibold text-gray-900 line-clamp-2" title={doc.title}>
+                                    {doc.title}
+                                </h3>
+
+                                {doc.description && (
+                                    <p className="mt-2 text-sm text-gray-600 line-clamp-2" title={doc.description}>
+                                        {doc.description}
+                                    </p>
+                                )}
                             </div>
-                            <div className="bg-gray-50 px-5 py-3 flex justify-end space-x-3">
+
+                            {/* Detalles del documento */}
+                            <div className="px-6 py-4 bg-white space-y-2">
+                                <div className="flex items-center justify-between text-sm">
+                                    <span className="text-gray-500">Tamaño:</span>
+                                    <span className="font-medium text-gray-900">{formatFileSize(doc.file_size)}</span>
+                                </div>
+
+                                <div className="flex items-center justify-between text-sm">
+                                    <span className="text-gray-500">Subido:</span>
+                                    <span className="font-medium text-gray-900">{formatDate(doc.created_at)}</span>
+                                </div>
+
+                                {doc.lote && (
+                                    <div className="flex items-center justify-between text-sm pt-2 border-t border-gray-100">
+                                        <span className="text-gray-500">Lote:</span>
+                                        <Link
+                                            to={`/owner/lote/${doc.lote}`}
+                                            className="text-indigo-600 hover:text-indigo-800 font-medium flex items-center"
+                                        >
+                                            Ver lote
+                                            <svg className="w-4 h-4 ml-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                                            </svg>
+                                        </Link>
+                                    </div>
+                                )}
+                            </div>
+
+                            {/* Acciones */}
+                            <div className="px-6 py-4 bg-gray-50 flex justify-between items-center border-t border-gray-100">
                                 <a
-                                    href={doc.file_url}
+                                    href={doc.file_url || doc.file}  // ✅ Usar file_url
+                                    download={doc.file_name || doc.title}
+                                    onClick={(e) => {
+                                        console.log('[Documentos] Descargando:', doc.file_url || doc.file);
+                                    }}
+                                    className="inline-flex items-center text-sm font-medium text-indigo-600 hover:text-indigo-800"
+                                >
+                                    <svg className="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                    </svg>
+                                    Descargar
+                                </a>
+
+                                <a
+                                    href={doc.file_url || doc.file}  // ✅ Usar file_url
                                     target="_blank"
                                     rel="noopener noreferrer"
-                                    className="text-sm font-medium text-indigo-600 hover:text-indigo-800"
-                                    onClick={(e) => e.stopPropagation()}
+                                    onClick={(e) => {
+                                        console.log('[Documentos] Abriendo:', doc.file_url || doc.file);
+                                    }}
+                                    className="inline-flex items-center text-sm font-medium text-gray-700 hover:text-gray-900"
                                 >
-                                    Ver documento →
+                                    Ver
+                                    <svg className="w-4 h-4 ml-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                                    </svg>
                                 </a>
                             </div>
                         </div>
                     ))}
                 </div>
-            )}
-
-            {/* Document detail modal */}
-            {selectedDocument && (
-                <DocumentDetailModal
-                    isOpen={showDetailModal}
-                    document={selectedDocument}
-                    onClose={() => setShowDetailModal(false)}
-                />
             )}
         </div>
     );

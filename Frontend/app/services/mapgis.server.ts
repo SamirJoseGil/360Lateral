@@ -1,5 +1,5 @@
 // Este archivo ahora usa los endpoints correctos según la documentación de lotes
-import { API_URL } from "~/utils/api.server";
+import { API_URL } from "~/utils/env.server";
 
 // ✅ TIPOS CORREGIDOS para las respuestas de MapGIS
 export interface MapGisResponseDetalle {
@@ -36,11 +36,11 @@ export interface MapGisResponseSearch {
 }
 
 /**
- * Buscar lote en MapGIS por Matrícula - USANDO ENDPOINT PÚBLICO
+ * ✅ BÚSQUEDA POR MATRÍCULA COMPLETAMENTE CORREGIDA
  */
 export async function consultarPorMatricula(request: Request, matricula: string): Promise<MapGisResponseDetalle> {
   try {
-    // ✅ VALIDACIÓN: Asegurar que matricula es un string
+    // ✅ VALIDACIÓN MEJORADA
     if (!matricula || typeof matricula !== 'string') {
       console.error(`[MapGIS] Matrícula inválida: ${typeof matricula}`, matricula);
       return {
@@ -50,45 +50,62 @@ export async function consultarPorMatricula(request: Request, matricula: string)
       };
     }
     
-    console.log(`[MapGIS] Consultando por Matrícula: ${matricula}`);
+    // Limpiar matrícula
+    const matriculaLimpia = matricula.toString().trim().replace(/[^0-9]/g, '');
     
-    // ✅ USAR ENDPOINT PÚBLICO (sin auth)
-    const response = await fetch(`${API_URL}/api/lotes/scrap/matricula/`, {
+    if (!matriculaLimpia) {
+      return {
+        success: false,
+        encontrado: false,
+        message: 'Matrícula debe contener números'
+      };
+    }
+    
+    console.log(`[MapGIS] Consultando por Matrícula: ${matriculaLimpia}`);
+    
+    // ✅ USAR ENDPOINT PÚBLICO CORRECTO
+    const endpoint = `${API_URL}/api/lotes/public/matricula/`;
+    console.log(`[MapGIS] Endpoint: ${endpoint}`);
+    
+    const response = await fetch(endpoint, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ matricula }),
+      body: JSON.stringify({ matricula: matriculaLimpia }),
     });
     
-    const data = await response.json();
+    console.log(`[MapGIS] Response status: ${response.status}`);
     
     if (!response.ok) {
-      console.error(`[MapGIS] Error response:`, data);
+      const errorText = await response.text();
+      console.error(`[MapGIS] Error response: ${response.status} - ${errorText}`);
       return {
         success: false,
         encontrado: false,
-        message: data.message || 'Error al buscar en MapGIS',
-        errors: data.errors
+        message: `Error ${response.status}: ${errorText}`,
       };
     }
     
-    console.log(`[MapGIS] Resultado matrícula ${matricula}:`, { 
-      encontrado: data.encontrado, 
-      cbml_obtenido: data.cbml_obtenido 
+    const data = await response.json();
+    console.log(`[MapGIS] Response data:`, {
+      success: data.success,
+      encontrado: data.encontrado,
+      cbml_obtenido: data.cbml_obtenido,
+      has_data: !!data.data
     });
     
     return {
       success: data.success || false,
-      encontrado: data.encontrado || data.success || false,
-      data: data.data || data.datos,
+      encontrado: data.encontrado || false,
+      data: data.data,
       cbml_obtenido: data.cbml_obtenido,
-      busqueda_origen: data.busqueda_origen || 'matricula',
+      busqueda_origen: 'matricula',
       message: data.message
     };
     
   } catch (error) {
-    console.error('[MapGIS] Error en búsqueda:', error);
+    console.error('[MapGIS] Error en búsqueda por matrícula:', error);
     return {
       success: false,
       encontrado: false,

@@ -4,7 +4,7 @@ import type { LoaderFunctionArgs } from "@remix-run/node";
 import { getUser } from "~/utils/auth.server";
 import { getLoteById } from "~/services/lotes.server";
 import { getNormativaPorCBML } from "~/services/pot.server";
-import { getLoteDocuments } from "~/services/documents.server";
+import { getLoteDocuments, type Document } from "~/services/documents.server";
 import DocumentStatusIndicator from "~/components/DocumentStatusIndicator";
 import RequiredDocumentsNotice from "~/components/RequiredDocumentsNotice";
 import POTInfo from "~/components/POTInfo";
@@ -17,7 +17,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
         return json({ error: "Usuario no autenticado" }, { status: 401 });
     }
 
-    if (user.role !== "owner") {
+    if (user.role !== "owner" && user.role !== "admin") {
         return json({ error: "No autorizado" }, { status: 403 });
     }
 
@@ -50,24 +50,32 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
         }
 
         // Get documents for this lote (with error handling)
-        let documents = [];
+        let documents: Document[] = [];
         let documentsCount = 0;
-        let documentsHeaders = new Headers();
 
         try {
             const docsResponse = await getLoteDocuments(request, loteId);
-            documents = docsResponse.documents || [];
-            documentsCount = docsResponse.count || 0;
-            documentsHeaders = docsResponse.headers;
+
+            // ✅ CORREGIDO: Verificar que docsResponse tenga la estructura esperada
+            if (docsResponse.success && docsResponse.documents) {
+                documents = docsResponse.documents;
+                documentsCount = docsResponse.documents.length;
+            }
+
+            console.log(`[LotePage] Documentos obtenidos para lote ${loteId}: ${documentsCount}`);
         } catch (docsError) {
             console.error(`[LotePage] Error fetching documents for lote ${loteId}:`, docsError);
             // Continue even if documents couldn't be fetched
         }
 
-        // Combine headers
-        const combinedHeaders = new Headers(loteResponse.headers);
-        for (const [key, value] of documentsHeaders.entries()) {
-            combinedHeaders.append(key, value);
+        // ✅ CORREGIDO: Combinar headers correctamente
+        const combinedHeaders = new Headers();
+
+        // Agregar headers del lote si existen
+        if (loteResponse.headers) {
+            for (const [key, value] of loteResponse.headers.entries()) {
+                combinedHeaders.append(key, value);
+            }
         }
 
         return json({
@@ -82,14 +90,16 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
         console.error(`[LotePage] Error al cargar lote ${loteId}:`, error);
         return json({ error: "Error al cargar la información del lote" }, { status: 500 });
     }
-} export default function LotePage() {
+}
+
+export default function LotePage() {
     const { loteId } = useParams();
     const loaderData = useLoaderData<typeof loader>();
     const lote = 'lote' in loaderData ? loaderData.lote : {};
     const normativaPOT = 'normativaPOT' in loaderData ? loaderData.normativaPOT : null;
 
     return (
-        <div className="p-6">
+        <div className="p-6 pt-32"> {/* ✅ Aumentado padding-top */}
             <div className="flex justify-between items-center mb-6">
                 <h1 className="text-2xl font-bold">Detalles del Lote</h1>
 
@@ -111,150 +121,128 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
                     <p className="text-red-800">{loaderData.error}</p>
                 </div>
             ) : (
-                <div className="bg-white shadow rounded-lg p-6">
-                    <div className="mb-6 flex justify-between items-start">
-                        <h2 className="text-xl font-semibold">{lote.nombre || 'Lote sin nombre'}</h2>
-                        <span className={`px-2 py-1 rounded-full text-xs font-medium ${lote.status === 'active' ? 'bg-green-100 text-green-800' :
-                            lote.status === 'pending' ? 'bg-yellow-100 text-yellow-800' :
-                                'bg-gray-100 text-gray-800'
-                            }`}>
-                            {lote.status === 'active' ? 'Activo' :
-                                lote.status === 'pending' ? 'Pendiente' :
-                                    lote.status || 'Estado desconocido'}
-                        </span>
-                    </div>
+                <div className="space-y-6"> {/* ✅ Espaciado entre secciones */}
+                    {/* Card principal del lote */}
+                    <div className="bg-white shadow rounded-lg p-6">
+                        <div className="mb-6 flex justify-between items-start">
+                            <h2 className="text-xl font-semibold">{lote.nombre || 'Lote sin nombre'}</h2>
+                            <span className={`px-2 py-1 rounded-full text-xs font-medium ${lote.status === 'active' ? 'bg-green-100 text-green-800' :
+                                lote.status === 'pending' ? 'bg-yellow-100 text-yellow-800' :
+                                    'bg-gray-100 text-gray-800'
+                                }`}>
+                                {lote.status === 'active' ? 'Activo' :
+                                    lote.status === 'pending' ? 'Pendiente' :
+                                        lote.status || 'Estado desconocido'}
+                            </span>
+                        </div>
 
-                    <div className="border-t border-gray-200 pt-4">
-                        <dl className="grid grid-cols-1 gap-x-4 gap-y-6 sm:grid-cols-2">
-                            <div>
-                                <dt className="text-sm font-medium text-gray-500">Dirección</dt>
-                                <dd className="mt-1 text-sm text-gray-900">{lote.direccion || 'No especificada'}</dd>
-                            </div>
-
-                            <div>
-                                <dt className="text-sm font-medium text-gray-500">Área</dt>
-                                <dd className="mt-1 text-sm text-gray-900">
-                                    {lote.area ? `${lote.area.toLocaleString()} m²` : 'No especificada'}
-                                </dd>
-                            </div>
-
-                            <div>
-                                <dt className="text-sm font-medium text-gray-500">CBML</dt>
-                                <dd className="mt-1 text-sm text-gray-900">{lote.cbml || 'No especificado'}</dd>
-                            </div>
-
-                            <div>
-                                <dt className="text-sm font-medium text-gray-500">Barrio</dt>
-                                <dd className="mt-1 text-sm text-gray-900">{lote.barrio || 'No especificado'}</dd>
-                            </div>
-
-                            <div>
-                                <dt className="text-sm font-medium text-gray-500">Estrato</dt>
-                                <dd className="mt-1 text-sm text-gray-900">
-                                    {lote.estrato ? `Estrato ${lote.estrato}` : 'No especificado'}
-                                </dd>
-                            </div>
-
-                            <div>
-                                <dt className="text-sm font-medium text-gray-500">Código catastral</dt>
-                                <dd className="mt-1 text-sm text-gray-900">{lote.codigo_catastral || 'No especificado'}</dd>
-                            </div>
-
-                            <div>
-                                <dt className="text-sm font-medium text-gray-500">Matrícula inmobiliaria</dt>
-                                <dd className="mt-1 text-sm text-gray-900">{lote.matricula || 'No especificada'}</dd>
-                            </div>
-
-                            <div>
-                                <dt className="text-sm font-medium text-gray-500">Fecha de registro</dt>
-                                <dd className="mt-1 text-sm text-gray-900">
-                                    {lote.created_at ? new Date(lote.created_at).toLocaleDateString() : 'No disponible'}
-                                </dd>
-                            </div>
-                        </dl>
-                    </div>
-
-                    {/* Información normativa si está disponible */}
-                    {(lote.tratamiento_pot || lote.uso_suelo || lote.clasificacion_suelo) && (
-                        <div className="mt-8 border-t border-gray-200 pt-4">
-                            <h3 className="text-lg font-medium mb-4">Información normativa</h3>
+                        <div className="border-t border-gray-200 pt-4">
                             <dl className="grid grid-cols-1 gap-x-4 gap-y-6 sm:grid-cols-2">
                                 <div>
-                                    <dt className="text-sm font-medium text-gray-500">Tratamiento POT</dt>
-                                    <dd className="mt-1 text-sm text-gray-900">{lote.tratamiento_pot || 'No especificado'}</dd>
+                                    <dt className="text-sm font-medium text-gray-500">Dirección</dt>
+                                    <dd className="mt-1 text-sm text-gray-900">{lote.direccion || 'No especificada'}</dd>
                                 </div>
 
                                 <div>
-                                    <dt className="text-sm font-medium text-gray-500">Uso del suelo</dt>
-                                    <dd className="mt-1 text-sm text-gray-900">{lote.uso_suelo || 'No especificado'}</dd>
+                                    <dt className="text-sm font-medium text-gray-500">Área</dt>
+                                    <dd className="mt-1 text-sm text-gray-900">
+                                        {lote.area ? `${lote.area.toLocaleString()} m²` : 'No especificada'}
+                                    </dd>
                                 </div>
 
                                 <div>
-                                    <dt className="text-sm font-medium text-gray-500">Clasificación del suelo</dt>
-                                    <dd className="mt-1 text-sm text-gray-900">{lote.clasificacion_suelo || 'No especificado'}</dd>
+                                    <dt className="text-sm font-medium text-gray-500">CBML</dt>
+                                    <dd className="mt-1 text-sm text-gray-900">{lote.cbml || 'No especificado'}</dd>
+                                </div>
+
+                                <div>
+                                    <dt className="text-sm font-medium text-gray-500">Barrio</dt>
+                                    <dd className="mt-1 text-sm text-gray-900">{lote.barrio || 'No especificado'}</dd>
+                                </div>
+
+                                <div>
+                                    <dt className="text-sm font-medium text-gray-500">Estrato</dt>
+                                    <dd className="mt-1 text-sm text-gray-900">
+                                        {lote.estrato ? `Estrato ${lote.estrato}` : 'No especificado'}
+                                    </dd>
+                                </div>
+
+                                <div>
+                                    <dt className="text-sm font-medium text-gray-500">Código catastral</dt>
+                                    <dd className="mt-1 text-sm text-gray-900">{lote.codigo_catastral || 'No especificado'}</dd>
+                                </div>
+
+                                <div>
+                                    <dt className="text-sm font-medium text-gray-500">Matrícula inmobiliaria</dt>
+                                    <dd className="mt-1 text-sm text-gray-900">{lote.matricula || 'No especificada'}</dd>
+                                </div>
+
+                                <div>
+                                    <dt className="text-sm font-medium text-gray-500">Fecha de registro</dt>
+                                    <dd className="mt-1 text-sm text-gray-900">
+                                        {lote.created_at ? new Date(lote.created_at).toLocaleDateString() : 'No disponible'}
+                                    </dd>
                                 </div>
                             </dl>
                         </div>
-                    )}
 
-                    {/* Normativa POT detallada desde el servicio usando el componente */}
-                    {normativaPOT && normativaPOT.codigo_tratamiento && (
-                        <div className="mt-8 border-t border-gray-200 pt-4">
-                            <h3 className="text-lg font-medium mb-4">Normativa POT Detallada</h3>
-                            <POTInfo
-                                potData={normativaPOT}
-                                showMapGisData={true}
-                                className="shadow-sm"
-                            />
-                        </div>
-                    )}
+                        {/* Información normativa si está disponible */}
+                        {(lote.tratamiento_pot || lote.uso_suelo || lote.clasificacion_suelo) && (
+                            <div className="mt-8 border-t border-gray-200 pt-4">
+                                <h3 className="text-lg font-medium mb-4">Información normativa</h3>
+                                <dl className="grid grid-cols-1 gap-x-4 gap-y-6 sm:grid-cols-2">
+                                    <div>
+                                        <dt className="text-sm font-medium text-gray-500">Tratamiento POT</dt>
+                                        <dd className="mt-1 text-sm text-gray-900">{lote.tratamiento_pot || 'No especificado'}</dd>
+                                    </div>
 
-                    {/* Descripción si está disponible */}
-                    {lote.descripcion && (
-                        <div className="mt-8 border-t border-gray-200 pt-4">
-                            <h3 className="text-lg font-medium mb-2">Descripción</h3>
-                            <p className="text-sm text-gray-900">{lote.descripcion}</p>
-                        </div>
-                    )}
+                                    <div>
+                                        <dt className="text-sm font-medium text-gray-500">Uso del suelo</dt>
+                                        <dd className="mt-1 text-sm text-gray-900">{lote.uso_suelo || 'No especificado'}</dd>
+                                    </div>
 
-                    {/* Required Documents Notice - Show only for incomplete lotes */}
-                    {'lote' in loaderData && loaderData.lote && loaderData.lote.status === 'incomplete' && (
-                        <div className="mt-8 border-t border-gray-200 pt-6">
-                            <RequiredDocumentsNotice lote={loaderData.lote} />
-                        </div>
-                    )}
+                                    <div>
+                                        <dt className="text-sm font-medium text-gray-500">Clasificación del suelo</dt>
+                                        <dd className="mt-1 text-sm text-gray-900">{lote.clasificacion_suelo || 'No especificado'}</dd>
+                                    </div>
+                                </dl>
+                            </div>
+                        )}
 
-                    {/* Document status indicator - Show for all lotes */}
-                    {'documents' in loaderData && (
-                        <div className="mt-8 border-t border-gray-200 pt-6">
-                            <DocumentStatusIndicator
-                                loteId={loteId || ''}
-                                documents={loaderData.documents || []}
-                                totalCount={'documentsCount' in loaderData ? loaderData.documentsCount : undefined}
-                            />
-                        </div>
-                    )}                    {/* Acciones del lote */}
-                    <div className="mt-8 border-t border-gray-200 pt-4 flex justify-end">
-                        <Link
-                            to={`/owner/lote/${loteId}/editar`}
-                            className="inline-flex items-center px-4 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 mr-3"
-                        >
-                            <svg className="-ml-1 mr-2 h-5 w-5 text-gray-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                            </svg>
-                            Editar
-                        </Link>
+                        {/* Normativa POT detallada desde el servicio usando el componente */}
+                        {normativaPOT && normativaPOT.codigo_tratamiento && (
+                            <div className="mt-8 border-t border-gray-200 pt-4">
+                                <h3 className="text-lg font-medium mb-4">Normativa POT Detallada</h3>
+                                <POTInfo
+                                    potData={normativaPOT}
+                                    showMapGisData={true}
+                                    className="shadow-sm"
+                                />
+                            </div>
+                        )}
 
-                        <Link
-                            to={`/owner/lote/${loteId}/documentos`}
-                            className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
-                        >
-                            <svg className="-ml-1 mr-2 h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 13h6m-3-3v6m5 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                            </svg>
-                            Gestionar documentos
-                        </Link>
+                        {/* Descripción si está disponible */}
+                        {lote.descripcion && (
+                            <div className="mt-8 border-t border-gray-200 pt-4">
+                                <h3 className="text-lg font-medium mb-2">Descripción</h3>
+                                <p className="text-sm text-gray-900">{lote.descripcion}</p>
+                            </div>
+                        )}
                     </div>
+
+                    {/* Required Documents Notice - Solo si está incompleto */}
+                    {'lote' in loaderData && loaderData.lote && loaderData.lote.status === 'incomplete' && (
+                        <RequiredDocumentsNotice lote={loaderData.lote} />
+                    )}
+
+                    {/* Document status indicator - Con más espacio */}
+                    {'documents' in loaderData && (
+                        <DocumentStatusIndicator
+                            loteId={loteId || ''}
+                            documents={loaderData.documents || []}
+                            totalCount={'documentsCount' in loaderData ? loaderData.documentsCount : undefined}
+                        />
+                    )}
                 </div>
             )}
         </div>

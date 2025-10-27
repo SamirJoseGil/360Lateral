@@ -207,7 +207,18 @@ export async function fetchWithAuth(
   const refreshToken = await getRefreshTokenFromCookies(request);
 
   const headers = new Headers(options.headers);
-  headers.set("Content-Type", "application/json");
+  
+  // ✅ CRÍTICO: NO establecer Content-Type si ya está establecido o si es FormData
+  const isFormData = options.body instanceof FormData;
+  
+  if (!isFormData && !headers.has('Content-Type')) {
+    headers.set("Content-Type", "application/json");
+  }
+  
+  // ✅ CRÍTICO: Si es FormData, ELIMINAR Content-Type header si existe
+  if (isFormData && headers.has('Content-Type')) {
+    headers.delete('Content-Type');
+  }
 
   if (accessToken) {
     headers.set("Authorization", `Bearer ${accessToken}`);
@@ -241,6 +252,12 @@ export async function fetchWithAuth(
 
         // Reintentar la petición original con el nuevo token
         headers.set("Authorization", `Bearer ${accessToken}`);
+        
+        // ✅ CRÍTICO: Mantener el tratamiento de FormData en retry
+        if (isFormData && headers.has('Content-Type')) {
+          headers.delete('Content-Type');
+        }
+        
         response = await fetch(url, { ...options, headers });
 
         return { res: response, setCookieHeaders };

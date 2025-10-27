@@ -1,556 +1,522 @@
-import { API_URL } from "~/utils/api.server";
 import { fetchWithAuth } from "~/utils/auth.server";
+import { API_URL } from "~/utils/env.server";
 
+export type DocumentType = 
+  | "ctl" 
+  | "planos" 
+  | "topografia" 
+  | "licencia_construccion" 
+  | "escritura_publica" 
+  | "certificado_libertad" 
+  | "avaluo_comercial" 
+  | "estudio_suelos" 
+  | "otros";
 
-export interface Document {
-  id: number;
+export interface DocumentUpload {
+  document_type: DocumentType;
   title: string;
   description?: string;
-  document_type: string;
+  file: File;
+  lote?: string;
+}
+
+export interface Document {
+  id: string;
+  document_type: DocumentType;
+  title: string;
+  description?: string;
   file: string;
-  file_url: string;
-  file_name: string;
+  file_url?: string;  // ✅ NUEVO: URL absoluta del archivo
+  file_name?: string;  // ✅ NUEVO: Nombre del archivo
+  download_url?: string;  // ✅ NUEVO: URL de descarga
   file_size?: number;
   mime_type?: string;
-  user: number;
-  user_name?: string;
-  lote?: number;
-  lote_nombre?: string;
+  uploaded_by: string;
   created_at: string;
-  updated_at?: string;
-  tags?: string[];
-  metadata?: Record<string, any>;
+  updated_at: string;
+  lote?: string;
   is_active: boolean;
-  status?: string;
 }
 
 export interface DocumentsResponse {
-  count: number;
-  next: string | null;
-  previous: string | null;
-  results: Document[];
+  success: boolean;
+  documents?: Document[];
+  document?: Document;
+  message?: string;
+  error?: string;
 }
 
 /**
- * Upload a document to the server using the correct endpoint
+ * ✅ CORREGIDO: Subir documento usando FormData (no JSON)
  */
-export async function uploadDocument(request: Request, formData: FormData) {
+export async function uploadDocument(request: Request, documentData: DocumentUpload): Promise<DocumentsResponse> {
   try {
-    const endpoint = `${API_URL}/api/documents/documents/upload/`;
+    console.log(`[Documentos] Subiendo documento: ${documentData.title}`);
     
-    console.log("[Documents] Uploading document to endpoint:", endpoint);
-    
-    // Parse tags if they exist
-    const tagsString = formData.get("tags") as string | null;
-    if (tagsString) {
-      const tagsArray = tagsString.split(",").map(tag => tag.trim()).filter(Boolean);
-      formData.delete("tags");
-      formData.append("tags", JSON.stringify(tagsArray));
+    // ✅ CRÍTICO: Usar FormData para archivos, NO JSON
+    const formData = new FormData();
+    formData.append('document_type', documentData.document_type);
+    formData.append('title', documentData.title);
+    if (documentData.description) {
+      formData.append('description', documentData.description);
     }
+    if (documentData.lote) {
+      formData.append('lote', documentData.lote);
+    }
+    formData.append('file', documentData.file);
+
+    const endpoint = `${API_URL}/api/documents/documents/`;
+    console.log(`[Documentos] Endpoint: ${endpoint}`);
+    console.log(`[Documentos] File name: ${documentData.file.name}, size: ${documentData.file.size}`);
     
-    // Make API request
-    const { res: response, setCookieHeaders } = await fetchWithAuth(request, endpoint, {
-      method: "POST",
+    // ✅ CRÍTICO: NO pasar headers - fetchWithAuth los manejará correctamente
+    const { res, setCookieHeaders } = await fetchWithAuth(request, endpoint, {
+      method: 'POST',
       body: formData,
-      // Important: Do not set Content-Type header when sending FormData
+      // ✅ NO incluir headers aquí - fetchWithAuth detectará FormData automáticamente
     });
-    
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error("[Documents] Error uploading document:", response.status, errorText);
-      throw new Error(`Error uploading document: ${response.status} ${errorText}`);
+
+    console.log(`[Documentos] Response status: ${res.status}`);
+
+    if (!res.ok) {
+      const errorText = await res.text();
+      console.error(`[Documentos] Error response: ${errorText}`);
+      
+      let errorData;
+      try {
+        errorData = JSON.parse(errorText);
+      } catch {
+        errorData = { error: `HTTP ${res.status}: ${errorText}` };
+      }
+      
+      return {
+        success: false,
+        error: errorData.error || errorData.message || `Error ${res.status}`,
+      };
     }
-    
-    const data = await response.json();
-    console.log("[Documents] Document uploaded successfully with ID:", data.id);
-    
-    return { document: data, headers: setCookieHeaders };
+
+    const result = await res.json();
+    console.log(`[Documentos] Documento subido exitosamente: ${result.id || 'N/A'}`);
+
+    return {
+      success: true,
+      document: result,
+      message: 'Documento subido exitosamente',
+    };
+
   } catch (error) {
-    console.error("[Documents] Error in uploadDocument:", error);
-    throw error;
+    console.error('[Documentos] Error al subir documento:', error);
+    return {
+      success: false,
+      error: `Error uploading document: ${error instanceof Error ? error.message : 'Unknown error'}`,
+    };
   }
 }
 
 /**
- * Get documents for a specific lote
+ * Obtener documentos de un lote
  */
-export async function getLoteDocuments(request: Request, loteId: string) {
+export async function getLoteDocuments(request: Request, loteId: string): Promise<DocumentsResponse> {
   try {
+    console.log(`[Documentos] Obteniendo documentos del lote: ${loteId}`);
+    
     const endpoint = `${API_URL}/api/documents/lote/${loteId}/`;
-    
-    console.log(`[Documents] Fetching documents for lote ${loteId} from endpoint: ${endpoint}`);
-    
-    const { res: response, setCookieHeaders } = await fetchWithAuth(request, endpoint);
-    
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error(`[Documents] Error fetching documents for lote ${loteId}:`, response.status, errorText);
-      
-      // If 404, might mean no documents yet, return empty list instead of error
-      if (response.status === 404) {
-        return { documents: [], count: 0, headers: setCookieHeaders };
-      }
-      
-      throw new Error(`Error fetching lote documents: ${response.status} ${errorText}`);
+    const { res, setCookieHeaders } = await fetchWithAuth(request, endpoint);
+
+    if (!res.ok) {
+      const errorText = await res.text();
+      console.error(`[Documentos] Error obteniendo documentos: ${res.status} - ${errorText}`);
+      return {
+        success: false,
+        error: `Error ${res.status}: ${errorText}`,
+      };
     }
-    
-    const data = await response.json();
-    console.log(`[Documents] Received ${data.results?.length || 0} documents for lote ${loteId}`);
-    
-    return { 
-      documents: data.results || [], 
-      count: data.count || 0, 
-      headers: setCookieHeaders 
+
+    const documents = await res.json();
+    console.log(`[Documentos] Documentos obtenidos: ${documents.length || 0}`);
+
+    return {
+      success: true,
+      documents: Array.isArray(documents) ? documents : [],
     };
-  } catch (error) {
-    console.error("[Documents] Error in getLoteDocuments:", error);
-    throw error;
-  }
-}
 
-/**
- * Get all documents for the current user
- */
-export async function getUserDocuments(request: Request, filters?: {
-  document_type?: string;
-  search?: string;
-  ordering?: string;
-  limit?: number;
-  offset?: number;
-}) {
-  try {
-    let endpoint = `${API_URL}/api/documents/user/`;
-    
-    // Build query parameters
-    if (filters) {
-      const params = new URLSearchParams();
-      
-      if (filters.document_type) params.append('document_type', filters.document_type);
-      if (filters.search) params.append('search', filters.search);
-      if (filters.ordering) params.append('ordering', filters.ordering);
-      if (filters.limit) params.append('limit', filters.limit.toString());
-      if (filters.offset) params.append('offset', filters.offset.toString());
-      
-      const queryString = params.toString();
-      if (queryString) {
-        endpoint += `?${queryString}`;
-      }
-    }
-    
-    console.log(`[Documents] Fetching user documents from endpoint: ${endpoint}`);
-    
-    const { res: response, setCookieHeaders } = await fetchWithAuth(request, endpoint);
-    
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error(`[Documents] Error fetching user documents:`, response.status, errorText);
-      throw new Error(`Error fetching user documents: ${response.status} ${errorText}`);
-    }
-    
-    const data = await response.json();
-    console.log(`[Documents] Received ${data.results?.length || 0} user documents`);
-    
-    return { 
-      documents: data.results || [], 
-      count: data.count || 0,
-      next: data.next,
-      previous: data.previous,
-      headers: setCookieHeaders 
+  } catch (error) {
+    console.error('[Documentos] Error obteniendo documentos:', error);
+    return {
+      success: false,
+      error: `Error fetching documents: ${error instanceof Error ? error.message : 'Unknown error'}`,
     };
-  } catch (error) {
-    console.error("[Documents] Error in getUserDocuments:", error);
-    throw error;
   }
 }
 
 /**
- * Get all documents (admin only)
+ * Obtener documentos del usuario actual
  */
-export async function getAllDocuments(request: Request, filters?: {
-  document_type?: string;
-  lote?: string;
-  search?: string;
-  ordering?: string;
-  limit?: number;
-  offset?: number;
-}) {
+export async function getUserDocuments(request: Request): Promise<DocumentsResponse> {
   try {
-    let endpoint = `${API_URL}/api/documents/documents/`;
+    console.log(`[Documentos] Obteniendo documentos del usuario`);
     
-    // Build query parameters
-    if (filters) {
-      const params = new URLSearchParams();
-      
-      if (filters.document_type) params.append('document_type', filters.document_type);
-      if (filters.lote) params.append('lote', filters.lote);
-      if (filters.search) params.append('search', filters.search);
-      if (filters.ordering) params.append('ordering', filters.ordering);
-      if (filters.limit) params.append('limit', filters.limit.toString());
-      if (filters.offset) params.append('offset', filters.offset.toString());
-      
-      const queryString = params.toString();
-      if (queryString) {
-        endpoint += `?${queryString}`;
-      }
+    const endpoint = `${API_URL}/api/documents/user/`;
+    const { res, setCookieHeaders } = await fetchWithAuth(request, endpoint);
+
+    if (!res.ok) {
+      const errorText = await res.text();
+      console.error(`[Documentos] Error obteniendo documentos de usuario: ${res.status} - ${errorText}`);
+      return {
+        success: false,
+        error: `Error ${res.status}: ${errorText}`,
+      };
     }
-    
-    console.log(`[Documents] Fetching all documents from endpoint: ${endpoint}`);
-    
-    const { res: response, setCookieHeaders } = await fetchWithAuth(request, endpoint);
-    
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error(`[Documents] Error fetching all documents:`, response.status, errorText);
-      throw new Error(`Error fetching all documents: ${response.status} ${errorText}`);
-    }
-    
-    const data = await response.json();
-    console.log(`[Documents] Received ${data.results?.length || 0} documents`);
-    
-    return { 
-      documents: data.results || [], 
-      count: data.count || 0,
-      next: data.next,
-      previous: data.previous,
-      headers: setCookieHeaders 
+
+    const documents = await res.json();
+    console.log(`[Documentos] Documentos de usuario obtenidos: ${documents.length || 0}`);
+
+    return {
+      success: true,
+      documents: Array.isArray(documents) ? documents : [],
     };
+
   } catch (error) {
-    console.error("[Documents] Error in getAllDocuments:", error);
-    throw error;
+    console.error('[Documentos] Error obteniendo documentos de usuario:', error);
+    return {
+      success: false,
+      error: `Error fetching user documents: ${error instanceof Error ? error.message : 'Unknown error'}`,
+    };
   }
 }
 
 /**
- * Get document details by ID
+ * Eliminar documento
  */
-export async function getDocumentById(request: Request, documentId: string) {
+export async function deleteDocument(request: Request, documentId: string): Promise<DocumentsResponse> {
   try {
+    console.log(`[Documentos] Eliminando documento: ${documentId}`);
+    
     const endpoint = `${API_URL}/api/documents/documents/${documentId}/`;
-    
-    console.log(`[Documents] Fetching document ${documentId} from endpoint: ${endpoint}`);
-    
-    const { res: response, setCookieHeaders } = await fetchWithAuth(request, endpoint);
-    
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error(`[Documents] Error fetching document ${documentId}:`, response.status, errorText);
-      throw new Error(`Error fetching document: ${response.status} ${errorText}`);
-    }
-    
-    const document = await response.json();
-    console.log(`[Documents] Retrieved document ${documentId} successfully`);
-    
-    return { document, headers: setCookieHeaders };
-  } catch (error) {
-    console.error("[Documents] Error in getDocumentById:", error);
-    throw error;
-  }
-}
-
-/**
- * Update document details
- */
-export async function updateDocument(request: Request, documentId: string, updateData: Partial<Document>) {
-  try {
-    const endpoint = `${API_URL}/api/documents/documents/${documentId}/`;
-    
-    console.log(`[Documents] Updating document ${documentId} at endpoint: ${endpoint}`);
-    
-    const { res: response, setCookieHeaders } = await fetchWithAuth(request, endpoint, {
-      method: "PATCH",
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(updateData),
+    const { res, setCookieHeaders } = await fetchWithAuth(request, endpoint, {
+      method: 'DELETE',
     });
-    
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error(`[Documents] Error updating document ${documentId}:`, response.status, errorText);
-      throw new Error(`Error updating document: ${response.status} ${errorText}`);
+
+    if (!res.ok) {
+      const errorText = await res.text();
+      console.error(`[Documentos] Error eliminando documento: ${res.status} - ${errorText}`);
+      return {
+        success: false,
+        error: `Error ${res.status}: ${errorText}`,
+      };
     }
-    
-    const document = await response.json();
-    console.log(`[Documents] Document ${documentId} updated successfully`);
-    
-    return { document, headers: setCookieHeaders };
+
+    console.log(`[Documentos] Documento eliminado exitosamente: ${documentId}`);
+
+    return {
+      success: true,
+      message: 'Documento eliminado exitosamente',
+    };
+
   } catch (error) {
-    console.error("[Documents] Error in updateDocument:", error);
-    throw error;
+    console.error('[Documentos] Error eliminando documento:', error);
+    return {
+      success: false,
+      error: `Error deleting document: ${error instanceof Error ? error.message : 'Unknown error'}`,
+    };
   }
 }
 
 /**
- * Delete a document
+ * Obtener tipos de documento disponibles
  */
-export async function deleteDocument(request: Request, documentId: string) {
-  try {
-    const endpoint = `${API_URL}/api/documents/documents/${documentId}/`;
-    
-    console.log(`[Documents] Deleting document ${documentId} at endpoint: ${endpoint}`);
-    
-    const { res: response, setCookieHeaders } = await fetchWithAuth(request, endpoint, {
-      method: "DELETE",
-    });
-    
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error(`[Documents] Error deleting document ${documentId}:`, response.status, errorText);
-      throw new Error(`Error deleting document: ${response.status} ${errorText}`);
-    }
-    
-    console.log(`[Documents] Document ${documentId} deleted successfully`);
-    
-    return { success: true, headers: setCookieHeaders };
-  } catch (error) {
-    console.error("[Documents] Error in deleteDocument:", error);
-    throw error;
-  }
+export function getDocumentTypes(): { value: DocumentType; label: string }[] {
+  return [
+    { value: "ctl", label: "Certificado de Tradición y Libertad" },
+    { value: "planos", label: "Planos Arquitectónicos" },
+    { value: "topografia", label: "Levantamiento Topográfico" },
+    { value: "licencia_construccion", label: "Licencia de Construcción" },
+    { value: "escritura_publica", label: "Escritura Pública" },
+    { value: "certificado_libertad", label: "Certificado de Libertad" },
+    { value: "avaluo_comercial", label: "Avalúo Comercial" },
+    { value: "estudio_suelos", label: "Estudio de Suelos" },
+    { value: "otros", label: "Otros Documentos" },
+  ];
 }
 
 /**
- * Archive a document (soft delete)
- */
-export async function archiveDocument(request: Request, documentId: string) {
-  try {
-    const endpoint = `${API_URL}/api/documents/documents/${documentId}/archive/`;
-    
-    console.log(`[Documents] Archiving document ${documentId} at endpoint: ${endpoint}`);
-    
-    const { res: response, setCookieHeaders } = await fetchWithAuth(request, endpoint, {
-      method: "POST",
-    });
-    
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error(`[Documents] Error archiving document ${documentId}:`, response.status, errorText);
-      throw new Error(`Error archiving document: ${response.status} ${errorText}`);
-    }
-    
-    const data = await response.json();
-    console.log(`[Documents] Document ${documentId} archived successfully`);
-    
-    return { message: data.message, headers: setCookieHeaders };
-  } catch (error) {
-    console.error("[Documents] Error in archiveDocument:", error);
-    throw error;
-  }
-}
-
-/**
- * Get document download information
- */
-export async function getDocumentDownload(request: Request, documentId: string) {
-  try {
-    const endpoint = `${API_URL}/api/documents/documents/${documentId}/download/`;
-    
-    console.log(`[Documents] Getting download info for document ${documentId} from endpoint: ${endpoint}`);
-    
-    const { res: response, setCookieHeaders } = await fetchWithAuth(request, endpoint);
-    
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error(`[Documents] Error getting download info for document ${documentId}:`, response.status, errorText);
-      throw new Error(`Error getting download info: ${response.status} ${errorText}`);
-    }
-    
-    const downloadInfo = await response.json();
-    console.log(`[Documents] Retrieved download info for document ${documentId} successfully`);
-    
-    return { downloadInfo, headers: setCookieHeaders };
-  } catch (error) {
-    console.error("[Documents] Error in getDocumentDownload:", error);
-    throw error;
-  }
-}
-
-/**
- * Get available document types
- */
-export async function getDocumentTypes(request: Request) {
-  try {
-    const endpoint = `${API_URL}/api/documents/documents/types/`;
-    
-    console.log("[Documents] Fetching document types from endpoint:", endpoint);
-    
-    const { res: response, setCookieHeaders } = await fetchWithAuth(request, endpoint);
-    
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error("[Documents] Error fetching document types:", response.status, errorText);
-      throw new Error(`Error fetching document types: ${response.status} ${errorText}`);
-    }
-    
-    const documentTypes = await response.json();
-    console.log("[Documents] Retrieved document types successfully");
-    
-    return { documentTypes, headers: setCookieHeaders };
-  } catch (error) {
-    console.error("[Documents] Error in getDocumentTypes:", error);
-    throw error;
-  }
-}
-
-/**
- * Obtiene un resumen de documentos por estado de validación
+ * Obtener resumen de validación de documentos
  */
 export async function getValidationSummary(request: Request) {
   try {
+    console.log(`[Documentos] Obteniendo resumen de validación`);
+    
     const endpoint = `${API_URL}/api/documents/validation/summary/`;
-    const { res: response, setCookieHeaders } = await fetchWithAuth(request, endpoint);
-    
-    if (!response.ok) {
-      console.error(`Error obteniendo resumen de validación: ${response.status} ${response.statusText}`);
-      throw new Error(`Error en la solicitud: ${response.status} ${response.statusText}`);
-    }
-    
-    const data = await response.json();
-    return { 
-      validationSummary: data, 
-      headers: setCookieHeaders 
-    };
-  } catch (error) {
-    console.error('Error obteniendo resumen de validación:', error);
-    throw error;
-  }
-}
+    const { res, setCookieHeaders } = await fetchWithAuth(request, endpoint);
 
-/**
- * Obtiene la lista de documentos para validación con filtros opcionales
- */
-export async function getValidationDocuments(request: Request, filters?: {
-  estado?: string;
-  tipo?: string;
-  fecha_desde?: string;
-  fecha_hasta?: string;
-  page?: number;
-  page_size?: number;
-}) {
-  try {
-    let endpoint = `${API_URL}/api/documents/validation/list/`;
-    
-    // Añadir filtros a la URL si están presentes
-    if (filters) {
-      const params = new URLSearchParams();
+    if (!res.ok) {
+      const errorText = await res.text();
+      console.error(`[Documentos] Error obteniendo resumen: ${res.status} - ${errorText}`);
       
-      if (filters.estado) params.append('estado', filters.estado);
-      if (filters.tipo) params.append('tipo', filters.tipo);
-      if (filters.fecha_desde) params.append('fecha_desde', filters.fecha_desde);
-      if (filters.fecha_hasta) params.append('fecha_hasta', filters.fecha_hasta);
-      if (filters.page) params.append('page', filters.page.toString());
-      if (filters.page_size) params.append('page_size', filters.page_size.toString());
-      
-      const queryString = params.toString();
-      if (queryString) {
-        endpoint += `?${queryString}`;
-      }
+      // Retornar datos por defecto en caso de error
+      return {
+        validationSummary: {
+          pendientes: 0,
+          validados: 0,
+          rechazados: 0,
+          total: 0
+        },
+        headers: new Headers()
+      };
     }
-    
-    const { res: response, setCookieHeaders } = await fetchWithAuth(request, endpoint);
-    
-    if (!response.ok) {
-      console.error(`Error obteniendo documentos para validación: ${response.status} ${response.statusText}`);
-      throw new Error(`Error en la solicitud: ${response.status} ${response.statusText}`);
-    }
-    
-    const data = await response.json();
-    return { 
-      documents: data.results || [],
-      pagination: {
-        count: data.count,
-        next: data.next,
-        previous: data.previous,
+
+    const summary = await res.json();
+    console.log(`[Documentos] Resumen obtenido:`, summary);
+
+    return {
+      validationSummary: summary,
+      headers: setCookieHeaders
+    };
+
+  } catch (error) {
+    console.error('[Documentos] Error obteniendo resumen de validación:', error);
+    return {
+      validationSummary: {
+        pendientes: 0,
+        validados: 0,
+        rechazados: 0,
+        total: 0
       },
-      headers: setCookieHeaders 
+      headers: new Headers()
     };
-  } catch (error) {
-    console.error('Error obteniendo documentos para validación:', error);
-    throw error;
   }
 }
 
 /**
- * Obtiene documentos recientes que requieren validación
+ * Obtener documentos recientes que necesitan validación
  */
 export async function getRecentDocumentsForValidation(request: Request, limit: number = 10) {
   try {
+    console.log(`[Documentos] Obteniendo ${limit} documentos recientes para validación`);
+    
     const endpoint = `${API_URL}/api/documents/validation/list/?status=pendiente&limit=${limit}`;
-    const { res: response, setCookieHeaders } = await fetchWithAuth(request, endpoint);
-    
-    if (!response.ok) {
-      console.error(`Error obteniendo documentos recientes para validación: ${response.status} ${response.statusText}`);
-      throw new Error(`Error en la solicitud: ${response.status} ${response.statusText}`);
+    const { res, setCookieHeaders } = await fetchWithAuth(request, endpoint);
+
+    if (!res.ok) {
+      const errorText = await res.text();
+      console.error(`[Documentos] Error obteniendo documentos recientes: ${res.status} - ${errorText}`);
+      
+      return {
+        recentDocuments: [],
+        headers: new Headers()
+      };
     }
+
+    const data = await res.json();
+    const documents = data.results || data || [];
     
-    const data = await response.json();
-    return { 
-      recentDocuments: data.results || [], 
-      headers: setCookieHeaders 
+    console.log(`[Documentos] ${documents.length} documentos recientes obtenidos`);
+
+    return {
+      recentDocuments: documents,
+      headers: setCookieHeaders
     };
+    
+
   } catch (error) {
-    console.error('Error obteniendo documentos recientes para validación:', error);
-    throw error;
+    console.error('[Documentos] Error obteniendo documentos recientes:', error);
+    return {
+      recentDocuments: [],
+      headers: new Headers()
+    };
   }
 }
 
 /**
- * Obtiene detalles de un documento específico para validación
+ * Obtener lista de documentos con filtros y paginación para validación
  */
-export async function getDocumentDetails(request: Request, documentId: string) {
+export async function getValidationDocuments(
+  request: Request, 
+  options: { page?: number; page_size?: number; status?: string } = {}
+) {
   try {
-    const endpoint = `${API_URL}/api/documents/validation/${documentId}/`;
-    const { res: response, setCookieHeaders } = await fetchWithAuth(request, endpoint);
+    const { page = 1, page_size = 10, status } = options;
     
-    if (!response.ok) {
-      console.error(`Error obteniendo detalles del documento: ${response.status} ${response.statusText}`);
-      throw new Error(`Error en la solicitud: ${response.status} ${response.statusText}`);
+    console.log(`[Documentos] Obteniendo documentos de validación - página ${page}`);
+    
+    const params = new URLSearchParams({
+      page: page.toString(),
+      page_size: page_size.toString()
+    });
+    
+    if (status) {
+      params.append('status', status);
     }
     
-    const documentDetails = await response.json();
-    return { 
-      documentDetails, 
-      headers: setCookieHeaders 
+    const endpoint = `${API_URL}/api/documents/validation/list/?${params.toString()}`;
+    const { res, setCookieHeaders } = await fetchWithAuth(request, endpoint);
+
+    if (!res.ok) {
+      const errorText = await res.text();
+      console.error(`[Documentos] Error obteniendo lista de validación: ${res.status} - ${errorText}`);
+      
+      return {
+        documents: [],
+        pagination: {
+          page: 1,
+          page_size: 10,
+          total: 0,
+          total_pages: 0
+        },
+        headers: new Headers()
+      };
+    }
+
+    const data = await res.json();
+    
+    // ✅ CRÍTICO: Mapear correctamente los documentos con file_url
+    const mappedDocuments = (data.results || []).map((doc: any) => {
+      // ✅ CORREGIR: Reemplazar URLs internas de Docker con localhost
+      let fileUrl = doc.file_url || doc.file;
+      
+      if (fileUrl && (fileUrl.includes('backend:8000') || fileUrl.includes('lateral360_backend'))) {
+        // Reemplazar URL interna de Docker con localhost
+        fileUrl = fileUrl.replace(/http:\/\/(backend|lateral360_backend):8000/, 'http://localhost:8000');
+        console.log(`[Documentos] 🔧 Corrigiendo URL: ${doc.file_url} → ${fileUrl}`);
+      }
+      
+      console.log(`[Documentos] Doc ${doc.id}:`, {
+        title: doc.title,
+        file: doc.file,
+        file_url_original: doc.file_url,
+        file_url_corrected: fileUrl,
+        file_name: doc.file_name
+      });
+      
+      return {
+        ...doc,
+        // ✅ Usar URL corregida
+        file_url: fileUrl,
+        file: fileUrl,
+        // ✅ Mapear campos de nombre consistentes
+        nombre: doc.nombre || doc.title,
+        tipo: doc.tipo || doc.document_type,
+        estado: doc.estado || doc.metadata?.validation_status || 'pendiente',
+        fecha_subida: doc.fecha_subida || doc.created_at,
+        solicitante: doc.solicitante || doc.user_name || 'Desconocido',
+      };
+    });
+    
+    console.log(`[Documentos] Lista de validación obtenida: ${mappedDocuments.length} documentos`);
+    
+    // ✅ LOGGING: Verificar que los documentos tengan file_url
+    const docsWithoutUrl = mappedDocuments.filter((doc: any) => !doc.file_url);
+    if (docsWithoutUrl.length > 0) {
+      console.error(`[Documentos] ⚠️ ${docsWithoutUrl.length} documentos sin file_url!`);
+      docsWithoutUrl.forEach((doc: any) => {
+        console.error(`   - Doc ${doc.id}: ${doc.nombre}`);
+      });
+    }
+
+    return {
+      documents: mappedDocuments,
+      pagination: {
+        page: data.page || 1,
+        page_size: data.page_size || 10,
+        total: data.total || 0,
+        total_pages: data.total_pages || 0
+      },
+      headers: setCookieHeaders
     };
+
   } catch (error) {
-    console.error(`Error obteniendo detalles del documento ${documentId}:`, error);
-    throw error;
+    console.error('[Documentos] Error obteniendo documentos de validación:', error);
+    return {
+      documents: [],
+      pagination: {
+        page: 1,
+        page_size: 10,
+        total: 0,
+        total_pages: 0
+      },
+      headers: new Headers()
+    };
   }
 }
 
 /**
- * Realiza una acción de validación o rechazo sobre un documento
+ * Realizar acción de validación o rechazo en un documento
  */
 export async function performDocumentAction(
   request: Request,
   documentId: string,
   action: 'validar' | 'rechazar',
-  comentarios?: string
+  comments: string = ''
 ) {
   try {
+    console.log(`[Documentos] Realizando acción ${action} en documento ${documentId}`);
+    
     const endpoint = `${API_URL}/api/documents/validation/${documentId}/action/`;
-    const { res: response, setCookieHeaders } = await fetchWithAuth(request, endpoint, {
+    const { res, setCookieHeaders } = await fetchWithAuth(request, endpoint, {
       method: 'POST',
       headers: {
-        'Content-Type': 'application/json',
+        'Content-Type': 'application/json'
       },
       body: JSON.stringify({
         action,
-        comments: comentarios || ''
-      }),
+        comments
+      })
     });
-    
-    if (!response.ok) {
-      console.error(`Error realizando acción de documento: ${response.status} ${response.statusText}`);
-      throw new Error(`Error en la solicitud: ${response.status} ${response.statusText}`);
+
+    if (!res.ok) {
+      const errorText = await res.text();
+      console.error(`[Documentos] Error realizando acción: ${res.status} - ${errorText}`);
+      
+      let errorData;
+      try {
+        errorData = JSON.parse(errorText);
+      } catch {
+        errorData = { error: `Error ${res.status}: ${errorText}` };
+      }
+      
+      throw new Error(errorData.detail || errorData.error || `Error ${res.status}`);
     }
-    
-    const result = await response.json();
-    return { 
-      result, 
-      headers: setCookieHeaders 
+
+    const result = await res.json();
+    console.log(`[Documentos] Acción ${action} realizada exitosamente`);
+
+    return {
+      result,
+      headers: setCookieHeaders
     };
+
   } catch (error) {
-    console.error(`Error realizando acción ${action} en el documento ${documentId}:`, error);
+    console.error(`[Documentos] Error realizando acción ${action}:`, error);
+    throw error;
+  }
+}
+
+/**
+ * Obtener detalles de un documento específico para validación
+ */
+export async function getDocumentValidationDetails(request: Request, documentId: string) {
+  try {
+    console.log(`[Documentos] Obteniendo detalles de validación del documento ${documentId}`);
+    
+    const endpoint = `${API_URL}/api/documents/validation/${documentId}/`;
+    const { res, setCookieHeaders } = await fetchWithAuth(request, endpoint);
+
+    if (!res.ok) {
+      const errorText = await res.text();
+      console.error(`[Documentos] Error obteniendo detalles: ${res.status} - ${errorText}`);
+      throw new Error(`Error ${res.status}: No se pudo obtener los detalles del documento`);
+    }
+
+    const document = await res.json();
+    console.log(`[Documentos] Detalles obtenidos para documento ${documentId}`);
+
+    return {
+      document,
+      headers: setCookieHeaders
+    };
+
+  } catch (error) {
+    console.error('[Documentos] Error obteniendo detalles de validación:', error);
     throw error;
   }
 }

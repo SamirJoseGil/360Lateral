@@ -60,10 +60,8 @@ export default function MisLotes() {
     const loaderData = useLoaderData<typeof loader>();
     const [lotes, setLotes] = useState<any[]>([]);
 
-    // Efecto para procesar los datos cargados
     useEffect(() => {
         console.log("[MisLotes Component] Datos del loader:", loaderData);
-        // Verificamos si los datos tienen la propiedad lotes
         if ('lotes' in loaderData && Array.isArray(loaderData.lotes)) {
             setLotes(loaderData.lotes);
         }
@@ -83,6 +81,7 @@ export default function MisLotes() {
                     Registrar Nuevo Lote
                 </Link>
             </div>
+
             {'error' in loaderData && loaderData.error && (
                 <div className="bg-red-50 border-l-4 border-red-400 p-4 mb-6">
                     <div className="flex">
@@ -101,7 +100,11 @@ export default function MisLotes() {
             {loaderData.hasResults && lotes.length > 0 ? (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                     {lotes.map(lote => (
-                        <LoteCard key={lote.id} lote={lote} />
+                        <LoteCard
+                            key={lote.id}
+                            lote={lote}
+                            userRole="owner"
+                        />
                     ))}
                 </div>
             ) : (

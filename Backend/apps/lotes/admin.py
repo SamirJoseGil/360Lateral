@@ -1,115 +1,155 @@
 """
-Configuración del admin para lotes
+Configuración del admin para el módulo de lotes
 """
 from django.contrib import admin
-from django.utils.html import format_html
-from .models import Lote, LoteDocument, LoteHistory, Favorite
+from .models import Lote, Favorite
 
 
 @admin.register(Lote)
 class LoteAdmin(admin.ModelAdmin):
-    """Admin para Lote"""
+    """
+    Configuración del admin para Lote - CORREGIDA sin campo comuna
+    """
     list_display = [
-        'cbml',
-        'direccion',
-        'owner',
-        'get_status_badge',
+        'nombre', 
+        'direccion', 
+        'area', 
+        'barrio',  # ✅ Usar barrio en lugar de comuna
+        'estrato',
+        'owner', 
+        'status', 
         'is_verified',
-        'area',
         'created_at'
     ]
-    list_filter = ['status', 'is_verified', 'comuna', 'estrato', 'created_at']
-    search_fields = ['cbml', 'matricula', 'direccion', 'owner__email']
-    readonly_fields = ['created_at', 'updated_at', 'verified_at']
-    date_hierarchy = 'created_at'
+    
+    list_filter = [
+        'status', 
+        'is_verified', 
+        'estrato',  # ✅ CORREGIDO: usar 'estrato' en lugar de 'comuna'
+        'barrio',   # ✅ Agregar barrio como filtro
+        'created_at',
+        'updated_at'
+    ]
+    
+    search_fields = [
+        'nombre', 
+        'direccion', 
+        'cbml', 
+        'matricula', 
+        'barrio',  # ✅ Usar barrio en lugar de comuna
+        'owner__email',
+        'owner__first_name',
+        'owner__last_name'
+    ]
+    
+    readonly_fields = [
+        'id',
+        'created_at', 
+        'updated_at'  # ✅ CORREGIDO: solo campos que existen
+    ]
     
     fieldsets = (
-        ('Identificación', {
-            'fields': ('cbml', 'matricula', 'owner')
-        }),
-        ('Ubicación', {
-            'fields': ('direccion', 'barrio', 'comuna', 'estrato', 'latitud', 'longitud')
-        }),
-        ('Dimensiones', {
-            'fields': ('area', 'area_construida', 'frente', 'fondo')
-        }),
-        ('Normativa', {
+        ('Información Básica', {
             'fields': (
-                'tratamiento_urbanistico',
-                'uso_suelo',
-                'altura_maxima',
-                'indice_ocupacion',
-                'indice_construccion'
+                'nombre',
+                'direccion',
+                'area',
+                'owner'
             )
         }),
-        ('Valoración', {
-            'fields': ('avaluo_catastral', 'valor_comercial', 'valor_m2')
+        ('Identificación Catastral', {
+            'fields': (
+                'cbml',
+                'matricula',
+                'codigo_catastral'
+            )
         }),
-        ('Estado', {
-            'fields': ('status', 'is_verified', 'verified_by', 'verified_at')
+        ('Ubicación', {
+            'fields': (
+                'barrio',
+                'estrato',
+                'latitud',
+                'longitud'
+            )
         }),
-        ('Fechas', {
-            'fields': ('created_at', 'updated_at'),
+        ('Normativa Urbanística', {
+            'fields': (
+                'clasificacion_suelo',
+                'uso_suelo',
+                'tratamiento_pot'
+            )
+        }),
+        ('Estado y Verificación', {
+            'fields': (
+                'status',
+                'is_verified',
+                'descripcion'
+            )
+        }),
+        ('Metadatos', {
+            'fields': (
+                'metadatos',
+            ),
             'classes': ('collapse',)
         }),
+        ('Sistema', {
+            'fields': (
+                'id',
+                'created_at',
+                'updated_at'
+            ),
+            'classes': ('collapse',)
+        })
     )
     
-    def get_status_badge(self, obj):
-        """Badge visual para el estado"""
-        colors = {
-            'pending': '#ffc107',
-            'active': '#28a745',
-            'archived': '#6c757d',
-            'rejected': '#dc3545'
-        }
-        color = colors.get(obj.status, '#6c757d')
-        return format_html(
-            '<span style="background-color: {}; color: white; padding: 3px 10px; '
-            'border-radius: 3px; font-weight: bold;">{}</span>',
-            color,
-            obj.get_status_display()
-        )
-    get_status_badge.short_description = 'Estado'
+    ordering = ['-created_at']
     
-    actions = ['verify_lotes', 'reject_lotes']
+    def get_queryset(self, request):
+        """Optimizar queries con select_related"""
+        return super().get_queryset(request).select_related('owner')
     
-    def verify_lotes(self, request, queryset):
-        """Verificar lotes seleccionados"""
-        count = 0
-        for lote in queryset:
-            lote.verify(request.user)
-            count += 1
-        self.message_user(request, f'{count} lote(s) verificado(s)')
-    verify_lotes.short_description = 'Verificar lotes seleccionados'
+    def save_model(self, request, obj, form, change):
+        """Guardar modelo con validaciones adicionales"""
+        if not change:  # Si es un objeto nuevo
+            if not obj.owner:
+                obj.owner = request.user
+        super().save_model(request, obj, form, change)
+
+
+# Si hay otros modelos relacionados, agregarlos aquí
+try:
+    from .models import Favorite
     
-    def reject_lotes(self, request, queryset):
-        """Rechazar lotes seleccionados"""
-        count = 0
-        for lote in queryset:
-            lote.reject(request.user, 'Rechazado desde admin')
-            count += 1
-        self.message_user(request, f'{count} lote(s) rechazado(s)')
-    reject_lotes.short_description = 'Rechazar lotes seleccionados'
+    @admin.register(Favorite)
+    class FavoriteAdmin(admin.ModelAdmin):
+        """Admin para favoritos"""
+        list_display = ['user', 'lote', 'created_at']
+        list_filter = ['created_at']
+        search_fields = [
+            'user__email', 
+            'lote__nombre', 
+            'lote__direccion'
+        ]
+        readonly_fields = ['created_at']
+        
+        def get_queryset(self, request):
+            return super().get_queryset(request).select_related('user', 'lote')
 
+except ImportError:
+    # El modelo Favorite no existe, continuar
+    pass
 
-# Comentar o remover el admin de Tratamiento si no existe el modelo
-# @admin.register(Tratamiento)
-# class TratamientoAdmin(admin.ModelAdmin):
-#     """Admin para tratamientos"""
-#     list_display = ['codigo', 'nombre', 'activo', 'indice_construccion', 'altura_maxima']
-#     list_filter = ['activo']
-#     search_fields = ['codigo', 'nombre', 'descripcion']
+try:
+    from .models import Tratamiento
+    
+    @admin.register(Tratamiento)
+    class TratamientoAdmin(admin.ModelAdmin):
+        """Admin para tratamientos"""
+        list_display = ['codigo', 'nombre', 'activo']
+        list_filter = ['activo']
+        search_fields = ['codigo', 'nombre']
+        readonly_fields = ['created_at', 'updated_at']
 
-
-@admin.register(Favorite)
-class FavoriteAdmin(admin.ModelAdmin):
-    """Admin para favoritos"""
-    list_display = ['user', 'lote', 'created_at']
-    list_filter = ['created_at']
-    search_fields = ['user__email', 'lote__cbml']
-    readonly_fields = ['created_at']
-
-
-# Registrar otros modelos
-admin.site.register(LoteDocument)
-admin.site.register(LoteHistory)
+except ImportError:
+    # El modelo Tratamiento no existe, continuar
+    pass

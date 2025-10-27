@@ -3,7 +3,7 @@ Vistas para la aplicación de documentos.
 """
 import logging
 from django.shortcuts import get_object_or_404
-from rest_framework import status, viewsets, permissions
+from rest_framework import status, viewsets, permissions, parsers
 from rest_framework.response import Response
 from rest_framework.decorators import api_view, permission_classes, action
 from rest_framework.permissions import IsAuthenticated, IsAdminUser
@@ -40,11 +40,18 @@ class IsOwnerOrAdmin(permissions.BasePermission):
 class DocumentViewSet(viewsets.ModelViewSet):
     """
     ViewSet para operaciones CRUD en documentos.
+    ✅ CORREGIDO: Solo parsers para FormData
     """
     queryset = Document.objects.filter(is_active=True)
     serializer_class = DocumentSerializer
     permission_classes = [IsAuthenticated, IsOwnerOrAdmin]
     basename = 'document'
+    
+    # ✅ CRÍTICO: SOLO MultiPart y Form parsers - SIN JSONParser
+    parser_classes = [
+        parsers.MultiPartParser,  # Para archivos
+        parsers.FormParser,        # Para formularios
+    ]
     
     def get_serializer_class(self):
         """Determina qué serializador utilizar"""
@@ -96,16 +103,28 @@ class DocumentViewSet(viewsets.ModelViewSet):
     def download(self, request, pk=None):
         """
         Endpoint para obtener la URL de descarga directa de un documento.
+        ✅ CORREGIDO: Retorna URL absoluta correcta
         """
         document = self.get_object()
         if document.file:
+            # ✅ CRÍTICO: Construir URL absoluta correctamente
+            file_url = request.build_absolute_uri(document.file.url)
+            
+            logger.info(f"📥 Download request for document {document.id}: {file_url}")
+            
             return Response({
-                'download_url': request.build_absolute_uri(document.file.url),
+                'success': True,
+                'download_url': file_url,
                 'file_name': document.file.name.split('/')[-1],
                 'file_size': document.file_size,
                 'mime_type': document.mime_type
             })
-        return Response({"error": "No hay archivo asociado a este documento"}, status=status.HTTP_404_NOT_FOUND)
+        
+        logger.warning(f"⚠️ Download request for document {pk} without file")
+        return Response({
+            "success": False,
+            "error": "No hay archivo asociado a este documento"
+        }, status=status.HTTP_404_NOT_FOUND)
     
     @action(detail=True, methods=['post'])
     def archive(self, request, pk=None):
@@ -126,6 +145,100 @@ class DocumentViewSet(viewsets.ModelViewSet):
             {'value': key, 'label': label}
             for key, label in Document.DOCUMENT_TYPES
         ])
+    
+    def create(self, request, *args, **kwargs):
+        """Crear documento con logging mejorado"""
+        try:
+            logger.info(f"📤 Document upload request received from {request.user.email}")
+            logger.info(f"   Content-Type: {request.content_type}")
+            logger.info(f"   Data keys: {list(request.data.keys())}")
+            
+            # Verificar si hay archivo
+            if 'file' in request.data:
+                file = request.data['file']
+                logger.info(f"   File: {file.name} ({file.size} bytes)")
+            else:
+                logger.warning("   ⚠️ No file in request data")
+            
+            serializer = self.get_serializer(data=request.data)
+            serializer.is_valid(raise_exception=True)
+            self.perform_create(serializer)
+            
+            headers = self.get_success_headers(serializer.data)
+            logger.info(f"✅ Document created successfully: {serializer.data.get('id')}")
+            
+            return Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
+            
+        except Exception as e:
+            logger.error(f"❌ Error creating document: {str(e)}")
+            logger.exception("Full traceback:")
+            raise
+    
+    @action(detail=False, methods=['get'])
+    def me(request):
+        """
+        Endpoint para obtener los documentos del usuario autenticado.
+        """
+        documents = Document.objects.filter(user=request.user, is_active=True)
+        serializer = DocumentSerializer(documents, many=True)
+        return Response(serializer.data)
+    
+    @action(detail=True, methods=['get'])
+    def metadata(self, request, pk=None):
+        """
+        Endpoint para obtener la metadata de un documento.
+        """
+        document = self.get_object()
+        return Response(document.metadata)
+    
+    @action(detail=True, methods=['post'])
+    def validate(self, request, pk=None):
+        """
+        Endpoint para validar un documento.
+        """
+        document = self.get_object()
+        serializer = DocumentValidationSerializer(data=request.data)
+        
+        if serializer.is_valid():
+            # Procesar validación
+            DocumentValidationService.validate_document(document, serializer.validated_data)
+            return Response({"message": "Documento validado correctamente"})
+        
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    
+    @action(detail=True, methods=['post'])
+    def reject(self, request, pk=None):
+        """
+        Endpoint para rechazar un documento.
+        """
+        document = self.get_object()
+        serializer = DocumentValidationSerializer(data=request.data)
+        
+        if serializer.is_valid():
+            # Procesar rechazo
+            DocumentValidationService.reject_document(document, serializer.validated_data)
+            return Response({"message": "Documento rechazado correctamente"})
+        
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    
+    @action(detail=True, methods=['post'])
+    def restore(self, request, pk=None):
+        """
+        Endpoint para restaurar un documento archivado.
+        """
+        document = self.get_object()
+        document.is_active = True
+        document.save()
+        return Response({"message": "Documento restaurado correctamente"})
+    
+    @action(detail=True, methods=['delete'])
+    def delete(self, request, pk=None):
+        """
+        Endpoint para eliminar un documento.
+        """
+        document = self.get_object()
+        document.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
 
 class DocumentValidationSummaryView(views.APIView):
@@ -146,41 +259,59 @@ class DocumentValidationSummaryView(views.APIView):
 class DocumentValidationListView(generics.ListAPIView):
     """
     Vista para listar documentos filtrados por estado de validación.
+    ✅ CORREGIDO: Pasar context con request al serializer
     """
     permission_classes = [permissions.IsAuthenticated]
     serializer_class = DocumentListSerializer
     
     def get_queryset(self):
-        """
-        Filtra los documentos según el estado de validación solicitado.
-        """
+        """Filtra los documentos según el estado de validación solicitado."""
         status_param = self.request.query_params.get('status', None)
+        
+        queryset = Document.objects.select_related('user', 'lote').order_by('-created_at')
+        
         if status_param:
-            return Document.objects.filter(metadata__validation_status=status_param).order_by('-created_at')
-        return Document.objects.all().order_by('-created_at')
+            queryset = queryset.filter(metadata__validation_status=status_param)
+        
+        return queryset
+    
+    def get_serializer_context(self):
+        """✅ CRÍTICO: Agregar request al contexto del serializer"""
+        context = super().get_serializer_context()
+        context['request'] = self.request
+        return context
     
     def list(self, request, *args, **kwargs):
-        """
-        Lista los documentos con paginación y cuenta total.
-        """
+        """Lista los documentos con paginación y cuenta total."""
         page = int(request.query_params.get('page', 1))
         page_size = int(request.query_params.get('page_size', 10))
         status_param = request.query_params.get('status', None)
         
-        documents, total = DocumentValidationService.get_documents_by_status(
-            status=status_param, 
-            page=page, 
-            page_size=page_size
-        )
+        # Obtener queryset filtrado
+        queryset = self.get_queryset()
+        total = queryset.count()
         
+        # Aplicar paginación manual
+        start = (page - 1) * page_size
+        end = start + page_size
+        documents = queryset[start:end]
+        
+        # ✅ CRÍTICO: Pasar context con request
         serializer = self.get_serializer(documents, many=True)
+        
+        # ✅ LOGGING: Ver qué datos se están enviando
+        logger.info(f"[Validation List] Sending {len(serializer.data)} documents")
+        if serializer.data:
+            first_doc = serializer.data[0]
+            logger.info(f"[Validation List] First doc keys: {list(first_doc.keys())}")
+            logger.info(f"[Validation List] First doc file_url: {first_doc.get('file_url')}")
         
         return Response({
             'results': serializer.data,
             'total': total,
             'page': page,
             'page_size': page_size,
-            'total_pages': (total + page_size - 1) // page_size
+            'total_pages': (total + page_size - 1) // page_size if total > 0 else 0
         })
 
 
@@ -260,27 +391,57 @@ def user_documents(request):
 def lote_documents(request, lote_id):
     """
     Lista todos los documentos asociados a un lote específico
+    ✅ CORREGIDO: Acepta UUID como lote_id
     """
     try:
         from apps.lotes.models import Lote
-        lote = get_object_or_404(Lote, pk=lote_id)
         
-        # Solo el propietario del lote o un admin puede ver sus documentos
-        if not request.user.is_staff and hasattr(lote, 'usuario') and lote.usuario != request.user:
+        # ✅ CORREGIDO: Manejar UUID correctamente
+        try:
+            lote = Lote.objects.get(pk=lote_id)
+        except Lote.DoesNotExist:
+            logger.warning(f"Lote {lote_id} no encontrado")
+            return Response(
+                {"error": f"Lote {lote_id} no encontrado"},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        except ValueError as e:
+            logger.error(f"UUID inválido: {lote_id} - {str(e)}")
+            return Response(
+                {"error": "ID de lote inválido"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Verificar permisos
+        if not request.user.is_staff and hasattr(lote, 'owner') and lote.owner != request.user:
+            logger.warning(f"Usuario {request.user.id} intentó acceder a documentos de lote {lote_id} sin permiso")
             raise PermissionDenied("No tienes permiso para ver estos documentos")
         
-        documents = Document.objects.filter(lote=lote, is_active=True)
+        # Obtener documentos del lote
+        documents = Document.objects.filter(lote=lote, is_active=True).order_by('-created_at')
+        
+        logger.info(f"Documentos encontrados para lote {lote_id}: {documents.count()}")
+        
         serializer = DocumentSerializer(documents, many=True, context={'request': request})
         return Response(serializer.data)
         
-    except ImportError:
-        logger.error("No se pudo importar el modelo Lote")
-        return Response({"error": "Error en la configuración del sistema"}, 
-                       status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    except ImportError as e:
+        logger.error(f"No se pudo importar el modelo Lote: {str(e)}")
+        return Response(
+            {"error": "Error en la configuración del sistema"},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+    except PermissionDenied as e:
+        return Response(
+            {"error": str(e)},
+            status=status.HTTP_403_FORBIDDEN
+        )
     except Exception as e:
-        logger.error(f"Error al consultar documentos: {e}")
-        return Response({"message": "Error al consultar documentos"}, 
-                       status=status.HTTP_503_SERVICE_UNAVAILABLE)
+        logger.error(f"Error al consultar documentos del lote {lote_id}: {str(e)}", exc_info=True)
+        return Response(
+            {"error": "Error al consultar documentos"},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
 
 
 @api_view(['GET', 'POST'])

@@ -345,7 +345,7 @@ export default function OwnerSolicitudes() {
     };
 
     return (
-        <div className="container mx-auto p-6">
+        <div className="container mx-auto p-24">
             <h1 className="text-3xl font-bold mb-6">Mis Solicitudes</h1>
 
             {error && (

@@ -20,30 +20,22 @@ class LoteSimpleSerializer(serializers.ModelSerializer):
 
 
 class LoteSerializer(serializers.ModelSerializer):
-    """Serializer completo para lotes"""
+    """
+    Serializer principal para Lote - CORREGIDO sin campo comuna
+    """
     owner_info = UserSimpleSerializer(source='owner', read_only=True)
-    potencial_constructivo = serializers.SerializerMethodField()
-    documentos_count = serializers.SerializerMethodField()
     
     class Meta:
         model = Lote
         fields = [
-            'id', 'cbml', 'matricula', 'owner', 'owner_info',
-            'direccion', 'barrio', 'comuna', 'estrato',
-            'latitud', 'longitud',
-            'area', 'area_construida', 'frente', 'fondo',
-            'tratamiento_urbanistico', 'uso_suelo',
-            'altura_maxima', 'indice_ocupacion', 'indice_construccion',
-            'avaluo_catastral', 'valor_comercial', 'valor_m2',
-            'status', 'notas', 'datos_mapgis',
-            'is_verified', 'verified_at', 'verified_by',
-            'potencial_constructivo', 'documentos_count',
-            'created_at', 'updated_at'
+            'id', 'nombre', 'cbml', 'matricula', 'codigo_catastral',
+            'direccion', 'area', 'descripcion', 'barrio', 'estrato',
+            # ✅ ELIMINADO: 'comuna' - campo que no existe
+            'latitud', 'longitud', 'clasificacion_suelo', 'uso_suelo', 
+            'tratamiento_pot', 'owner', 'owner_info', 'status', 
+            'is_verified', 'created_at', 'updated_at', 'metadatos'
         ]
-        read_only_fields = [
-            'id', 'owner', 'is_verified', 'verified_at', 'verified_by',
-            'created_at', 'updated_at'
-        ]
+        read_only_fields = ['id', 'created_at', 'updated_at', 'owner']
     
     def get_potencial_constructivo(self, obj):
         """Calcula potencial constructivo"""
@@ -74,20 +66,80 @@ class LoteSerializer(serializers.ModelSerializer):
 
 
 class LoteCreateSerializer(serializers.ModelSerializer):
-    """Serializer para crear lotes"""
+    """
+    Serializer SIMPLIFICADO para crear lotes - Solo campos esenciales
+    """
     class Meta:
         model = Lote
         fields = [
-            'cbml', 'matricula', 'direccion', 'barrio', 'comuna', 'estrato',
-            'latitud', 'longitud', 'area', 'area_construida', 'frente', 'fondo',
-            'tratamiento_urbanistico', 'uso_suelo', 'altura_maxima',
-            'indice_ocupacion', 'indice_construccion',
-            'avaluo_catastral', 'valor_comercial', 'notas'
+            # ✅ CAMPOS ESENCIALES (requeridos)
+            'nombre',
+            'direccion',
+            'area',
+            
+            # ✅ CAMPOS IMPORTANTES (opcionales pero útiles)
+            'cbml',
+            'matricula', 
+            'codigo_catastral',
+            'descripcion',
+            'barrio',
+            'estrato',
+            # ✅ ELIMINADO: 'comuna' - campo que no existe
+            
+            # ✅ CAMPOS AUTOMÁTICOS (se pueden llenar después)
+            'latitud',
+            'longitud',
+            'clasificacion_suelo',
+            'uso_suelo',
+            'tratamiento_pot',
         ]
+        
+    def validate_nombre(self, value):
+        """Validar que el nombre no esté vacío"""
+        if not value or not value.strip():
+            raise serializers.ValidationError("El nombre del lote es requerido")
+        return value.strip()
+    
+    def validate_direccion(self, value):
+        """Validar que la dirección no esté vacía"""
+        if not value or not value.strip():
+            raise serializers.ValidationError("La dirección es requerida")
+        return value.strip()
+    
+    def validate_area(self, value):
+        """Validar que el área sea positiva"""
+        if value is not None and value <= 0:
+            raise serializers.ValidationError("El área debe ser mayor a 0")
+        return value
+    
+    def validate_cbml(self, value):
+        """Validar formato CBML si se proporciona"""
+        if value and len(value.strip()) > 0:
+            # Remover espacios y validar que solo contenga números
+            cbml_clean = value.strip().replace(' ', '')
+            if not cbml_clean.isdigit():
+                raise serializers.ValidationError("El CBML debe contener solo números")
+            if len(cbml_clean) < 10:
+                raise serializers.ValidationError("El CBML debe tener al menos 10 dígitos")
+            return cbml_clean
+        return value
     
     def create(self, validated_data):
-        """Asignar owner del contexto"""
-        validated_data['owner'] = self.context['request'].user
+        """Crear lote con valores por defecto para campos opcionales"""
+        # Establecer owner automáticamente
+        if 'owner' not in validated_data:
+            validated_data['owner'] = self.context['request'].user
+            
+        # Valores por defecto
+        validated_data.setdefault('status', 'pending')
+        validated_data.setdefault('is_verified', False)
+        
+        # Si no hay descripción, generar una básica
+        if not validated_data.get('descripcion'):
+            validated_data['descripcion'] = f"Lote en {validated_data.get('direccion', 'dirección no especificada')}"
+            if validated_data.get('area'):
+                validated_data['descripcion'] += f" con área de {validated_data['area']} m²"
+        
         return super().create(validated_data)
 
 
@@ -119,21 +171,45 @@ class LoteHistorySerializer(serializers.ModelSerializer):
 
 
 class FavoriteSerializer(serializers.ModelSerializer):
-    """Serializer para favoritos"""
-    lote_info = LoteSimpleSerializer(source='lote', read_only=True)
-    user_info = UserSimpleSerializer(source='user', read_only=True)
+    """
+    Serializer para favoritos de lotes
+    """
+    lote_details = LoteSerializer(source='lote', read_only=True)
+    user_email = serializers.EmailField(source='user.email', read_only=True)
     
     class Meta:
         model = Favorite
-        fields = [
-            'id', 'user', 'user_info', 'lote', 'lote_info',
-            'notas', 'created_at'
-        ]
-        read_only_fields = ['id', 'user', 'created_at']
+        fields = ['id', 'user', 'lote', 'lote_details', 'user_email', 'notas', 'created_at']
+        read_only_fields = ['id', 'user', 'created_at', 'lote_details', 'user_email']
+    
+    def validate_lote(self, value):
+        """
+        ✅ CORREGIDO: Validar que el lote existe y está disponible
+        El modelo Lote NO tiene campo 'is_active', usa 'status'
+        """
+        if not value:
+            raise serializers.ValidationError("Lote es requerido")
+        
+        # ✅ CORREGIDO: Usar 'status' en lugar de 'is_active'
+        # El modelo Lote tiene status: 'pending', 'active', 'archived'
+        if value.status not in ['active', 'pending']:
+            raise serializers.ValidationError("El lote no está disponible")
+        
+        # Si es para developers, verificar que esté verificado
+        request = self.context.get('request')
+        if request and hasattr(request.user, 'role') and request.user.role == 'developer':
+            if not value.is_verified or value.status != 'active':
+                raise serializers.ValidationError("El lote no está disponible para desarrolladores")
+        
+        return value
     
     def create(self, validated_data):
-        """Asignar user del contexto"""
-        validated_data['user'] = self.context['request'].user
+        """✅ Crear favorito asignando usuario desde request"""
+        request = self.context.get('request')
+        if not request:
+            raise serializers.ValidationError("Request context is required")
+        
+        validated_data['user'] = request.user
         return super().create(validated_data)
 
 

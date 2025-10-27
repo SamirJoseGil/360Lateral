@@ -35,14 +35,16 @@ def available_lotes(request):
         # Aplicar filtros si existen
         area_min = request.query_params.get('area_min')
         area_max = request.query_params.get('area_max')
-        comuna = request.query_params.get('comuna')
+        # ✅ CORREGIDO: usar barrio en lugar de comuna
+        barrio = request.query_params.get('barrio')
         
         if area_min:
             lotes = lotes.filter(area__gte=float(area_min))
         if area_max:
             lotes = lotes.filter(area__lte=float(area_max))
-        if comuna:
-            lotes = lotes.filter(comuna=int(comuna))
+        # ✅ CORREGIDO: filtrar por barrio en lugar de comuna
+        if barrio:
+            lotes = lotes.filter(barrio__icontains=barrio)
         
         serializer = LoteSerializer(lotes, many=True, context={'request': request})
         

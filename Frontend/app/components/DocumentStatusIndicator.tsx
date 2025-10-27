@@ -1,112 +1,206 @@
 import { Link } from "@remix-run/react";
-import type { Document } from "~/services/documents.server";
+
+interface Document {
+    id: string;
+    document_type: string;
+    title: string;
+    created_at: string;
+}
 
 interface DocumentStatusIndicatorProps {
     loteId: string;
     documents: Document[];
     totalCount?: number;
-    className?: string;
 }
 
-// Document types to check for
-const documentTypes = [
-    { key: 'plano', label: 'Plano' },
-    { key: 'contrato', label: 'Contrato' },
-    { key: 'licencia', label: 'Licencia' },
-    { key: 'general', label: 'General' }
+const DOCUMENT_TYPES = [
+    { value: "ctl", label: "Certificado de Tradición y Libertad", icon: "📜" },
+    { value: "planos", label: "Planos Arquitectónicos", icon: "📐" },
+    { value: "topografia", label: "Levantamiento Topográfico", icon: "🗺️" },
+    { value: "licencia_construccion", label: "Licencia de Construcción", icon: "🏗️" },
+    { value: "escritura_publica", label: "Escritura Pública", icon: "📄" },
+    { value: "certificado_libertad", label: "Certificado de Libertad", icon: "✅" },
+    { value: "avaluo_comercial", label: "Avalúo Comercial", icon: "💰" },
+    { value: "estudio_suelos", label: "Estudio de Suelos", icon: "🔬" },
+    { value: "otros", label: "Otros Documentos", icon: "📎" },
 ];
 
 export default function DocumentStatusIndicator({
     loteId,
     documents,
     totalCount,
-    className = ""
 }: DocumentStatusIndicatorProps) {
-    // Get count of each document type
-    const documentTypeCounts = documentTypes.reduce((acc, type) => {
-        acc[type.key] = documents.filter(doc => doc.document_type === type.key).length;
+    // Agrupar documentos por tipo
+    const documentsByType = documents.reduce((acc, doc) => {
+        const type = doc.document_type || "otros";
+        if (!acc[type]) {
+            acc[type] = [];
+        }
+        acc[type].push(doc);
         return acc;
-    }, {} as Record<string, number>);
+    }, {} as Record<string, Document[]>);
 
-    // Count of other document types
-    const otherDocumentsCount = documents.length - Object.values(documentTypeCounts).reduce((sum, count) => sum + count, 0);
+    const totalDocuments = totalCount !== undefined ? totalCount : documents.length;
 
     return (
-        <div className={`rounded-lg bg-white shadow ${className}`}>
-            <div className="border-b border-gray-200 px-4 py-3 sm:px-6">
-                <h3 className="text-lg font-medium leading-6 text-gray-900">Documentos del lote</h3>
-                <p className="mt-1 text-sm text-gray-500">
-                    {documents.length > 0
-                        ? `Este lote tiene ${documents.length} ${documents.length === 1 ? 'documento' : 'documentos'} asociados.`
-                        : "Este lote no tiene documentos asociados."
-                    }
-                </p>
-            </div>
-
-            <div className="px-4 py-5 sm:p-6">
-                {documents.length === 0 ? (
-                    <div className="text-center">
-                        <svg className="mx-auto h-12 w-12 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M19 20H5a2 2 0 01-2-2V6a2 2 0 012-2h10a2 2 0 012 2v1M19 10v2m0 4v2m-4-8v10m4-10h-4m4 10H9" />
+        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+            {/* Header */}
+            <div className="flex items-center justify-between mb-6">
+                <div className="flex items-center space-x-3">
+                    <div className="bg-indigo-100 rounded-lg p-2">
+                        <svg
+                            className="w-6 h-6 text-indigo-600"
+                            fill="none"
+                            stroke="currentColor"
+                            viewBox="0 0 24 24"
+                        >
+                            <path
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                strokeWidth={2}
+                                d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
+                            />
                         </svg>
-                        <h3 className="mt-2 text-sm font-medium text-gray-900">Sin documentos</h3>
-                        <p className="mt-1 text-sm text-gray-500">
-                            Agrega documentos para mantener organizada la información de este lote.
+                    </div>
+                    <div>
+                        <h3 className="text-lg font-semibold text-gray-900">Documentos del Lote</h3>
+                        <p className="text-sm text-gray-500">
+                            {totalDocuments === 0
+                                ? "No hay documentos cargados"
+                                : `${totalDocuments} documento${totalDocuments !== 1 ? "s" : ""} total${totalDocuments !== 1 ? "es" : ""}`}
                         </p>
                     </div>
-                ) : (
-                    <div className="space-y-5">
-                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-                            {documentTypes.map(type => (
-                                <div
-                                    key={type.key}
-                                    className="border rounded-md p-3 bg-gray-50 flex flex-col items-center"
-                                >
-                                    <div className="text-xl font-bold text-gray-700">{documentTypeCounts[type.key] || 0}</div>
-                                    <div className="text-xs text-gray-500 mt-1">{type.label + (documentTypeCounts[type.key] !== 1 ? 's' : '')}</div>
-                                </div>
-                            ))}
-                        </div>
+                </div>
 
-                        {otherDocumentsCount > 0 && (
-                            <div className="text-sm text-gray-500 text-center">
-                                Y {otherDocumentsCount} {otherDocumentsCount === 1 ? 'documento adicional' : 'documentos adicionales'} de otros tipos.
-                            </div>
-                        )}
-
-                        {totalCount !== undefined && totalCount > documents.length && (
-                            <div className="text-sm text-gray-500 text-center italic">
-                                Mostrando {documents.length} de {totalCount} documentos.
-                            </div>
-                        )}
-                    </div>
-                )}
+                {/* Botón para gestionar documentos */}
+                <Link
+                    to={`/owner/lote/${loteId}/documentos`}
+                    className="inline-flex items-center px-4 py-2 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 transition-colors shadow-sm hover:shadow-md"
+                >
+                    <svg
+                        className="w-4 h-4 mr-2"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                    >
+                        <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth={2}
+                            d="M12 4v16m8-8H4"
+                        />
+                    </svg>
+                    {totalDocuments === 0 ? "Subir Documentos" : "Gestionar"}
+                </Link>
             </div>
 
-            <div className="bg-gray-50 px-4 py-4 sm:px-6 rounded-b-lg">
-                <div className="text-right">
+            {/* Contenido */}
+            {totalDocuments === 0 ? (
+                // Estado vacío mejorado
+                <div className="text-center py-12">
+                    <div className="inline-flex items-center justify-center w-16 h-16 bg-gray-100 rounded-full mb-4">
+                        <svg
+                            className="w-8 h-8 text-gray-400"
+                            fill="none"
+                            stroke="currentColor"
+                            viewBox="0 0 24 24"
+                        >
+                            <path
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                strokeWidth={2}
+                                d="M9 13h6m-3-3v6m5 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
+                            />
+                        </svg>
+                    </div>
+                    <h4 className="text-base font-medium text-gray-900 mb-2">
+                        No hay documentos cargados
+                    </h4>
+                    <p className="text-sm text-gray-500 mb-6 max-w-sm mx-auto">
+                        Comienza subiendo los documentos necesarios para completar la información de tu lote
+                    </p>
                     <Link
                         to={`/owner/lote/${loteId}/documentos`}
-                        className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+                        className="inline-flex items-center px-5 py-2.5 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 transition-colors shadow-sm"
                     >
-                        {documents.length === 0 ? (
-                            <>
-                                <svg className="-ml-1 mr-2 h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
-                                </svg>
-                                Subir documentos
-                            </>
-                        ) : (
-                            <>
-                                <svg className="-ml-1 mr-2 h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                                </svg>
-                                Gestionar documentos
-                            </>
-                        )}
+                        <svg
+                            className="w-5 h-5 mr-2"
+                            fill="none"
+                            stroke="currentColor"
+                            viewBox="0 0 24 24"
+                        >
+                            <path
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                strokeWidth={2}
+                                d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"
+                            />
+                        </svg>
+                        Subir Primer Documento
                     </Link>
                 </div>
-            </div>
+            ) : (
+                // Grid de documentos por tipo
+                <div className="space-y-4">
+                    {DOCUMENT_TYPES.map((docType) => {
+                        const count = documentsByType[docType.value]?.length || 0;
+
+                        // Solo mostrar tipos que tienen documentos
+                        if (count === 0) return null;
+
+                        return (
+                            <div
+                                key={docType.value}
+                                className="flex items-center justify-between p-4 bg-gray-50 rounded-lg border border-gray-200 hover:border-indigo-300 hover:bg-indigo-50 transition-all"
+                            >
+                                <div className="flex items-center space-x-3 flex-1">
+                                    <span className="text-2xl">{docType.icon}</span>
+                                    <div className="flex-1 min-w-0">
+                                        <p className="text-sm font-medium text-gray-900 truncate">
+                                            {docType.label}
+                                        </p>
+                                        <p className="text-xs text-gray-500">
+                                            {count} archivo{count !== 1 ? "s" : ""}
+                                        </p>
+                                    </div>
+                                </div>
+
+                                {/* Indicador de cantidad */}
+                                <div className="flex items-center space-x-2">
+                                    <span className="inline-flex items-center justify-center w-8 h-8 bg-indigo-100 text-indigo-700 rounded-full text-sm font-semibold">
+                                        {count}
+                                    </span>
+                                    <svg
+                                        className="w-5 h-5 text-gray-400"
+                                        fill="none"
+                                        stroke="currentColor"
+                                        viewBox="0 0 24 24"
+                                    >
+                                        <path
+                                            strokeLinecap="round"
+                                            strokeLinejoin="round"
+                                            strokeWidth={2}
+                                            d="M9 5l7 7-7 7"
+                                        />
+                                    </svg>
+                                </div>
+                            </div>
+                        );
+                    })}
+
+                    {/* Resumen adicional si hay documentos */}
+                    <div className="pt-4 border-t border-gray-200">
+                        <div className="flex items-center justify-between text-sm">
+                            <span className="text-gray-600 font-medium">
+                                Total de documentos:
+                            </span>
+                            <span className="text-indigo-600 font-semibold text-lg">
+                                {totalDocuments}
+                            </span>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }

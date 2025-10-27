@@ -1,201 +1,188 @@
-import { useState, useEffect } from "react";
-import { useFetcher } from "@remix-run/react";
-import LoteSearchForm from "./LoteSearchForm";
-import LoadingModal from "./LoadingModal";
+import { useState } from "react";
 
 interface LoteSearchSectionProps {
     onDataReceived: (mapGisData: any) => void;
 }
 
+// ✅ Definir tipos para las respuestas
+interface MapGisResponse {
+    success: boolean;
+    encontrado: boolean;
+    data?: any;
+    message?: string;
+    error?: string;
+}
+
 export default function LoteSearchSection({ onDataReceived }: LoteSearchSectionProps) {
-    const [searchType, setSearchType] = useState<'cbml' | 'matricula'>('cbml');
-    const [searchValue, setSearchValue] = useState('');
+    const [matriculaValue, setMatriculaValue] = useState('');
     const [isSearching, setIsSearching] = useState(false);
     const [searchError, setSearchError] = useState<string | null>(null);
-    const [showLoadingModal, setShowLoadingModal] = useState(false);
-    const [loadingProgress, setLoadingProgress] = useState(0);
-    const [searchStartTime, setSearchStartTime] = useState<number | null>(null);
-    const [searchTimeout, setSearchTimeout] = useState<NodeJS.Timeout | null>(null);
+    const [searchResults, setSearchResults] = useState<any>(null);
 
-    const mapFetcher = useFetcher();
-
-    // Función para manejar la búsqueda
-    const handleSearch = async () => {
-        // Reset all state related to search
-        setIsSearching(true);
-        setSearchError(null);
-        setShowLoadingModal(true);
-        setLoadingProgress(0);
-        setSearchStartTime(Date.now());
-
-        console.log(`Iniciando búsqueda de ${searchType}: ${searchValue}`);
-
-        // Limpiar timeout anterior si existe
-        if (searchTimeout) {
-            clearTimeout(searchTimeout);
-            setSearchTimeout(null);
+    // ✅ FUNCIÓN TEMPORALMENTE DESHABILITADA
+    const handleMatriculaSearch = async () => {
+        if (!matriculaValue.trim()) {
+            setSearchError('Por favor ingrese un número de matrícula');
+            return;
         }
 
-        // También reiniciar el fetcher para asegurar que estamos partiendo de cero
-        // Esto ayuda cuando se hace una nueva búsqueda después de una anterior
-        mapFetcher.state = 'idle' as any;
-        mapFetcher.data = undefined;
+        // ✅ MENSAJE TEMPORAL - MapGIS deshabilitado
+        setSearchError('La consulta a MapGIS está temporalmente deshabilitada. Puede llenar el formulario manualmente.');
+        return;
 
-        // Iniciar animación de progreso
-        const progressInterval = setInterval(() => {
-            setLoadingProgress(prev => {
-                // Incremento progresivo que se ralentiza cerca del final
-                const remaining = 100 - prev;
-                const increment = remaining * 0.03; // Incremento del 3% del restante
-                const newProgress = prev + increment;
-                return newProgress > 95 ? 95 : newProgress; // Mantenemos por debajo del 95% hasta tener respuesta
-            });
-        }, 300);
-
-        // Establecer timeout para la búsqueda (50 segundos)
-        const timeout = setTimeout(() => {
-            clearInterval(progressInterval);
-            setIsSearching(false);
-            setShowLoadingModal(false);
-            setSearchError('La consulta ha excedido el tiempo máximo de espera (50 segundos). Por favor intente nuevamente.');
-        }, 50000);
-
-        setSearchTimeout(timeout);
+        // Código original comentado hasta que MapGIS esté disponible
+        /*
+        setIsSearching(true);
+        setSearchError('');
+        setSearchResults(null);
 
         try {
-            // Usar submit en lugar de load para asegurar que se haga una nueva petición
-            // y no se use caché del navegador
-            mapFetcher.submit(
-                { searchType, searchValue },
-                {
-                    method: 'get',
-                    action: `/owner/lotes/nuevo?searchType=${searchType}&searchValue=${encodeURIComponent(searchValue)}`
-                }
-            );
+            console.log(`🔍 Buscando matrícula: ${matriculaValue}`);
+            
+            // Aquí iría la lógica de búsqueda real
+            const resultado: MapGisResponse = {
+                success: false,
+                encontrado: false,
+                message: 'Servicio temporalmente no disponible'
+            };
 
-            // No cerramos el modal aquí, lo manejamos en el useEffect que observa mapFetcher.state
+            if (resultado.success && resultado.encontrado && resultado.data) {
+                console.log('✅ Datos encontrados:', resultado.data);
+                
+                onDataReceived(resultado.data);
+                
+                setSearchResults({
+                    type: 'matricula',
+                    data: resultado.data,
+                    message: resultado.message || `Datos encontrados para matrícula ${matriculaValue}`
+                });
+                
+                setMatriculaValue('');
+                
+            } else {
+                console.log('❌ No se encontraron datos');
+                setSearchError(
+                    resultado.message || 
+                    `No se encontraron datos para la matrícula ${matriculaValue}`
+                );
+            }
+
         } catch (error) {
-            clearInterval(progressInterval);
-            clearTimeout(timeout);
+            console.error('❌ Error en búsqueda:', error);
+            setSearchError('Error al consultar MapGIS. Intente nuevamente.');
+        } finally {
             setIsSearching(false);
-            setShowLoadingModal(false);
-            console.error('Error al realizar la búsqueda:', error);
-            setSearchError('Error al realizar la búsqueda. Por favor intente nuevamente.');
+        }
+        */
+    };
+
+    const handleKeyPress = (e: React.KeyboardEvent) => {
+        if (e.key === 'Enter' && !isSearching) {
+            handleMatriculaSearch();
         }
     };
 
-    // Manejar el estado del fetcher
-    useEffect(() => {
-        // Cuando cambia el estado del fetcher a idle, significa que la búsqueda ha terminado
-        if (mapFetcher.state === 'idle' && isSearching) {
-            // Limpiar el timeout si existe
-            if (searchTimeout) {
-                clearTimeout(searchTimeout);
-                setSearchTimeout(null);
-            }
-
-            // Calcular tiempo transcurrido
-            const elapsedTime = searchStartTime ? Math.round((Date.now() - searchStartTime) / 1000) : 0;
-            console.log(`Búsqueda completada en ${elapsedTime} segundos`);
-
-            // Actualizar la barra de progreso a 100%
-            setLoadingProgress(100);
-
-            // Pequeño delay para mostrar el 100% antes de cerrar el modal
-            setTimeout(() => {
-                setShowLoadingModal(false);
-                setIsSearching(false);
-            }, 500);
-        }
-    }, [mapFetcher.state, isSearching, searchTimeout, searchStartTime]);
-
-    // Manejar los resultados de la búsqueda
-    useEffect(() => {
-        if (
-            mapFetcher.data &&
-            typeof mapFetcher.data === "object" &&
-            mapFetcher.data !== null
-        ) {
-            console.log("MapFetcher data received:", mapFetcher.data);
-
-            if ("searchError" in mapFetcher.data) {
-                setSearchError(mapFetcher.data.searchError as string);
-            } else if ("searchResult" in mapFetcher.data) {
-                // Pasar los datos al componente padre
-                onDataReceived(mapFetcher.data.searchResult);
-            }
-        }
-    }, [mapFetcher.data, onDataReceived]);
-
     return (
-        <div className="bg-white shadow rounded-lg p-6 mb-6">
-            <h2 className="text-lg font-semibold mb-4">Buscar Información del Lote</h2>
-
-            {/* Selector de tipo de búsqueda */}
-            <div className="flex space-x-4 mb-4">
-                <label className="flex items-center">
-                    <input
-                        type="radio"
-                        value="cbml"
-                        checked={searchType === 'cbml'}
-                        onChange={(e) => setSearchType(e.target.value as 'cbml' | 'matricula')}
-                        className="mr-2"
-                    />
-                    CBML
-                </label>
-                <label className="flex items-center">
-                    <input
-                        type="radio"
-                        value="matricula"
-                        checked={searchType === 'matricula'}
-                        onChange={(e) => setSearchType(e.target.value as 'cbml' | 'matricula')}
-                        className="mr-2"
-                    />
-                    Matrícula Inmobiliaria
-                </label>
+        <div className="bg-white shadow-sm rounded-lg p-6 mb-6 border border-gray-200">
+            <div className="flex items-center mb-4">
+                <svg className="w-5 h-5 text-gray-400 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                </svg>
+                <h2 className="text-lg font-semibold text-gray-500">Buscar por Matrícula Inmobiliaria</h2>
+                <span className="ml-2 inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
+                    Temporalmente deshabilitado
+                </span>
             </div>
 
-            <div className="flex space-x-2">
-                <input
-                    type="text"
-                    value={searchValue}
-                    onChange={(e) => setSearchValue(e.target.value)}
-                    placeholder={searchType === 'cbml' ? 'Ej: 01005001234' : 'Ej: 174838'}
-                    className="flex-1 rounded-md border-gray-300 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200"
-                />
+            <div className="bg-yellow-50 border-l-4 border-yellow-400 p-4 mb-4">
+                <div className="flex">
+                    <div className="flex-shrink-0">
+                        <svg className="h-5 w-5 text-yellow-400" viewBox="0 0 20 20" fill="currentColor">
+                            <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                        </svg>
+                    </div>
+                    <div className="ml-3">
+                        <p className="text-sm text-yellow-700">
+                            <strong>MapGIS temporalmente no disponible:</strong> La consulta automática está deshabilitada.
+                            Puede llenar manualmente los campos del formulario mientras se restaura el servicio.
+                        </p>
+                    </div>
+                </div>
+            </div>
+
+            <div className="flex space-x-3">
+                <div className="flex-1">
+                    <input
+                        type="text"
+                        value={matriculaValue}
+                        onChange={(e) => setMatriculaValue(e.target.value)}
+                        onKeyPress={handleKeyPress}
+                        placeholder="Ej: 174838 (temporalmente deshabilitado)"
+                        className="w-full px-4 py-2 border border-gray-300 rounded-md shadow-sm bg-gray-50 text-gray-500 cursor-not-allowed"
+                        disabled={true} // ✅ Siempre deshabilitado temporalmente
+                    />
+                </div>
                 <button
-                    onClick={handleSearch}
-                    disabled={isSearching || !searchValue.trim()}
-                    className="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 disabled:opacity-50"
+                    onClick={handleMatriculaSearch}
+                    disabled={true} // ✅ Siempre deshabilitado temporalmente
+                    className="px-6 py-2 bg-gray-300 text-gray-500 rounded-md cursor-not-allowed transition-all duration-200 flex items-center space-x-2"
                 >
-                    {isSearching ? 'Buscando...' : 'Buscar'}
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728L5.636 5.636m12.728 12.728L18.364 5.636M5.636 18.364l12.728-12.728" />
+                    </svg>
+                    <span>No disponible</span>
                 </button>
             </div>
 
-            {/* Mostrar error de búsqueda si existe */}
+            {/* Mostrar mensaje informativo */}
+            <div className="mt-4 bg-blue-50 border-l-4 border-blue-400 p-4 rounded-md">
+                <div className="flex">
+                    <div className="flex-shrink-0">
+                        <svg className="h-5 w-5 text-blue-400" viewBox="0 0 20 20" fill="currentColor">
+                            <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
+                        </svg>
+                    </div>
+                    <div className="ml-3">
+                        <p className="text-sm text-blue-700">
+                            <strong>Cómo proceder:</strong> Llene manualmente los campos obligatorios del formulario
+                            (Nombre y Dirección son requeridos). Los demás campos son opcionales y pueden completarse después.
+                        </p>
+                    </div>
+                </div>
+            </div>
+
+            {/* Mostrar error de búsqueda */}
             {searchError && (
-                <div className="mt-4 bg-amber-50 border-l-4 border-amber-400 p-4 rounded-md">
+                <div className="mt-4 bg-red-50 border-l-4 border-red-400 p-4 rounded-md">
                     <div className="flex">
                         <div className="flex-shrink-0">
-                            <svg className="h-5 w-5 text-amber-400" viewBox="0 0 20 20" fill="currentColor">
-                                <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                            <svg className="h-5 w-5 text-red-400" viewBox="0 0 20 20" fill="currentColor">
+                                <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
                             </svg>
                         </div>
                         <div className="ml-3">
-                            <p className="text-sm text-amber-700">{searchError}</p>
+                            <p className="text-sm text-red-700">{searchError}</p>
                         </div>
                     </div>
                 </div>
             )}
 
-            {/* Modal de carga para búsqueda MapGIS */}
-            {showLoadingModal && (
-                <LoadingModal
-                    title="Consultando información en MapGIS"
-                    message="Esta consulta puede tardar hasta 50 segundos. Por favor espere..."
-                    progress={loadingProgress}
-                    startTime={searchStartTime}
-                />
+            {/* Mostrar resultados exitosos */}
+            {searchResults && (
+                <div className="mt-4 bg-green-50 border-l-4 border-green-400 p-4 rounded-md">
+                    <div className="flex">
+                        <div className="flex-shrink-0">
+                            <svg className="h-5 w-5 text-green-400" viewBox="0 0 20 20" fill="currentColor">
+                                <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                            </svg>
+                        </div>
+                        <div className="ml-3">
+                            <p className="text-sm text-green-700">
+                                ✅ Información encontrada y cargada automáticamente en el formulario
+                            </p>
+                        </div>
+                    </div>
+                </div>
             )}
         </div>
     );

@@ -199,7 +199,7 @@ export default function DeveloperSearch() {
     };
 
     return (
-        <div className="p-6">
+        <div className="p-16">
             {/* Header */}
             <div className="mb-8">
                 <h1 className="text-3xl font-bold">Búsqueda de Lotes</h1>

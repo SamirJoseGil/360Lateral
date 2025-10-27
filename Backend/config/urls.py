@@ -99,7 +99,9 @@ urlpatterns = [
     path('health/', include(('apps.common.urls', 'common'), namespace='health')),
     
     # Media files
-    re_path(r'^media/(?P<path>.*)$', serve, {'document_root': settings.MEDIA_ROOT}),
+    re_path(r'^media/(?P<path>.*)$', serve, {
+        'document_root': settings.MEDIA_ROOT,
+    }),
     
     # Debug endpoint
     path('api/debug/', debug_api_info, name='api_debug'),
@@ -109,6 +111,10 @@ urlpatterns = [
 if settings.DEBUG:
     urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
     urlpatterns += static(settings.STATIC_URL, document_root=settings.STATIC_ROOT)
+    
+    # Logging para verificar
+    logger.info(f"📁 Serving media files from: {settings.MEDIA_ROOT}")
+    logger.info(f"🔗 Media URL pattern: {settings.MEDIA_URL}")
 
 # Logging URLs for debugging
 logger.info("DEBUG - URLs loaded successfully")

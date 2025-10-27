@@ -368,9 +368,29 @@ STATICFILES_DIRS = []
 MEDIA_URL = '/media/'
 MEDIA_ROOT = BASE_DIR / 'media'
 
-# Crear directorios
+# ✅ NUEVO: Configurar MEDIA_URL para desarrollo
+if DEBUG:
+    # En desarrollo, asegurar que MEDIA_URL sea accesible desde el navegador
+    MEDIA_URL = '/media/'
+    
+    import logging
+    logger = logging.getLogger(__name__)
+    logger.info(f"📁 MEDIA_ROOT: {MEDIA_ROOT}")
+    logger.info(f"📁 MEDIA_URL: {MEDIA_URL}")
+    logger.info(f"📁 Archivos servirán desde: http://localhost:8000{MEDIA_URL}")
+
+# ✅ CRÍTICO: Asegurar que los directorios existan
 for directory in [MEDIA_ROOT, STATIC_ROOT, BASE_DIR / 'logs']:
     directory.mkdir(parents=True, exist_ok=True)
+
+# ✅ NUEVO: Logging para verificar configuración
+if DEBUG:
+    import logging
+    logger = logging.getLogger(__name__)
+    logger.info(f"📁 MEDIA_ROOT: {MEDIA_ROOT}")
+    logger.info(f"📁 MEDIA_URL: {MEDIA_URL}")
+    logger.info(f"📁 STATIC_ROOT: {STATIC_ROOT}")
+    logger.info(f"📁 STATIC_URL: {STATIC_URL}")
 
 # =============================================================================
 # FILE UPLOADS
@@ -378,6 +398,16 @@ for directory in [MEDIA_ROOT, STATIC_ROOT, BASE_DIR / 'logs']:
 
 FILE_UPLOAD_MAX_MEMORY_SIZE = int(os.getenv('MAX_UPLOAD_SIZE', 10 * 1024 * 1024))  # 10MB
 DATA_UPLOAD_MAX_MEMORY_SIZE = FILE_UPLOAD_MAX_MEMORY_SIZE
+
+# ✅ AGREGAR: Handlers para archivos temporales
+FILE_UPLOAD_HANDLERS = [
+    'django.core.files.uploadhandler.MemoryFileUploadHandler',
+    'django.core.files.uploadhandler.TemporaryFileUploadHandler',
+]
+
+# ✅ AGREGAR: Directorio para archivos temporales
+FILE_UPLOAD_TEMP_DIR = BASE_DIR / 'tmp'
+FILE_UPLOAD_TEMP_DIR.mkdir(parents=True, exist_ok=True)
 
 # =============================================================================
 # EMAIL
@@ -407,7 +437,10 @@ if DJANGO_ENV == 'production':
     SECURE_HSTS_PRELOAD = True
     SECURE_BROWSER_XSS_FILTER = True
     SECURE_CONTENT_TYPE_NOSNIFF = True
-    X_FRAME_OPTIONS = 'DENY'
+    X_FRAME_OPTIONS = 'SAMEORIGIN'  # ✅ Cambiado de DENY a SAMEORIGIN
+else:
+    # ✅ En desarrollo, permitir iframes del mismo origen
+    X_FRAME_OPTIONS = 'SAMEORIGIN'
 
 # =============================================================================
 # ADMIN

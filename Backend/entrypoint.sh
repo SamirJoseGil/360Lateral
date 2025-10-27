@@ -18,43 +18,104 @@ while ! nc -z ${DB_HOST:-db} ${DB_PORT:-5432}; do
 done
 echo "✅ PostgreSQL is ready!"
 
-# Ejecutar migraciones en orden correcto
+# Función para limpiar migraciones conflictivas
+clean_migration_conflicts() {
+    echo "🧹 Checking for migration conflicts..."
+    
+    # Intentar detectar conflictos
+    if python manage.py showmigrations --plan 2>&1 | grep -q "Conflicting migrations"; then
+        echo "⚠️  Migration conflicts detected, attempting to resolve..."
+        
+        # Intentar merge automático
+        python manage.py makemigrations --merge --noinput || {
+            echo "❌ Could not auto-merge migrations"
+            echo "🔧 Attempting manual conflict resolution..."
+            
+            # Eliminar archivos de migración conflictivos si existen
+            find apps/*/migrations/ -name "0002_*.py" -type f | head -n -1 | xargs rm -f 2>/dev/null || true
+            
+            # Recrear migraciones limpias
+            python manage.py makemigrations --noinput || echo "⚠️  Could not recreate migrations"
+        }
+    fi
+}
+
+# Función para ejecutar migraciones de manera segura
+migrate_app() {
+    local app_name=$1
+    echo "🔄 Migrating ${app_name}..."
+    
+    # Verificar si hay migraciones para la app
+    if [ -d "apps/${app_name}/migrations" ]; then
+        # Ejecutar migraciones existentes
+        python manage.py migrate ${app_name} --noinput || {
+            echo "⚠️  Migration failed for ${app_name}, attempting recovery..."
+            
+            # Si falla, intentar crear migraciones desde cero
+            python manage.py makemigrations ${app_name} --noinput || echo "   ⚠️  Could not create migrations for ${app_name}"
+            python manage.py migrate ${app_name} --noinput || echo "   ⚠️  Recovery migration failed for ${app_name}"
+        }
+    else
+        echo "   Creating migrations directory for ${app_name}..."
+        mkdir -p "apps/${app_name}/migrations"
+        touch "apps/${app_name}/migrations/__init__.py"
+        python manage.py makemigrations ${app_name} --noinput || echo "   ⚠️  Could not create initial migrations for ${app_name}"
+        python manage.py migrate ${app_name} --noinput || echo "   ⚠️  Could not run initial migrations for ${app_name}"
+    fi
+}
+
+# ✅ LIMPIAR CONFLICTOS ANTES DE MIGRAR
+clean_migration_conflicts
+
+# ✅ EJECUTAR MIGRACIONES EN ORDEN CORRECTO
 echo "🔄 Running migrations in correct order..."
 
-echo "1️⃣ Migrating users..."
-python manage.py makemigrations users --noinput || true
-python manage.py migrate users --noinput
+echo "1️⃣ Migrating contenttypes..."
+python manage.py migrate contenttypes --noinput
 
-echo "2️⃣ Skipping common (no models)..."
-# Common no tiene modelos, solo utilidades
+echo "2️⃣ Migrating auth..."
+python manage.py migrate auth --noinput
 
-echo "3️⃣ Migrating authentication..."
-python manage.py makemigrations authentication --noinput || true
-python manage.py migrate authentication --noinput || true
+echo "3️⃣ Migrating users (custom user model)..."
+migrate_app users
 
 echo "4️⃣ Migrating pot..."
-python manage.py makemigrations pot --noinput || true
-python manage.py migrate pot --noinput || true
+migrate_app pot
 
 echo "5️⃣ Migrating lotes..."
-python manage.py makemigrations lotes --noinput || true
-python manage.py migrate lotes --noinput || true
+migrate_app lotes
 
 echo "6️⃣ Migrating documents..."
-python manage.py makemigrations documents --noinput || true
-python manage.py migrate documents --noinput || true
+migrate_app documents
 
 echo "7️⃣ Migrating stats..."
-python manage.py makemigrations stats --noinput || true
-python manage.py migrate stats --noinput || true
+migrate_app stats
 
 echo "8️⃣ Running remaining migrations..."
-python manage.py makemigrations --noinput || true
-python manage.py migrate --noinput
+python manage.py makemigrations --noinput || echo "⚠️  Warning: Could not create additional migrations"
+python manage.py migrate --noinput || echo "⚠️  Warning: Could not run remaining migrations"
+
+# ✅ VERIFICAR QUE LAS TABLAS EXISTAN
+echo "🔍 Verifying database tables..."
+python -c "
+import django
+django.setup()
+from django.db import connection
+cursor = connection.cursor()
+cursor.execute(\"SELECT table_name FROM information_schema.tables WHERE table_schema='public'\")
+tables = [row[0] for row in cursor.fetchall()]
+print(f'📊 Found {len(tables)} tables: {sorted(tables)[:5]}...')
+required_tables = ['lotes', 'users_user']
+for table in required_tables:
+    if table in tables:
+        print(f'✅ Table {table} exists')
+    else:
+        print(f'❌ Table {table} does not exist!')
+" || echo "⚠️  Could not verify tables"
 
 # Recolectar archivos estáticos
 echo "📦 Collecting static files..."
-python manage.py collectstatic --noinput --clear || true
+python manage.py collectstatic --noinput --clear || echo "⚠️  Warning: Could not collect static files"
 
 # Crear superusuario usando script Python dedicado
 echo "👤 Creating superuser if not exists..."

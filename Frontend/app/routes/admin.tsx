@@ -74,8 +74,8 @@ export default function AdminLayout() {
         { to: "/admin/usuarios", label: "Gestión de Usuarios", icon: "users" },
         { to: "/admin/lotes", label: "Gestión de Lotes", icon: "map" },
         { to: "/admin/validacion", label: "Validación de Documentos", icon: "check-circle" },
-        { to: "/admin/pot", label: "Gestión POT", icon: "document-text" },
-        { to: "/admin/system", label: "Monitoreo del Sistema", icon: "chart-bar" },
+        // { to: "/admin/pot", label: "Gestión POT", icon: "document-text" },
+        // { to: "/admin/system", label: "Monitoreo del Sistema", icon: "chart-bar" },
     ];
 
     // Registrar vista de página cuando el componente se monta

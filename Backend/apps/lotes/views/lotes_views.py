@@ -191,3 +191,74 @@ class LoteAnalysisView(APIView):
                 'success': False,
                 'error': 'Error generando análisis'
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+class AvailableLotesView(generics.ListAPIView):
+    """
+    Lista lotes disponibles para desarrolladores (verificados y activos)
+    """
+    serializer_class = LoteSerializer
+    permission_classes = [IsAuthenticated]
+    filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
+    filterset_class = LoteFilter
+    search_fields = ['cbml', 'matricula', 'direccion', 'barrio', 'nombre']
+    ordering_fields = ['created_at', 'area', 'estrato']
+    ordering = ['-created_at']
+    
+    def get_queryset(self):
+        """Solo lotes verificados y activos para developers"""
+        return Lote.objects.filter(
+            status='active',
+            is_verified=True
+        ).select_related('owner')
+    
+    def get(self, request, *args, **kwargs):
+        """Obtener lotes disponibles con filtros"""
+        # Verificar que sea developer
+        if not hasattr(request.user, 'role') or request.user.role != 'developer':
+            return Response({
+                'error': 'Solo desarrolladores pueden acceder a esta vista'
+            }, status=status.HTTP_403_FORBIDDEN)
+        
+        queryset = self.filter_queryset(self.get_queryset())
+        
+        # Aplicar filtros adicionales desde query params
+        area_min = request.query_params.get('area_min')
+        area_max = request.query_params.get('area_max')
+        estrato = request.query_params.get('estrato')
+        barrio = request.query_params.get('barrio')
+        
+        if area_min:
+            try:
+                queryset = queryset.filter(area__gte=float(area_min))
+            except ValueError:
+                pass
+                
+        if area_max:
+            try:
+                queryset = queryset.filter(area__lte=float(area_max))
+            except ValueError:
+                pass
+                
+        if estrato:
+            try:
+                queryset = queryset.filter(estrato=int(estrato))
+            except ValueError:
+                pass
+                
+        if barrio:
+            queryset = queryset.filter(barrio__icontains=barrio)
+        
+        page = self.paginate_queryset(queryset)
+        if page is not None:
+            serializer = self.get_serializer(page, many=True)
+            return self.get_paginated_response(serializer.data)
+        
+        serializer = self.get_serializer(queryset, many=True)
+        
+        logger.info(f"Developer {request.user.email} accessed {queryset.count()} available lotes")
+        
+        return Response({
+            'count': queryset.count(),
+            'results': serializer.data
+        })

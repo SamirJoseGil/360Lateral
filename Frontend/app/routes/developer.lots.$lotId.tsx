@@ -11,13 +11,12 @@ type LoaderData = {
     lote: any;
     potData?: any;
     isFavorite: boolean;
-    favoriteId?: number;
     error?: string;
 };
 
 export async function loader({ params, request }: LoaderFunctionArgs) {
     const user = await getUser(request);
-    const lotId = params.lotId;
+    const lotId = params.lotId;  // ✅ Este es un UUID (string)
 
     if (!lotId) {
         return json<LoaderData>({
@@ -45,13 +44,11 @@ export async function loader({ params, request }: LoaderFunctionArgs) {
         // Obtener datos del lote desde la API
         const { lote, headers } = await getLoteById(request, lotId);
 
-        // Verificar si el lote es favorito
+        // ✅ Verificar si el lote es favorito - USAR UUID (string)
         let isFavorite = false;
-        let favoriteId = undefined;
         try {
-            const favoriteCheck = await checkLoteIsFavorite(request, parseInt(lotId));
+            const favoriteCheck = await checkLoteIsFavorite(request, lotId);  // ✅ Pasar UUID directamente
             isFavorite = favoriteCheck.is_favorite || false;
-            // El backend no devuelve favoriteId directamente, así que lo dejamos undefined
         } catch (error) {
             console.log("Error verificando favorito:", error);
         }
@@ -70,8 +67,7 @@ export async function loader({ params, request }: LoaderFunctionArgs) {
         return json<LoaderData>({
             lote,
             potData,
-            isFavorite,
-            favoriteId
+            isFavorite
         }, { headers });
 
     } catch (error) {
@@ -95,7 +91,7 @@ export async function action({ params, request }: ActionFunctionArgs) {
         return redirect("/");
     }
 
-    const lotId = params.lotId;
+    const lotId = params.lotId;  // ✅ Este es un UUID (string)
     if (!lotId) {
         return json({ success: false, message: "ID de lote inválido" }, { status: 400 });
     }
@@ -106,7 +102,8 @@ export async function action({ params, request }: ActionFunctionArgs) {
     try {
         switch (action) {
             case "toggle_favorite":
-                const result = await toggleLoteFavorite(request, parseInt(lotId));
+                // ✅ Pasar UUID directamente (string)
+                const result = await toggleLoteFavorite(request, lotId);
                 return json({
                     success: result.success,
                     isFavorite: result.isFavorite,
@@ -148,6 +145,7 @@ export default function LotDetail() {
     const fetcher = useFetcher<FetcherData>();
     const [activeImage, setActiveImage] = useState(0);
 
+    // ✅ Estado de favorito actualizado sin favoriteId
     const currentFavoriteStatus = fetcher.data?.isFavorite !== undefined ? fetcher.data.isFavorite : isFavorite;
 
     if (error || !lote) {
@@ -199,7 +197,7 @@ export default function LotDetail() {
 
     return (
         <div>
-            <div className="mb-6 flex justify-between items-center">
+            <div className="py-16 mb-6 flex justify-between items-center">
                 <div>
                     <h1 className="text-3xl font-bold">{lote.nombre}</h1>
                     <p className="text-gray-600">{lote.direccion}</p>
@@ -220,9 +218,9 @@ export default function LotDetail() {
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
                         </svg>
                     </button>
-                    <Link to={`/developer/analysis/${lote.id}`} className="px-4 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700">
+                    {/* <Link to={`/developer/analysis/${lote.id}`} className="px-4 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700">
                         Análisis Urbanístico
-                    </Link>
+                    </Link> */}
                 </div>
             </div>
 

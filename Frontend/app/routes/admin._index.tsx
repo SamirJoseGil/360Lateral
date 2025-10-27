@@ -93,7 +93,7 @@ export default function AdminDashboard() {
     };
 
     return (
-        <div className="p-6">
+        <div className="p-16">
             {error && (
                 <div className="mb-6 bg-red-100 border-l-4 border-red-400 p-4">
                     <div className="flex">

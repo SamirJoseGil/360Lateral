@@ -39,14 +39,14 @@ export async function loader({ request }: LoaderFunctionArgs) {
             type: "view",
             name: "developer_dashboard",
             value: {
-                user_id: user.id
+                user_id: user?.id
             }
         });
 
         // Obtener la actividad del usuario de forma paralela
         const [activityResponse, favoritesResponse] = await Promise.allSettled([
             getUserActivity(request, 30),
-            getFavoriteLotes(request, { limit: 3 })
+            getFavoriteLotes(request)
         ]);
 
         const activity = activityResponse.status === 'fulfilled' ? activityResponse.value.activity : null;
@@ -148,11 +148,11 @@ export default function DeveloperDashboard() {
         useLoaderData<typeof loader>();
 
     return (
-        <div>
+        <div className="py-16">
             <header className="mb-8">
                 <h1 className="text-3xl font-bold">Panel de Desarrollador</h1>
                 <p className="text-gray-600 mt-2">
-                    Bienvenido, {user.name}. Encuentra tu próxima oportunidad de desarrollo.
+                    Bienvenido, {user?.name ?? "Usuario"}. Encuentra tu próxima oportunidad de desarrollo.
                 </p>
             </header>
 
@@ -233,229 +233,7 @@ export default function DeveloperDashboard() {
                     <h3 className="font-semibold mb-1">Favoritos</h3>
                     <p className="text-gray-500 text-sm">Accede a tus lotes guardados</p>
                 </Link>
-
-                {/* <Link
-                    to="/developer/investment"
-                    className="bg-white rounded-lg shadow hover:shadow-md transition-shadow p-6 flex flex-col items-center text-center"
-                >
-                    <div className="p-3 rounded-full bg-yellow-100 text-yellow-800 mb-4">
-                        <svg
-                            xmlns="http://www.w3.org/2000/svg"
-                            className="h-6 w-6"
-                            fill="none"
-                            viewBox="0 0 24 24"
-                            stroke="currentColor"
-                        >
-                            <path
-                                strokeLinecap="round"
-                                strokeLinejoin="round"
-                                strokeWidth={2}
-                                d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01"
-                            />
-                        </svg>
-                    </div>
-                    <h3 className="font-semibold mb-1">Criterios de Inversión</h3>
-                    <p className="text-gray-500 text-sm">Configura tu tesis de inversión</p>
-                </Link> */}
             </div>
-
-            {/* Mi Tesis de Inversión
-            <h2 className="text-xl font-bold mb-4">Mi Tesis de Inversión</h2>
-            <div className="bg-white rounded-lg shadow p-6 mb-8">
-                <div className="mb-4">
-                    <p className="text-gray-600">
-                        Criterios guardados para tus búsquedas de propiedades
-                    </p>
-                </div>
-                <div className="overflow-x-auto">
-                    <table className="min-w-full">
-                        <thead className="bg-gray-50">
-                            <tr>
-                                <th
-                                    scope="col"
-                                    className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
-                                >
-                                    Nombre
-                                </th>
-                                <th
-                                    scope="col"
-                                    className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
-                                >
-                                    Ubicación
-                                </th>
-                                <th
-                                    scope="col"
-                                    className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
-                                >
-                                    Área (m²)
-                                </th>
-                                <th
-                                    scope="col"
-                                    className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
-                                >
-                                    Presupuesto
-                                </th>
-                                <th
-                                    scope="col"
-                                    className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
-                                >
-                                    Tratamiento
-                                </th>
-                                <th
-                                    scope="col"
-                                    className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
-                                >
-                                    Acciones
-                                </th>
-                            </tr>
-                        </thead>
-                        <tbody className="divide-y divide-gray-200">
-                            {searchCriteria && searchCriteria.length > 0 ? (
-                                searchCriteria.map((criteria) => (
-                                    <tr key={criteria?.id}>
-                                        <td className="px-6 py-4 whitespace-nowrap">
-                                            <div className="text-sm font-medium text-gray-900">
-                                                {criteria?.name}
-                                            </div>
-                                        </td>
-                                        <td className="px-6 py-4 whitespace-nowrap">
-                                            <div className="text-sm text-gray-900">
-                                                {criteria?.zone}
-                                            </div>
-                                        </td>
-                                        <td className="px-6 py-4 whitespace-nowrap">
-                                            <div className="text-sm text-gray-900">
-                                                {criteria?.area}
-                                            </div>
-                                        </td>
-                                        <td className="px-6 py-4 whitespace-nowrap">
-                                            <div className="text-sm text-gray-900">
-                                                {criteria?.budget}
-                                            </div>
-                                        </td>
-                                        <td className="px-6 py-4 whitespace-nowrap">
-                                            <div className="text-sm text-gray-900">
-                                                {criteria?.treatment}
-                                            </div>
-                                        </td>
-                                        <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                                            <Link
-                                                to={`/developer/search?criteria=${criteria?.id}`}
-                                                className="text-indigo-600 hover:text-indigo-900 mr-4"
-                                            >
-                                                Buscar
-                                            </Link>
-                                            <Link
-                                                to={`/developer/investment/${criteria?.id}`}
-                                                className="text-yellow-600 hover:text-yellow-900"
-                                            >
-                                                Editar
-                                            </Link>
-                                        </td>
-                                    </tr>
-                                ))
-                            ) : (
-                                <tr>
-                                    <td colSpan={6} className="px-6 py-4 text-center text-gray-500">
-                                        No hay criterios de inversión guardados.
-                                        <Link to="/developer/investment/new" className="ml-2 text-indigo-600 hover:text-indigo-900">
-                                            Crear uno nuevo
-                                        </Link>
-                                    </td>
-                                </tr>
-                            )}
-                        </tbody>
-                    </table>
-                </div>
-                <div className="mt-4 flex justify-end">
-                    <Link
-                        to="/developer/investment/new"
-                        className="px-4 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2"
-                    >
-                        Crear nuevo criterio
-                    </Link>
-                </div>
-            </div> */}
-
-            {/* Lotes Favoritos */}
-            <h2 className="text-xl font-bold mb-4">Lotes Favoritos</h2>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
-                {favoriteLots && favoriteLots.length > 0 ? (
-                    favoriteLots.map((lot) =>
-                        lot ? (
-                            <div key={lot.id} className="bg-white rounded-lg shadow overflow-hidden">
-                                <div className="p-6">
-                                    <h3 className="font-bold text-lg mb-2">{lot.name}</h3>
-                                    <p className="text-gray-500 mb-4">{lot.address}</p>
-                                    <div className="grid grid-cols-2 gap-4 mb-4">
-                                        <div>
-                                            <span className="text-gray-500 block text-sm">Área</span>
-                                            <span className="font-medium">{lot.area} m²</span>
-                                        </div>
-                                        <div>
-                                            <span className="text-gray-500 block text-sm">Precio</span>
-                                            <span className="font-medium">{formatCurrency(lot.price)}</span>
-                                        </div>
-                                        <div>
-                                            <span className="text-gray-500 block text-sm">Valor Potencial</span>
-                                            <span className="font-medium text-green-600">
-                                                {formatCurrency(lot.potentialValue)}
-                                            </span>
-                                        </div>
-                                        <div>
-                                            <span className="text-gray-500 block text-sm">ROI Estimado</span>
-                                            <span className="font-medium text-green-600">
-                                                {Math.round(
-                                                    ((lot.potentialValue - lot.price) / lot.price) * 100
-                                                )}
-                                                %
-                                            </span>
-                                        </div>
-                                    </div>
-                                    <div className="flex justify-end space-x-3">
-                                        <Link
-                                            to={`/developer/lots/${lot.id}`}
-                                            className="text-indigo-600 hover:text-indigo-900"
-                                        >
-                                            Ver Detalles
-                                        </Link>
-                                        <Link
-                                            to={`/developer/analysis/${lot.id}`}
-                                            className="text-blue-600 hover:text-blue-900"
-                                        >
-                                            Análisis
-                                        </Link>
-                                    </div>
-                                </div>
-                            </div>
-                        ) : null
-                    )
-                ) : (
-                    <div className="col-span-2 bg-white p-6 rounded-lg shadow text-center">
-                        <svg className="h-12 w-12 text-gray-400 mx-auto mb-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
-                        </svg>
-                        <p className="text-gray-500 mb-3">No tienes lotes favoritos aún.</p>
-                        <Link
-                            to="/developer/search"
-                            className="text-indigo-600 hover:text-indigo-900"
-                        >
-                            Buscar lotes disponibles
-                        </Link>
-                    </div>
-                )}
-            </div>
-
-            {favoriteLots && favoriteLots.length > 0 && (
-                <div className="text-center">
-                    <Link
-                        to="/developer/favorites"
-                        className="inline-block bg-indigo-600 hover:bg-indigo-700 text-white py-2 px-4 rounded"
-                    >
-                        Ver Todos mis Favoritos
-                    </Link>
-                </div>
-            )}
         </div>
     );
 }
