@@ -81,6 +81,7 @@ export default function Navbar() {
     const getNavLinks = () => {
         if (!user) {
             return [
+                { to: "/", label: "Inicio" },
                 { to: "/about", label: "Acerca de" },
                 { to: "/contact", label: "Contacto" },
             ];

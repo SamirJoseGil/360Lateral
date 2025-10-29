@@ -223,23 +223,16 @@ export default function ProfilePage() {
                         <h1 className="text-3xl font-bold text-gray-900">Mi Perfil</h1>
                         <p className="mt-2 text-gray-600">Gestiona tu información personal y configuración de cuenta</p>
                     </div>
-                    <a
-                        href={
-                            user.role === "admin"
-                                ? "/admin"
-                                : user.role === "owner"
-                                    ? "/owner"
-                                    : user.role === "developer"
-                                        ? "/developer"
-                                        : "/"
-                        }
+                    <button
+                        type="button"
+                        onClick={() => window.history.back()}
                         className="mt-4 sm:mt-0 inline-flex items-center px-5 py-2.5 border border-transparent text-base font-medium rounded-lg shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-colors"
                     >
                         <svg className="w-5 h-5 mr-2 -ml-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 19l-7-7 7-7" />
                         </svg>
                         Volver atrás
-                    </a>
+                    </button>
                 </div>
 
                 {/* Main Card */}
@@ -785,6 +778,6 @@ export default function ProfilePage() {
                     </div>
                 </div>
             </div>
-        </div>
+        </div >
     );
 }
