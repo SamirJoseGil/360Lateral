@@ -156,16 +156,9 @@ class User(AbstractUser):
     def clean(self):
         """Validación del modelo"""
         super().clean()
+        # ✅ ELIMINADO: NO exigir document_type/document_number para propietarios
         
-        # Validar campos requeridos según rol
-        if self.role == 'owner':
-            if not self.document_type or not self.document_number:
-                raise ValidationError({
-                    'document_type': 'Requerido para propietarios',
-                    'document_number': 'Requerido para propietarios'
-                })
-        
-        elif self.role == 'developer':
+        if self.role == 'developer':
             if not self.company_name:
                 raise ValidationError({
                     'company_name': 'Requerido para desarrolladores'

@@ -152,6 +152,14 @@ class UpdateProfileSerializer(serializers.ModelSerializer):
                         'experience_years': 'Debe estar entre 0 y 50 años'
                     })
         
+        # ✅ SOLO validar documentos si el usuario está actualizando perfil y es owner
+        if user.role == 'owner' and (attrs.get('document_type') or attrs.get('document_number')):
+            if not attrs.get('document_type') or not attrs.get('document_number'):
+                raise serializers.ValidationError({
+                    'document_type': 'Requerido para propietarios',
+                    'document_number': 'Requerido para propietarios'
+                })
+        
         return attrs
     
     def update(self, instance, validated_data):
