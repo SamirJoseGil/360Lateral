@@ -99,7 +99,7 @@ export default function LotePage() {
     const normativaPOT = 'normativaPOT' in loaderData ? loaderData.normativaPOT : null;
 
     return (
-        <div className="p-6 pt-32"> {/* ✅ Aumentado padding-top */}
+        <div className="p-4"> {/* ✅ Aumentado padding-top */}
             <div className="flex justify-between items-center mb-6">
                 <h1 className="text-2xl font-bold">Detalles del Lote</h1>
 

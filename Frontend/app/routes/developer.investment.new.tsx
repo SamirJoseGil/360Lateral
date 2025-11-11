@@ -155,7 +155,7 @@ export default function NewInvestmentCriteria() {
 
     return (
         <div>
-            <header className="mb-6">
+            <header className="mb-6 p-4">
                 <h1 className="text-2xl font-bold">Nuevo Criterio de Inversión</h1>
                 <p className="text-gray-600 mt-1">
                     Define tus criterios para buscar lotes según tus necesidades de inversión

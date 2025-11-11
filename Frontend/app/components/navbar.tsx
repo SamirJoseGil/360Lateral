@@ -81,18 +81,18 @@ export default function Navbar() {
     const getNavLinks = () => {
         if (!user) {
             return [
-                { to: "/", label: "Inicio" },
-                { to: "/about", label: "Acerca de" },
-                { to: "/contact", label: "Contacto" },
+                { to: "/", label: "Inicio", end: false },
+                { to: "/about", label: "Acerca de", end: false },
+                { to: "/contact", label: "Contacto", end: false },
             ];
         }
 
         // Enlaces según rol
-        const dashboardLink = { to: `/${user.role}`, label: "Dashboard" };
+        const dashboardLink = { to: `/${user.role}`, label: "Menú", end: true }; // Add end prop
 
         const commonLinks = [
-            { to: "/about", label: "Acerca de" },
-            { to: "/contact", label: "Contacto" },
+            { to: "/about", label: "Acerca de", end: false },
+            { to: "/contact", label: "Contacto", end: false },
         ];
 
         return [dashboardLink, ...commonLinks];
@@ -188,6 +188,7 @@ export default function Navbar() {
                                     <NavLink
                                         key={link.to}
                                         to={link.to}
+                                        end={link.end} // Use the end prop from the link object
                                         className={({ isActive }) =>
                                             isActive
                                                 ? "nav-link-active"
@@ -253,7 +254,7 @@ export default function Navbar() {
                                                 <svg className="mr-3 h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
                                                 </svg>
-                                                Dashboard
+                                                Menú
                                             </Link>
 
                                             <Link
@@ -326,6 +327,7 @@ export default function Navbar() {
                             <NavLink
                                 key={link.to}
                                 to={link.to}
+                                end={link.end} // Use the end prop from the link object
                                 className={({ isActive }) =>
                                     `block py-2 px-3 rounded-md text-base font-medium transition-colors ${isActive
                                         ? "bg-lateral-50 text-lateral-600"

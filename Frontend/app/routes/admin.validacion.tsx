@@ -54,6 +54,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
             recentDocuments,
             pagination,
             currentStatus: status,
+            error: null
         }, {
             headers: combinedHeaders
         });
@@ -230,7 +231,7 @@ export default function AdminValidacion() {
     };
 
     return (
-        <div className="p-6 pt-32">
+        <div className="p-4">
             {/* Header */}
             <div className="mb-8">
                 <h1 className="text-3xl font-bold text-gray-900">Validación de Documentos</h1>
@@ -240,13 +241,13 @@ export default function AdminValidacion() {
             </div>
 
             {/* Mensajes de acción */}
-            {actionData?.success && (
+            {actionData?.success && "message" in actionData && actionData.message && (
                 <div className="mb-6 bg-green-50 border-l-4 border-green-400 p-4 rounded-lg">
                     <p className="text-sm text-green-700">{actionData.message}</p>
                 </div>
             )}
 
-            {actionData?.error && (
+            {actionData && "error" in actionData && actionData.error && (
                 <div className="mb-6 bg-red-50 border-l-4 border-red-400 p-4 rounded-lg">
                     <p className="text-sm text-red-700">{actionData.error}</p>
                 </div>

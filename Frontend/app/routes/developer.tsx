@@ -44,7 +44,7 @@ export default function DeveloperLayout() {
 
     // Opciones del sidebar para el desarrollador
     const sidebarOptions = [
-        { to: "/developer", label: "Dashboard", icon: "dashboard" },
+        { to: "/developer", label: "Menú Principal", icon: "dashboard" },
         { to: "/developer/search", label: "Buscar Lotes", icon: "search" },
         { to: "/developer/favorites", label: "Favoritos", icon: "heart" },
         // { to: "/developer/analysis", label: "Análisis Urbanístico", icon: "chart-bar" }, // commented out option

@@ -265,7 +265,7 @@ export default function AdminLotes() {
     };
 
     return (
-        <div className="p-24">
+        <div className="p-4">
             {/* Header */}
             <div className="mb-8 flex flex-col md:flex-row md:items-center md:justify-between">
                 <div>

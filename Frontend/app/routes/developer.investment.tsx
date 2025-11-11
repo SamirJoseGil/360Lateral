@@ -123,7 +123,7 @@ export default function DeveloperInvestment() {
 
     return (
         <div>
-            <header className="mb-6">
+            <header className="mb-6 p-4">
                 <h1 className="text-2xl font-bold">Criterios de Inversión</h1>
                 <p className="text-gray-600 mt-1">
                     Configura y gestiona tus criterios para búsqueda de lotes
@@ -141,8 +141,8 @@ export default function DeveloperInvestment() {
                     <button
                         onClick={() => setFilterStatus("all")}
                         className={`px-4 py-2 rounded-md text-sm ${filterStatus === "all"
-                                ? "bg-indigo-600 text-white"
-                                : "bg-gray-200 text-gray-700 hover:bg-gray-300"
+                            ? "bg-indigo-600 text-white"
+                            : "bg-gray-200 text-gray-700 hover:bg-gray-300"
                             }`}
                     >
                         Todos
@@ -150,8 +150,8 @@ export default function DeveloperInvestment() {
                     <button
                         onClick={() => setFilterStatus("active")}
                         className={`px-4 py-2 rounded-md text-sm ${filterStatus === "active"
-                                ? "bg-indigo-600 text-white"
-                                : "bg-gray-200 text-gray-700 hover:bg-gray-300"
+                            ? "bg-indigo-600 text-white"
+                            : "bg-gray-200 text-gray-700 hover:bg-gray-300"
                             }`}
                     >
                         Activos
@@ -159,8 +159,8 @@ export default function DeveloperInvestment() {
                     <button
                         onClick={() => setFilterStatus("inactive")}
                         className={`px-4 py-2 rounded-md text-sm ${filterStatus === "inactive"
-                                ? "bg-indigo-600 text-white"
-                                : "bg-gray-200 text-gray-700 hover:bg-gray-300"
+                            ? "bg-indigo-600 text-white"
+                            : "bg-gray-200 text-gray-700 hover:bg-gray-300"
                             }`}
                     >
                         Inactivos
@@ -192,8 +192,8 @@ export default function DeveloperInvestment() {
                                         </p>
                                     </div>
                                     <span className={`px-2 py-1 text-xs font-semibold rounded-full ${item.status === "active"
-                                            ? "bg-green-100 text-green-800"
-                                            : "bg-gray-100 text-gray-800"
+                                        ? "bg-green-100 text-green-800"
+                                        : "bg-gray-100 text-gray-800"
                                         }`}>
                                         {item.status === "active" ? "Activo" : "Inactivo"}
                                     </span>

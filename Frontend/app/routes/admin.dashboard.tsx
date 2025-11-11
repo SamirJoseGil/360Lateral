@@ -53,7 +53,7 @@ export default function AdminDashboard() {
     const error = 'error' in loaderData ? String(loaderData.error) : null;
 
     return (
-        <div className="p-16">
+        <div className="p-4">
             {/* Header */}
             <div className="mb-8">
                 <h1 className="text-3xl font-bold">Dashboard de Administración</h1>

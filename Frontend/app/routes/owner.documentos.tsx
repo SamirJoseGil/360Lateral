@@ -188,7 +188,7 @@ export default function DocumentosPage() {
     };
 
     return (
-        <div className="p-6 pt-32">
+        <div className="p-4">
             {/* Header */}
             <div className="mb-8">
                 <h1 className="text-3xl font-bold text-gray-900">Mis Documentos</h1>

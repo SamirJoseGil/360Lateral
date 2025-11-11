@@ -28,7 +28,7 @@ export default function OwnerLayout() {
 
     // Opciones del sidebar para el propietario
     const sidebarOptions = [
-        { to: "/owner", label: "Dashboard", icon: "dashboard" },
+        { to: "/owner", label: "Menú Principal", icon: "dashboard" },
         { to: "/owner/lotes", label: "Mis Lotes", icon: "map" },
         { to: "/owner/documentos", label: "Documentos", icon: "check-circle" },
         { to: "/owner/solicitudes", label: "Solicitudes", icon: "users" },

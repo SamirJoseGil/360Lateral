@@ -68,7 +68,7 @@ export default function MisLotes() {
     }, [loaderData]);
 
     return (
-        <div className="py-32 p-8">
+        <div className="p-4">
             <div className="flex justify-between items-center mb-6">
                 <h1 className="text-2xl font-bold">Mis Lotes</h1>
                 <Link

@@ -148,7 +148,7 @@ export default function DeveloperDashboard() {
         useLoaderData<typeof loader>();
 
     return (
-        <div className="py-16">
+        <div className="p-4">
             <header className="mb-8">
                 <h1 className="text-3xl font-bold">Panel de Desarrollador</h1>
                 <p className="text-gray-600 mt-2">

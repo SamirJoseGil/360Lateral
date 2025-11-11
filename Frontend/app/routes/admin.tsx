@@ -70,7 +70,7 @@ export default function AdminLayout() {
 
     // Opciones del sidebar para el administrador
     const sidebarOptions = [
-        { to: "/admin", label: "Dashboard", icon: "dashboard" },
+        { to: "/admin", label: "Menú Principal", icon: "dashboard" },
         { to: "/admin/usuarios", label: "Gestión de Usuarios", icon: "users" },
         { to: "/admin/lotes", label: "Gestión de Lotes", icon: "map" },
         { to: "/admin/validacion", label: "Validación de Documentos", icon: "check-circle" },

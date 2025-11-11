@@ -218,7 +218,7 @@ export default function LoteDocumentos() {
     };
 
     return (
-        <div className="max-w-7xl mx-auto py-24 px-4 sm:px-6 lg:px-8">
+        <div className="max-w-7xl mx-auto p-4 px-4 sm:px-6 lg:px-8">
             {/* Header */}
             <div className="mb-8">
                 <div className="flex items-center justify-between">

@@ -188,7 +188,7 @@ export default function AdminUsers() {
     };
 
     return (
-        <div className="p-24 h-auto min-h-screen bg-gray-100">
+        <div className="p-4 h-auto min-h-screen bg-gray-100">
             {/* Header */}
             <div className="mb-8 flex flex-col md:flex-row md:items-center md:justify-between">
                 <div>

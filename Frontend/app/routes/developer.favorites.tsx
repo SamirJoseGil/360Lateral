@@ -6,7 +6,7 @@ import { recordEvent } from "~/services/stats.server";
 
 export async function loader({ request }: LoaderFunctionArgs) {
     const user = await getUser(request);
-    
+
     if (!user || user.role !== 'developer') {
         throw new Response("No autorizado", { status: 403 });
     }
@@ -24,19 +24,20 @@ export async function loader({ request }: LoaderFunctionArgs) {
         }
 
         console.log("[Favorites] Fetching favorite lotes for user:", user.email);
-        
+
         const { favorites, count, headers } = await getFavoriteLotes(request);
-        
+
         console.log(`[Favorites] ✅ Loaded ${count} favorites`);
 
         return json({
             favorites,
-            count
+            count,
+            error: null
         }, { headers });
 
     } catch (error) {
         console.error("[Favorites] ❌ Error loading favorites:", error);
-        
+
         // ✅ Retornar datos vacíos en lugar de error
         return json({
             favorites: [],
@@ -50,7 +51,7 @@ export default function DeveloperFavorites() {
     const { favorites, count, error } = useLoaderData<typeof loader>();
 
     return (
-        <div className="min-h-screen bg-gray-50 py-8">
+        <div className="min-h-screen bg-gray-50 p-4">
             <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
                 {/* Header */}
                 <div className="mb-8">
@@ -83,7 +84,7 @@ export default function DeveloperFavorites() {
                             // ✅ Acceder correctamente a los datos del lote
                             const lote = favorite.lote_details || favorite.lote || {};
                             const loteId = lote.id || favorite.lote;
-                            
+
                             return (
                                 <div key={favorite.id} className="bg-white rounded-lg shadow-sm hover:shadow-md transition-shadow overflow-hidden">
                                     <div className="p-6">

@@ -93,9 +93,9 @@ export default function AdminDashboard() {
     };
 
     return (
-        <div className="p-16">
+        <div className="p-4">
             {error && (
-                <div className="mb-6 bg-red-100 border-l-4 border-red-400 p-4">
+                <div className="mb-6 bg-red-100 border-l-4 border-red-400 p-8">
                     <div className="flex">
                         <div className="flex-shrink-0">
                             <svg className="h-5 w-5 text-red-400" viewBox="0 0 20 20" fill="currentColor">

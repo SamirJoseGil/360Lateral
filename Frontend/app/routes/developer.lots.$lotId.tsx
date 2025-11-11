@@ -197,7 +197,7 @@ export default function LotDetail() {
 
     return (
         <div>
-            <div className="py-16 mb-6 flex justify-between items-center">
+            <div className="p-4 mb-6 flex justify-between items-center">
                 <div>
                     <h1 className="text-3xl font-bold">{lote.nombre}</h1>
                     <p className="text-gray-600">{lote.direccion}</p>

@@ -109,7 +109,7 @@ export default function Sidebar({ options, user }: SidebarProps) {
     };
 
     return (
-        <div className="w-64 bg-white shadow-md flex flex-col h-full pt-8">
+        <div className="w-64 bg-white shadow-md flex flex-col h-full">
             <div className="p-4 border-b border-gray-200">
                 <h2 className="text-xl font-semibold text-gray-800">
                     {user.role === "admin" ? "Panel Admin" :
@@ -125,9 +125,10 @@ export default function Sidebar({ options, user }: SidebarProps) {
                         <li key={index}>
                             <NavLink
                                 to={option.to}
+                                end={option.to.split('/').length <= 2} // Add end prop for main routes only
                                 className={({ isActive }) =>
-                                    `flex items-center px-4 py-2 text-gray-700 rounded hover:bg-indigo-50 hover:text-indigo-700
-                  ${isActive ? "bg-indigo-50 text-indigo-700" : ""}`
+                                    `flex items-center px-4 py-2 text-gray-700 rounded hover:bg-indigo-50 hover:text-indigo-700 transition-colors
+                  ${isActive ? "bg-indigo-100 text-indigo-800 font-medium" : ""}`
                                 }
                             >
                                 <span className="mr-3">{getIconSvg(option.icon)}</span>
@@ -140,6 +141,17 @@ export default function Sidebar({ options, user }: SidebarProps) {
 
             <div className="p-4 border-t border-gray-200">
                 <ul className="space-y-1">
+                    <li>
+                        <Link
+                            to="/"
+                            className="flex items-center px-4 py-2 text-gray-700 rounded hover:bg-indigo-50 hover:text-indigo-700"
+                        >
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-3" viewBox="0 0 20 20" fill="currentColor">
+                                <path fillRule="evenodd" d="M10.707 2.293a1 1 0 00-1.414 0l-7 7a1 1 0 001.414 1.414L4 10.414V17a1 1 0 001 1h2a1 1 0 001-1v-2a1 1 0 011-1h2a1 1 0 011 1v2a1 1 0 001 1h2a1 1 0 001-1v-6.586l.293.293a1 1 0 001.414-1.414l-7-7z" />
+                            </svg>
+                            Inicio
+                        </Link>
+                    </li>
                     <li>
                         <Link
                             to="/profile"

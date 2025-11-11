@@ -6,6 +6,7 @@ import {
   Scripts,
   ScrollRestoration,
   useLoaderData,
+  useLocation,
 } from "@remix-run/react";
 import type { LinksFunction, LoaderFunctionArgs } from "@remix-run/node";
 import { json } from "@remix-run/node";
@@ -58,20 +59,23 @@ export function Layout({ children }: { children: React.ReactNode }) {
 
 export default function App() {
   const { user, env } = useLoaderData<typeof loader>();
+  const location = useLocation();
 
-  // ✅ ELIMINAR log de environment - solo si es necesario debuggear
-  // useEffect(() => {
-  //   console.log("[App] Environment:", env);
-  // }, []);
+  // Function to determine if we're on a dashboard route
+  const isDashboardRoute = () => {
+    const dashboardRoutes = ['/admin', '/developer', '/owner'];
+    return dashboardRoutes.some(route =>
+      location.pathname === route || location.pathname.startsWith(route + '/')
+    );
+  };
 
-  // CRÍTICO: NO revalidar automáticamente, esto causa loops infinitos
-  // La revalidación se hará automáticamente después del logout
+  const showNavbarAndFooter = !isDashboardRoute();
 
   return (
     <>
-      <Navbar />
+      {showNavbarAndFooter && <Navbar />}
       <Outlet />
-      <Footer />
+      {showNavbarAndFooter && <Footer />}
     </>
   );
 }

@@ -138,7 +138,7 @@ export default function OwnerDashboard() {
     const { user, stats, lotes } = useLoaderData<typeof loader>();
 
     return (
-        <div className="p-24">
+        <div className="p-4">
             <header className="mb-8">
                 <h1 className="text-3xl font-bold">Panel de Control</h1>
                 <p className="text-gray-600 mt-2">

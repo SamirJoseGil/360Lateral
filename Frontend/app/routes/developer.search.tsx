@@ -122,7 +122,7 @@ export async function action({ request }: ActionFunctionArgs) {
     try {
         switch (action) {
             case "add_favorite": {
-                const result = await addLoteToFavorites(request, parseInt(loteId));
+                const result = await addLoteToFavorites(request, loteId);
                 return json({
                     success: true,
                     message: "Lote agregado a favoritos",
@@ -134,7 +134,7 @@ export async function action({ request }: ActionFunctionArgs) {
             }
 
             case "remove_favorite": {
-                const result = await removeLoteFromFavorites(request, parseInt(loteId));
+                const result = await removeLoteFromFavorites(request, loteId);
                 return json({
                     success: true,
                     message: "Lote removido de favoritos",
@@ -199,7 +199,7 @@ export default function DeveloperSearch() {
     };
 
     return (
-        <div className="p-16">
+        <div className="p-4">
             {/* Header */}
             <div className="mb-8">
                 <h1 className="text-3xl font-bold">Búsqueda de Lotes</h1>
