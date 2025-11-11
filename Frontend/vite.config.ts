@@ -33,6 +33,7 @@ export default defineConfig(({ mode }) => {
         usePolling: true,
         interval: 1000,
       },
+      allowedHosts: ["lateral360.loca.lt", "jaylah-uncancelled-nickolas.ngrok-free.dev"],
     },
     // ✅ CRÍTICO: Exponer variables de entorno al servidor
     define: {

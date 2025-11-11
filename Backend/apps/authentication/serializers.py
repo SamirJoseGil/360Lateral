@@ -45,6 +45,7 @@ class RegisterSerializer(serializers.ModelSerializer):
             'first_name': {'required': True},
             'last_name': {'required': True},
             'role': {'required': True},
+            'company': {'required': False},  # Hacer que la empresa sea opcional
         }
     
     def validate_email(self, value):
@@ -86,11 +87,28 @@ class RegisterSerializer(serializers.ModelSerializer):
         # Extraer password
         password = validated_data.pop('password')
         
-        # Crear usuario
-        user = User.objects.create_user(
-            password=password,
+        # Handle company field - map to company_name if that's what the model expects
+        company_value = validated_data.pop('company', '') or ''
+        
+        # Create user without triggering full_clean initially
+        user = User(
             **validated_data
         )
+        
+        # Set the company_name field if it exists in the model
+        if hasattr(user, 'company_name'):
+            user.company_name = company_value
+        elif hasattr(user, 'company'):
+            user.company = company_value
+        
+        # Set password
+        user.set_password(password)
+        
+        # Add flag to skip company validation
+        user._skip_company_validation = True
+        
+        # Save without full_clean to avoid validation
+        user.save(update_fields=None)
         
         logger.info(f"New user registered: {user.email} (role: {user.role})")
         

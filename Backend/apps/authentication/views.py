@@ -146,10 +146,29 @@ def register_view(request):
         "company": "Example Corp"
     }
     """
+    logger.info("=" * 60)
+    logger.info("📝 REGISTRATION REQUEST RECEIVED")
+    logger.info(f"   Remote Address: {request.META.get('REMOTE_ADDR')}")
+    logger.info(f"   Data keys: {list(request.data.keys())}")
+    logger.info(f"   Role: {request.data.get('role', 'Not provided')}")
+    logger.info("=" * 60)
+    
     try:
-        serializer = RegisterSerializer(data=request.data)
+        # Prepare registration data
+        registration_data = request.data.copy()
+        
+        # Ensure company field has a default value
+        if 'company' not in registration_data or not registration_data.get('company'):
+            registration_data['company'] = ""
+            
+        # Log the role to understand the validation context
+        user_role = registration_data.get('role', '')
+        logger.info(f"🔍 Registering user with role: {user_role}")
+            
+        serializer = RegisterSerializer(data=registration_data)
         
         if not serializer.is_valid():
+            logger.error(f"❌ Registration validation failed: {serializer.errors}")
             return Response({
                 'success': False,
                 'message': 'Datos de registro inválidos',
@@ -157,12 +176,13 @@ def register_view(request):
             }, status=status.HTTP_400_BAD_REQUEST)
         
         # Crear usuario
+        logger.info("🔧 Creating user with serializer...")
         user = serializer.save()
         
         # Generar tokens
         refresh = RefreshToken.for_user(user)
         
-        logger.info(f"New user registered: {user.email}")
+        logger.info(f"✅ New user registered: {user.email} (role: {user.role})")
         
         return Response({
             'success': True,
@@ -175,7 +195,7 @@ def register_view(request):
         }, status=status.HTTP_201_CREATED)
         
     except Exception as e:
-        logger.error(f"Registration error: {str(e)}")
+        logger.error(f"💥 Registration error: {str(e)}", exc_info=True)
         return Response({
             'success': False,
             'message': 'Error interno del servidor'
