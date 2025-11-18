@@ -3,6 +3,7 @@ Vistas para la aplicación de documentos.
 """
 import logging
 from django.shortcuts import get_object_or_404
+from django.db import transaction  # ✅ AGREGADO: Import de transaction
 from rest_framework import status, viewsets, permissions, parsers
 from rest_framework.response import Response
 from rest_framework.decorators import api_view, permission_classes, action
@@ -40,12 +41,11 @@ class IsOwnerOrAdmin(permissions.BasePermission):
 class DocumentViewSet(viewsets.ModelViewSet):
     """
     ViewSet para operaciones CRUD en documentos.
-    ✅ CORREGIDO: Solo parsers para FormData
+    ✅ CORREGIDO: Soft delete y validación de estados
     """
     queryset = Document.objects.filter(is_active=True)
     serializer_class = DocumentSerializer
     permission_classes = [IsAuthenticated, IsOwnerOrAdmin]
-    basename = 'document'
     
     # ✅ CRÍTICO: SOLO MultiPart y Form parsers - SIN JSONParser
     parser_classes = [
@@ -60,12 +60,11 @@ class DocumentViewSet(viewsets.ModelViewSet):
         return DocumentSerializer
     
     def get_queryset(self):
-        """Filtra los resultados según permisos y parámetros"""
+        """✅ Filtrar documentos activos y según permisos"""
         queryset = Document.objects.filter(is_active=True)
         
         # Los administradores pueden ver todos los documentos
         if not self.request.user.is_staff:
-            # Los usuarios regulares solo pueden ver sus propios documentos
             queryset = queryset.filter(user=self.request.user)
         
         # Filtrar por tipo de documento
@@ -78,7 +77,11 @@ class DocumentViewSet(viewsets.ModelViewSet):
         if lote_id:
             queryset = queryset.filter(lote_id=lote_id)
         
-        # Ordenar resultados
+        # ✅ NUEVO: Filtrar por estado de validación
+        validation_status = self.request.query_params.get('validation_status')
+        if validation_status:
+            queryset = queryset.filter(metadata__validation_status=validation_status)
+        
         ordering = self.request.query_params.get('ordering', '-created_at')
         return queryset.order_by(ordering)
     
@@ -86,6 +89,11 @@ class DocumentViewSet(viewsets.ModelViewSet):
         """Agregar el usuario actual al crear un documento"""
         serializer.save(user=self.request.user)
         logger.info(f"Documento creado: {serializer.data.get('title')} por usuario {self.request.user.username}")
+    
+    def perform_destroy(self, instance):
+        """✅ SOFT DELETE: Archivar en lugar de eliminar"""
+        instance.soft_delete()
+        logger.info(f"Documento {instance.id} archivado por {self.request.user.email}")
     
     @action(detail=False, methods=['post'])
     def upload(self, request):
@@ -132,9 +140,34 @@ class DocumentViewSet(viewsets.ModelViewSet):
         Endpoint para archivar un documento (marcar como inactivo)
         """
         document = self.get_object()
-        document.is_active = False
-        document.save()
-        return Response({"message": "Documento archivado correctamente"})
+        document.soft_delete()
+        
+        return Response({
+            "success": True,
+            "message": "Documento archivado correctamente"
+        })
+    
+    @action(detail=True, methods=['post'])
+    def restore(self, request, pk=None):
+        """
+        ✅ NUEVO: Restaurar un documento archivado
+        """
+        document = get_object_or_404(Document, pk=pk)
+        
+        # Verificar permisos
+        if not (request.user.is_staff or document.user == request.user):
+            return Response({
+                "success": False,
+                "error": "No tienes permiso para restaurar este documento"
+            }, status=status.HTTP_403_FORBIDDEN)
+        
+        document.reactivate()
+        
+        return Response({
+            "success": True,
+            "message": "Documento restaurado correctamente",
+            "data": DocumentSerializer(document, context={'request': request}).data
+        })
     
     @action(detail=False, methods=['get'])
     def types(self, request):
@@ -244,31 +277,38 @@ class DocumentViewSet(viewsets.ModelViewSet):
 class DocumentValidationSummaryView(views.APIView):
     """
     Vista para obtener un resumen de los documentos por estado de validación.
+    ✅ MEJORADO: Sin caché para reflejar cambios inmediatamente
     """
     permission_classes = [permissions.IsAuthenticated]
     
-    @method_decorator(cache_page(60 * 5))  # Cache de 5 minutos
     def get(self, request):
         """
         Retorna el resumen de documentos por estado de validación.
+        ✅ SIN CACHE para que se actualice inmediatamente
         """
         summary = DocumentValidationService.get_validation_summary()
+        logger.info(f"📊 Validation summary requested: {summary}")
         return Response(summary)
 
 
 class DocumentValidationListView(generics.ListAPIView):
     """
     Vista para listar documentos filtrados por estado de validación.
-    ✅ CORREGIDO: Pasar context con request al serializer
+    ✅ MEJORADO: Ordenar por fecha descendente
     """
     permission_classes = [permissions.IsAuthenticated]
     serializer_class = DocumentListSerializer
     
     def get_queryset(self):
-        """Filtra los documentos según el estado de validación solicitado."""
+        """✅ Filtra y ORDENA los documentos"""
         status_param = self.request.query_params.get('status', None)
         
-        queryset = Document.objects.select_related('user', 'lote').order_by('-created_at')
+        queryset = Document.objects.filter(
+            is_active=True  # ✅ Solo documentos activos
+        ).select_related('user', 'lote').order_by(
+            '-created_at',  # ✅ Más reciente primero
+            '-updated_at'
+        )
         
         if status_param:
             queryset = queryset.filter(metadata__validation_status=status_param)
@@ -337,40 +377,124 @@ class DocumentValidationDetailView(generics.RetrieveUpdateDestroyAPIView):
 
 class DocumentValidateActionView(views.APIView):
     """
-    Vista para realizar acciones de validación en documentos.
+    ✅ MEJORADO: Vista para realizar acciones de validación en documentos.
+    Evita duplicados y actualiza estado correctamente.
     """
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [permissions.IsAuthenticated, permissions.IsAdminUser]
     
+    @transaction.atomic  # ✅ AGREGADO: Decorador para manejar transacciones
     def post(self, request, document_id):
         """
         Procesa una acción de validación (validar o rechazar).
         """
         serializer = DocumentValidateActionSerializer(data=request.data)
         
-        if serializer.is_valid():
-            action = serializer.validated_data['action']
-            comments = serializer.validated_data.get('comments', '')
-            
-            status_map = {
-                'validar': 'validado',
-                'rechazar': 'rechazado'
-            }
-            
-            document, success, message = DocumentValidationService.validate_document(
-                document_id, 
-                status_map[action], 
-                comments
-            )
-            
-            if success and document:
-                return Response({
-                    'detail': message,
-                    'document': DocumentValidationSerializer(document).data
-                })
-            
-            return Response({'detail': message}, status=status.HTTP_400_BAD_REQUEST)
+        if not serializer.is_valid():
+            return Response({
+                'success': False,
+                'errors': serializer.errors
+            }, status=status.HTTP_400_BAD_REQUEST)
         
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        action = serializer.validated_data['action']
+        comments = serializer.validated_data.get('comments', '')
+        
+        try:
+            # ✅ CORREGIDO: Ahora select_for_update funciona porque está en una transacción
+            document = Document.objects.select_for_update().get(id=document_id)
+        except Document.DoesNotExist:
+            return Response({
+                'success': False,
+                'error': 'Documento no encontrado'
+            }, status=status.HTTP_404_NOT_FOUND)
+        
+        # ✅ EVITAR DUPLICADOS: Verificar estado actual
+        current_status = document.metadata.get('validation_status', 'pendiente')
+        
+        if action == 'validar' and current_status == 'validado':
+            return Response({
+                'success': False,
+                'error': 'El documento ya está validado'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        if action == 'rechazar' and current_status == 'rechazado':
+            return Response({
+                'success': False,
+                'error': 'El documento ya está rechazado'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        # ✅ USAR SERVICIO para validar
+        document, success, message = DocumentValidationService.validate_document(
+            document_id=document_id,
+            status='validado' if action == 'validar' else 'rechazado',
+            comments=comments,
+            validated_by=request.user
+        )
+        
+        if not success:
+            return Response({
+                'success': False,
+                'error': message
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        # ✅ Serializar con estado actualizado
+        serialized = DocumentValidationSerializer(document, context={'request': request})
+        
+        logger.info(f"✅ Document {document.id} {action} by {request.user.email}")
+        
+        return Response({
+            'success': True,
+            'message': message,
+            'document': serialized.data
+        })
+
+class DocumentValidationGroupedView(generics.ListAPIView):
+    """
+    ✅ NUEVO: Vista para obtener documentos agrupados por lote.
+    """
+    permission_classes = [permissions.IsAuthenticated, permissions.IsAdminUser]
+    
+    def get(self, request, *args, **kwargs):
+        """Obtener documentos agrupados por lote"""
+        page = int(request.query_params.get('page', 1))
+        page_size = int(request.query_params.get('page_size', 10))
+        status_param = request.query_params.get('status', None)
+        
+        # Obtener datos agrupados
+        result = DocumentValidationService.get_documents_grouped_by_lote(
+            status=status_param,
+            page=page,
+            page_size=page_size
+        )
+        
+        # Serializar documentos
+        from .serializers import DocumentValidationSerializer
+        
+        lotes_serializados = []
+        for lote_data in result['lotes']:
+            documentos_serializados = DocumentValidationSerializer(
+                lote_data['documentos'],
+                many=True,
+                context={'request': request}
+            ).data
+            
+            lotes_serializados.append({
+                'lote_id': lote_data['lote_id'],
+                'lote_nombre': lote_data['lote_nombre'],
+                'lote_direccion': lote_data['lote_direccion'],
+                'lote_status': lote_data['lote_status'],
+                'documentos': documentos_serializados,
+                'total_documentos': lote_data['total_documentos'],
+                'pendientes': lote_data['pendientes'],
+                'validados': lote_data['validados'],
+                'rechazados': lote_data['rechazados']
+            })
+        
+        return Response({
+            'lotes': lotes_serializados,
+            'total': result['total'],
+            'page': result['page'],
+            'total_pages': result['total_pages']
+        })
 
 
 # ===== UTILITY VIEWS =====

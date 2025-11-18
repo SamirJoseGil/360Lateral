@@ -188,11 +188,9 @@ export default function Navbar() {
                                     <NavLink
                                         key={link.to}
                                         to={link.to}
-                                        end={link.end} // Use the end prop from the link object
+                                        end={link.end}
                                         className={({ isActive }) =>
-                                            isActive
-                                                ? "nav-link-active"
-                                                : "nav-link"
+                                            `btn-nav ${isActive ? 'active' : ''}`
                                         }
                                     >
                                         {link.label}
@@ -319,7 +317,7 @@ export default function Navbar() {
                 </div>
             </div>
 
-            {/* Menú móvil */}
+            {/* Menú móvil - CORREGIDO */}
             {isMenuOpen && (
                 <div id="mobile-menu" className="sm:hidden border-t border-gris-200 bg-white shadow-lg animate-fadeIn">
                     <div className="space-y-1 px-4 py-3">
@@ -327,7 +325,7 @@ export default function Navbar() {
                             <NavLink
                                 key={link.to}
                                 to={link.to}
-                                end={link.end} // Use the end prop from the link object
+                                end={link.end}
                                 className={({ isActive }) =>
                                     `block py-2 px-3 rounded-md text-base font-medium transition-colors ${isActive
                                         ? "bg-lateral-50 text-lateral-600"

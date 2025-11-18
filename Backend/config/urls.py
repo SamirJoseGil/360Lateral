@@ -91,9 +91,9 @@ urlpatterns = [
     path('api/auth/', include('apps.authentication.urls')),
     path('api/users/', include('apps.users.urls')),
     path('api/lotes/', include('apps.lotes.urls')),
-    path('api/stats/', include('apps.stats.urls')),
-    path('api/pot/', include('apps.pot.urls')),
     path('api/documents/', include('apps.documents.urls')),
+    path('api/solicitudes/', include('apps.solicitudes.urls')),
+    path('api/investment-criteria/', include('apps.investment_criteria.urls')),
     
     # Health check
     path('health/', include(('apps.common.urls', 'common'), namespace='health')),

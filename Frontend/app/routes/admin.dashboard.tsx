@@ -3,7 +3,6 @@ import { json, redirect } from "@remix-run/node";
 import type { LoaderFunctionArgs } from "@remix-run/node";
 import { useLoaderData, Link } from "@remix-run/react";
 import { getUser } from "~/utils/auth.server";
-import { getDashboardStats } from "~/services/stats.server";
 import { getComprehensiveHealth } from "~/services/common.server";
 import SystemMonitor from "~/components/SystemMonitor";
 
@@ -13,45 +12,12 @@ export async function loader({ request }: LoaderFunctionArgs) {
     if (!user || user.role !== "admin") {
         return redirect("/");
     }
-
-    try {
-        // Obtener estadísticas del dashboard y estado del sistema en paralelo
-        const [statsResponse, healthResponse] = await Promise.allSettled([
-            getDashboardStats(request),
-            getComprehensiveHealth(request)
-        ]);
-
-        const stats = statsResponse.status === 'fulfilled' ? statsResponse.value.dashboardStats : null;
-        const systemHealth = healthResponse.status === 'fulfilled' ? healthResponse.value : null;
-
-        return json({
-            user,
-            stats,
-            systemHealth,
-            hasHealthData: healthResponse.status === 'fulfilled'
-        });
-    } catch (error) {
-        console.error("Error cargando dashboard admin:", error);
-        return json({
-            user,
-            stats: null,
-            systemHealth: null,
-            hasHealthData: false,
-            error: "Error al cargar información del dashboard"
-        });
-    }
 }
 
 export default function AdminDashboard() {
     const loaderData = useLoaderData<typeof loader>();
 
     // Extraer datos del loader con manejo de errores
-    const user = loaderData.user;
-    const stats = loaderData.stats;
-    const systemHealth = loaderData.systemHealth;
-    const hasHealthData = loaderData.hasHealthData;
-    const error = 'error' in loaderData ? String(loaderData.error) : null;
-
     return (
         <div className="p-4">
             {/* Header */}
@@ -61,13 +27,6 @@ export default function AdminDashboard() {
                     Panel de control y monitoreo del sistema 360 Lateral
                 </p>
             </div>
-
-            {/* Error message */}
-            {error && typeof error === 'string' && (
-                <div className="mb-6 bg-red-50 border-l-4 border-red-400 p-4">
-                    <p className="text-red-700">{error}</p>
-                </div>
-            )}
 
             {/* Grid principal */}
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -138,39 +97,6 @@ export default function AdminDashboard() {
                             </div>
                         </div>
                     </div>
-
-                    {/* Estadísticas del sistema */}
-                    {stats && (
-                        <div className="bg-white rounded-lg shadow p-6">
-                            <h2 className="text-xl font-semibold mb-4">Estadísticas del Sistema</h2>
-                            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                                {stats.total_lotes && (
-                                    <div className="text-center">
-                                        <div className="text-2xl font-bold text-blue-600">{stats.total_lotes.toLocaleString()}</div>
-                                        <div className="text-sm text-gray-600">Lotes</div>
-                                    </div>
-                                )}
-                                {stats.total_documentos && (
-                                    <div className="text-center">
-                                        <div className="text-2xl font-bold text-green-600">{stats.total_documentos.toLocaleString()}</div>
-                                        <div className="text-sm text-gray-600">Documentos</div>
-                                    </div>
-                                )}
-                                {stats.usuarios_activos && (
-                                    <div className="text-center">
-                                        <div className="text-2xl font-bold text-purple-600">{stats.usuarios_activos.toLocaleString()}</div>
-                                        <div className="text-sm text-gray-600">Usuarios</div>
-                                    </div>
-                                )}
-                                {stats.eventos_hoy && (
-                                    <div className="text-center">
-                                        <div className="text-2xl font-bold text-orange-600">{stats.eventos_hoy.toLocaleString()}</div>
-                                        <div className="text-sm text-gray-600">Eventos Hoy</div>
-                                    </div>
-                                )}
-                            </div>
-                        </div>
-                    )}
                 </div>
 
                 {/* Columna derecha - Monitor del sistema */}
@@ -182,73 +108,6 @@ export default function AdminDashboard() {
                         refreshInterval={30}
                         className="w-full"
                     />
-
-                    {/* Estado detallado del sistema */}
-                    {hasHealthData && systemHealth && (
-                        <div className="bg-white rounded-lg shadow p-6">
-                            <h3 className="text-lg font-semibold mb-4">Estado Detallado</h3>
-
-                            {/* Estado de servicios */}
-                            <div className="space-y-3">
-                                {systemHealth.databaseHealth && (
-                                    <div className="flex justify-between items-center">
-                                        <span className="text-sm text-gray-600">Base de Datos:</span>
-                                        <span className={`text-xs px-2 py-1 rounded ${systemHealth.databaseHealth.database.status === 'healthy'
-                                            ? 'bg-green-100 text-green-800'
-                                            : 'bg-red-100 text-red-800'
-                                            }`}>
-                                            {systemHealth.databaseHealth.database.status}
-                                        </span>
-                                    </div>
-                                )}
-
-                                {systemHealth.cacheHealth && (
-                                    <div className="flex justify-between items-center">
-                                        <span className="text-sm text-gray-600">Cache:</span>
-                                        <span className={`text-xs px-2 py-1 rounded ${systemHealth.cacheHealth.cache.status === 'healthy'
-                                            ? 'bg-green-100 text-green-800'
-                                            : 'bg-red-100 text-red-800'
-                                            }`}>
-                                            {systemHealth.cacheHealth.cache.status}
-                                        </span>
-                                    </div>
-                                )}
-
-                                {systemHealth.versionInfo && (
-                                    <div className="flex justify-between items-center">
-                                        <span className="text-sm text-gray-600">Versión:</span>
-                                        <span className="text-xs text-gray-800">
-                                            {systemHealth.versionInfo.version}
-                                        </span>
-                                    </div>
-                                )}
-
-                                {systemHealth.versionInfo && (
-                                    <div className="flex justify-between items-center">
-                                        <span className="text-sm text-gray-600">Entorno:</span>
-                                        <span className={`text-xs px-2 py-1 rounded ${systemHealth.versionInfo.environment === 'production'
-                                            ? 'bg-red-100 text-red-800'
-                                            : systemHealth.versionInfo.environment === 'staging'
-                                                ? 'bg-yellow-100 text-yellow-800'
-                                                : 'bg-blue-100 text-blue-800'
-                                            }`}>
-                                            {systemHealth.versionInfo.environment}
-                                        </span>
-                                    </div>
-                                )}
-                            </div>
-
-                            <div className="mt-4 pt-4 border-t">
-                                <Link
-                                    to="/admin/system"
-                                    className="text-sm text-blue-600 hover:text-blue-800"
-                                >
-                                    Ver monitoreo completo →
-                                </Link>
-                            </div>
-                        </div>
-                    )}
-
                     {/* Enlaces rápidos */}
                     <div className="bg-white rounded-lg shadow p-6">
                         <h3 className="text-lg font-semibold mb-4">Enlaces Rápidos</h3>

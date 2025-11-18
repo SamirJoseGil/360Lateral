@@ -2,21 +2,11 @@ import { json } from "@remix-run/node";
 import { Link, useLoaderData } from "@remix-run/react";
 import type { LoaderFunctionArgs } from "@remix-run/node";
 import { getUser } from "~/utils/auth.server";
-import { recordEvent } from "~/services/stats.server";
 
 export async function loader({ request }: LoaderFunctionArgs) {
     const user = await getUser(request);
 
     try {
-        // Registrar visita a la página "Acerca de nosotros"
-        await recordEvent(request, {
-            type: "view",
-            name: "about_page",
-            value: {
-                user_id: user?.id || "anonymous"
-            }
-        });
-
         return json({ user });
     } catch (error) {
         console.error("Error registrando visita:", error);

@@ -1,17 +1,15 @@
 // filepath: d:\Accesos Directos\Escritorio\frontendx\app\routes\owner.lote.nuevo.tsx
 import { json, redirect } from "@remix-run/node";
 import { Form, useActionData, useNavigation, Link } from "@remix-run/react";
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "@remix-run/node";
 import { getUser } from "~/utils/auth.server";
 import { createLote } from "~/services/lotes.server";
-import LoteSearchSection from "~/components/LoteSearchSection";
-import { consultarPorCBML, consultarPorMatricula } from "~/services/mapgis.server";
 
 // Tipo para los datos de un nuevo lote
 type NuevoLoteData = {
     nombre: string; // Obligatorio
-    cbml?: string; // Obligatorio según la documentación
+    cbml?: string;
     descripcion?: string;
     direccion?: string;
     area?: number;
@@ -21,7 +19,6 @@ type NuevoLoteData = {
     estrato?: number;
     latitud?: number;
     longitud?: number;
-    // Eliminamos el campo tratamiento_pot
     uso_suelo?: string;
     clasificacion_suelo?: string;
     metadatos?: Record<string, any>;
@@ -42,46 +39,8 @@ export async function loader({ request }: LoaderFunctionArgs) {
         return json({ error: "No autorizado" }, { status: 403 });
     }
 
-    // Obtener parámetros de búsqueda de la URL
-    const url = new URL(request.url);
-    const searchType = url.searchParams.get("searchType");
-    const searchValue = url.searchParams.get("searchValue");
-
-    let resultadoScrap = null;
-
-    // Si hay búsqueda pendiente, ejecutarla
-    if (searchType && searchValue) {
-        console.log(`Loader: Buscando ${searchType}: ${searchValue}`);
-
-        try {
-            if (searchType === "matricula") {
-                // ✅ CORREGIDO: Pasar request como primer parámetro
-                resultadoScrap = await consultarPorMatricula(request, searchValue);
-            } else if (searchType === "cbml") {
-                // ✅ CORREGIDO: Pasar request como primer parámetro
-                resultadoScrap = await consultarPorCBML(request, searchValue);
-            }
-
-            console.log(`📊 Resultado ${searchType} ${searchValue}:`, {
-                encontrado: resultadoScrap?.encontrado,
-                cbml_obtenido: resultadoScrap?.cbml_obtenido
-            });
-        } catch (error) {
-            console.error(`Error en búsqueda MapGIS:`, error);
-            resultadoScrap = {
-                success: false,
-                encontrado: false,
-                message: "Error al consultar MapGIS"
-            };
-        }
-    }
-
-    return json({
-        user,
-        resultadoScrap,
-        searchType,
-        searchValue
-    });
+    // No se necesita lógica de búsqueda
+    return json({ user });
 }
 
 export async function action({ request }: ActionFunctionArgs) {
@@ -100,7 +59,6 @@ export async function action({ request }: ActionFunctionArgs) {
         const formData = await request.formData();
 
         // Obtener los campos adicionales para crear la descripción detallada
-        // Eliminamos las referencias a los campos de tratamiento POT
         const clasificacionSuelo = formData.get("clasificacion_suelo")?.toString();
         const restriccionRiesgo = formData.get("restriccion_ambiental_riesgo")?.toString();
         const restriccionRetiros = formData.get("restriccion_ambiental_retiros")?.toString();
@@ -131,7 +89,6 @@ export async function action({ request }: ActionFunctionArgs) {
             matricula: formData.get("matricula")?.toString(),
             cbml: formData.get("cbml")?.toString(),
             estrato: parseInt(formData.get("estrato")?.toString() || "0") || undefined,
-            // Eliminamos el campo tratamiento_pot
             uso_suelo: usoSuelo,
             latitud: parseFloat(formData.get("latitud")?.toString() || "0") || undefined,
             longitud: parseFloat(formData.get("longitud")?.toString() || "0") || undefined,
@@ -156,7 +113,6 @@ export async function action({ request }: ActionFunctionArgs) {
 
         console.log("Creando nuevo lote:", loteData.nombre);
 
-        // ✅ TEMPORAL: No requerir CBML
         // Crear el lote con los campos obligatorios y opcionales
         // Definir metadatos como objeto vacío (puedes agregar lógica para poblarlo si lo necesitas)
         const metadatos: Record<string, any> = {};
@@ -252,12 +208,6 @@ export default function NuevoLote() {
 
     const isSubmitting = navigation.state === "submitting";
 
-    // ✅ FUNCIÓN TEMPORAL - MapGIS deshabilitado
-    const handleMapGisData = (mapGisData: any) => {
-        console.log('📥 MapGIS temporalmente deshabilitado, datos:', mapGisData);
-        // Función vacía temporal - no hace nada hasta que MapGIS esté disponible
-    };
-
     const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
         const { name, value } = e.target;
         setFormData(prev => ({
@@ -285,26 +235,6 @@ export default function NuevoLote() {
                     </Link>
                 </div>
             </div>
-
-            {/* ✅ MENSAJE TEMPORAL sobre MapGIS */}
-            <div className="mb-6 bg-yellow-50 border-l-4 border-yellow-400 p-4 rounded-md">
-                <div className="flex">
-                    <div className="flex-shrink-0">
-                        <svg className="h-5 w-5 text-yellow-400" viewBox="0 0 20 20" fill="currentColor">
-                            <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
-                        </svg>
-                    </div>
-                    <div className="ml-3">
-                        <p className="text-sm text-yellow-700">
-                            <strong>Nota temporal:</strong> La integración con MapGIS está temporalmente deshabilitada.
-                            Puede crear lotes manualmente llenando los campos del formulario.
-                        </p>
-                    </div>
-                </div>
-            </div>
-
-            {/* Sección de búsqueda en MapGIS */}
-            <LoteSearchSection onDataReceived={handleMapGisData} />
 
             {/* Formulario principal */}
             <div className="bg-white shadow-sm rounded-lg border border-gray-200">

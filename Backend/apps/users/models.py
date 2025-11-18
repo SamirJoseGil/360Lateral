@@ -76,6 +76,18 @@ class User(AbstractUser):
     )
     is_verified = models.BooleanField(default=False, verbose_name='Email Verificado')
     
+    # ✅ NUEVO: Campos para soft delete
+    deleted_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        verbose_name='Fecha de Eliminación'
+    )
+    deletion_reason = models.TextField(
+        blank=True,
+        null=True,
+        verbose_name='Razón de Eliminación'
+    )
+    
     # Campos específicos para Owner
     document_type = models.CharField(
         max_length=20, 
@@ -242,6 +254,30 @@ class User(AbstractUser):
         
         user_permissions = permissions_by_role.get(self.role, [])
         return permission_name in user_permissions
+    
+    def soft_delete(self, reason=None):
+        """
+        Desactivar usuario en lugar de eliminarlo
+        """
+        from django.utils import timezone
+        self.is_active = False
+        self.deleted_at = timezone.now()
+        self.deletion_reason = reason or "Usuario eliminado por administrador"
+        self.save()
+        logger.info(f"User {self.email} soft deleted: {reason}")
+    
+    def reactivate(self):
+        """Reactivar usuario desactivado"""
+        self.is_active = True
+        self.deleted_at = None
+        self.deletion_reason = None
+        self.save()
+        logger.info(f"User {self.email} reactivated")
+    
+    @property
+    def is_deleted(self):
+        """Verifica si el usuario está eliminado (soft delete)"""
+        return not self.is_active and self.deleted_at is not None
 
 
 class UserProfile(models.Model):
@@ -321,8 +357,7 @@ class UserProfile(models.Model):
 class UserRequest(models.Model):
     """
     Modelo para rastrear solicitudes de usuario y sus estados.
-    Usado para varios tipos de solicitudes incluyendo solicitudes de acceso,
-    solicitudes de características, etc.
+    ✅ EXTENDIDO: Soporte para lotes y tipos específicos
     """
     STATUS_CHOICES = [
         ('pending', 'Pendiente'),
@@ -332,12 +367,15 @@ class UserRequest(models.Model):
         ('completed', 'Completado')
     ]
     
+    # ✅ MEJORADO: Tipos más específicos
     REQUEST_TYPE_CHOICES = [
+        ('soporte_tecnico', 'Soporte Técnico'),
+        ('analisis_urbanistico', 'Análisis Urbanístico'),
+        ('consulta_general', 'Consulta General'),
+        ('validacion_documentos', 'Validación de Documentos'),
+        ('correccion_datos', 'Corrección de Datos'),
         ('access', 'Solicitud de Acceso'),
         ('feature', 'Solicitud de Característica'),
-        ('support', 'Solicitud de Soporte'),
-        ('developer', 'Aplicación de Desarrollador'),
-        ('project', 'Solicitud de Proyecto'),
         ('other', 'Otro')
     ]
     
@@ -348,10 +386,22 @@ class UserRequest(models.Model):
         related_name='requests',
         verbose_name='Usuario'
     )
+    
+    # ✅ CORREGIDO: Sin caracteres extra
+    lote = models.ForeignKey(
+        'lotes.Lote',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='requests',
+        verbose_name='Lote Relacionado',
+        help_text='Lote al que hace referencia la solicitud (si aplica)'
+    )
+    
     request_type = models.CharField(
         max_length=50, 
         choices=REQUEST_TYPE_CHOICES,
-        default='other',
+        default='consulta_general',  # ✅ Cambiado de 'other'
         verbose_name='Tipo de Solicitud',
         db_index=True
     )
@@ -364,6 +414,21 @@ class UserRequest(models.Model):
         verbose_name='Estado',
         db_index=True
     )
+    
+    # ✅ NUEVO: Prioridad de la solicitud
+    PRIORITY_CHOICES = [
+        ('low', 'Baja'),
+        ('normal', 'Normal'),
+        ('high', 'Alta'),
+        ('urgent', 'Urgente')
+    ]
+    priority = models.CharField(
+        max_length=10,
+        choices=PRIORITY_CHOICES,
+        default='normal',
+        verbose_name='Prioridad'
+    )
+    
     reference_id = models.CharField(
         max_length=100, 
         blank=True, 
@@ -389,23 +454,33 @@ class UserRequest(models.Model):
         verbose_name='Notas de Revisión'
     )
     
+    # ✅ NUEVO: Fecha de resolución
+    resolved_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        verbose_name='Fecha de Resolución'
+    )
+    
     # Timestamps
     created_at = models.DateTimeField(auto_now_add=True, verbose_name='Fecha de Creación')
     updated_at = models.DateTimeField(auto_now=True, verbose_name='Última Actualización')
     
     class Meta:
-        ordering = ['-updated_at']
+        ordering = ['-priority', '-updated_at']  # ✅ Ordenar por prioridad primero
         verbose_name = 'Solicitud de Usuario'
         verbose_name_plural = 'Solicitudes de Usuario'
         db_table = 'users_userrequest'
         indexes = [
             models.Index(fields=['user', 'status']),
             models.Index(fields=['request_type', 'status']),
+            models.Index(fields=['lote', 'status']),  # ✅ NUEVO índice
+            models.Index(fields=['priority', '-updated_at']),  # ✅ NUEVO índice
             models.Index(fields=['-updated_at']),
         ]
     
     def __str__(self):
-        return f"{self.get_request_type_display()} - {self.title} ({self.get_status_display()})"
+        lote_info = f" - Lote {self.lote.nombre}" if self.lote else ""
+        return f"{self.get_request_type_display()} - {self.title}{lote_info} ({self.get_status_display()})"
     
     def save(self, *args, **kwargs):
         """Override save para loggear cambios de estado"""
@@ -417,4 +492,72 @@ class UserRequest(models.Model):
                     f"{old_instance.status} -> {self.status} "
                     f"(user: {self.user.email})"
                 )
+                # ✅ NUEVO: Marcar fecha de resolución
+                if self.status in ['completed', 'rejected']:
+                    from django.utils import timezone
+                    self.resolved_at = timezone.now()
         super().save(*args, **kwargs)
+    
+    # ✅ NUEVO: Métodos útiles
+    @property
+    def is_resolved(self):
+        """Verifica si la solicitud está resuelta"""
+        return self.status in ['completed', 'rejected']
+    
+    @property
+    def is_pending(self):
+        """Verifica si está pendiente"""
+        return self.status == 'pending'
+    
+    @property
+    def response_time(self):
+        """Calcula tiempo de respuesta (si está resuelta)"""
+        if self.resolved_at:
+            delta = self.resolved_at - self.created_at
+            return delta
+        return None
+
+
+class PasswordResetToken(models.Model):
+    """
+    Tokens para recuperación de contraseña.
+    Se generan cuando el usuario solicita resetear su contraseña.
+    """
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    user = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        related_name='password_reset_tokens',
+        verbose_name='Usuario'
+    )
+    token = models.CharField(max_length=255, unique=True, verbose_name='Token')
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name='Fecha de Creación')
+    expires_at = models.DateTimeField(verbose_name='Fecha de Expiración')
+    is_used = models.BooleanField(default=False, verbose_name='Token Usado')
+    used_at = models.DateTimeField(null=True, blank=True, verbose_name='Fecha de Uso')
+    
+    class Meta:
+        verbose_name = 'Token de Recuperación'
+        verbose_name_plural = 'Tokens de Recuperación'
+        ordering = ['-created_at']
+        db_table = 'users_passwordresettoken'
+        indexes = [
+            models.Index(fields=['token']),
+            models.Index(fields=['user', '-created_at']),
+        ]
+    
+    def __str__(self):
+        return f"Reset token for {self.user.email} - {'Used' if self.is_used else 'Active'}"
+    
+    def is_valid(self):
+        """Verifica si el token es válido (no usado y no expirado)"""
+        from django.utils import timezone
+        return not self.is_used and self.expires_at > timezone.now()
+    
+    def mark_as_used(self):
+        """Marca el token como usado"""
+        from django.utils import timezone
+        self.is_used = True
+        self.used_at = timezone.now()
+        self.save()
+        logger.info(f"Password reset token marked as used for {self.user.email}")

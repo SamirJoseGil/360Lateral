@@ -24,7 +24,8 @@ urlpatterns = [
     # Validación de documentos
     path('validation/summary/', views.DocumentValidationSummaryView.as_view(), name='validation-summary'),
     path('validation/list/', views.DocumentValidationListView.as_view(), name='validation-list'),
-    # ✅ CORREGIDO: Usar uuid: para document_id si los documentos también usan UUID
+    # ✅ NUEVO: Endpoint para documentos agrupados por lote
+    path('validation/grouped/', views.DocumentValidationGroupedView.as_view(), name='validation-grouped'),
     path('validation/<uuid:pk>/', views.DocumentValidationDetailView.as_view(), name='validation-detail'),
     path('validation/<uuid:document_id>/action/', views.DocumentValidateActionView.as_view(), name='validation-action'),
 ]

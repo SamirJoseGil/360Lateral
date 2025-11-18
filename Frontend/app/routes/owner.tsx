@@ -3,7 +3,6 @@ import { Outlet, useLoaderData } from "@remix-run/react";
 import type { LoaderFunctionArgs } from "@remix-run/node";
 import { getUser } from "~/utils/auth.server";
 import Sidebar from "~/components/sidebar";
-import { PageViewTracker } from "~/components/StatsTracker";
 
 export async function loader({ request }: LoaderFunctionArgs) {
     // Verificar que el usuario esté autenticado y sea propietario
@@ -31,15 +30,12 @@ export default function OwnerLayout() {
         { to: "/owner", label: "Menú Principal", icon: "dashboard" },
         { to: "/owner/lotes", label: "Mis Lotes", icon: "map" },
         { to: "/owner/documentos", label: "Documentos", icon: "check-circle" },
-        { to: "/owner/solicitudes", label: "Solicitudes", icon: "users" },
-        { to: "/owner/analisis/solicitar", label: "Análisis Urbanístico", icon: "chart-bar" },
+        { to: "/owner/solicitudes", label: "Mis Solicitudes", icon: "clipboard-list" }, // ✅ AGREGADO
+        // { to: "/owner/analisis/solicitar", label: "Análisis Urbanístico", icon: "chart-bar" },
     ];
 
     return (
         <div className="flex h-screen bg-gray-100">
-            {/* Tracking de estadísticas para el panel owner */}
-            <PageViewTracker pageName="owner_layout" additionalData={{ user_id: user.id, role: user.role }} />
-
             {/* Sidebar */}
             <Sidebar
                 options={sidebarOptions}

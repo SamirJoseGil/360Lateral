@@ -5,7 +5,8 @@ import { authenticateAdmin } from "~/utils/auth.server";
 import {
     getValidationSummary,
     getRecentDocumentsForValidation,
-    getValidationDocuments,
+    getValidationDocuments, // ✅ AGREGADO: Import faltante
+    getValidationDocumentsGrouped,
     performDocumentAction,
 } from "~/services/documents.server";
 
@@ -17,50 +18,61 @@ export async function loader({ request }: LoaderFunctionArgs) {
     const status = url.searchParams.get("status") || "";
     const page = parseInt(url.searchParams.get("page") || "1");
     const page_size = parseInt(url.searchParams.get("page_size") || "10");
+    const view = url.searchParams.get("view") || "grouped";
 
     try {
-        console.log(`[Admin Validación] Loading data - status: ${status || 'all'}, page: ${page}`);
+        console.log(`[Admin Validación] Loading data - view: ${view}, status: ${status || 'all'}, page: ${page}`);
 
         // Obtener resumen de validación
         const { validationSummary, headers: summaryHeaders } = await getValidationSummary(request);
 
-        // Obtener documentos recientes si no hay filtro de estado
-        let recentDocuments = [];
-        if (!status) {
-            const { recentDocuments: docs } = await getRecentDocumentsForValidation(request, 5);
-            recentDocuments = docs;
+        // ✅ NUEVO: Obtener documentos según la vista
+        let lotes = [];
+        let documents = [];
+        let pagination = { page: 1, page_size: 10, total: 0, total_pages: 0 };
+
+        if (view === "grouped") {
+            const { lotes: lotesData, pagination: paginationData } = 
+                await getValidationDocumentsGrouped(request, { page, page_size, status });
+            
+            lotes = lotesData || []; // ✅ Asegurar array vacío si es null/undefined
+            pagination = paginationData;
+        } else {
+            const { documents: docsData, pagination: paginationData } = 
+                await getValidationDocuments(request, { page, page_size, status });
+            
+            documents = docsData || []; // ✅ Asegurar array vacío si es null/undefined
+            pagination = paginationData;
         }
 
-        // Obtener lista de documentos con filtros
-        const { documents, pagination, headers: docsHeaders } = await getValidationDocuments(
-            request,
-            { page, page_size, status }
-        );
+        // Obtener documentos recientes si no hay filtro
+        let recentDocuments = [];
+        if (!status && view !== "grouped") {
+            const { recentDocuments: docs } = await getRecentDocumentsForValidation(request, 5);
+            recentDocuments = docs || [];
+        }
 
-        console.log(`[Admin Validación] Loaded ${documents.length} documents`);
+        console.log(`[Admin Validación] Loaded - view: ${view}, items: ${view === 'grouped' ? lotes.length : documents.length}`);
 
-        // Combinar headers
-        const combinedHeaders = new Headers(summaryHeaders);
-        docsHeaders.forEach((value: string, key: string) => {
-            if (!combinedHeaders.has(key)) {
-                combinedHeaders.set(key, value);
-            }
-        });
-
+        // ✅ CORREGIDO: NO retornar error si simplemente no hay datos
         return json({
             user,
             summary: validationSummary,
+            view,
+            lotes,
             documents,
             recentDocuments,
             pagination,
             currentStatus: status,
-            error: null
+            error: null // ✅ Sin error cuando simplemente no hay datos
         }, {
-            headers: combinedHeaders
+            headers: summaryHeaders
         });
 
     } catch (error) {
         console.error("[Admin Validación] Error loading data:", error);
+        
+        // ✅ MEJORADO: Solo mostrar error si realmente hubo un problema
         return json({
             user,
             summary: {
@@ -69,6 +81,8 @@ export async function loader({ request }: LoaderFunctionArgs) {
                 rechazados: 0,
                 total: 0
             },
+            view: "grouped",
+            lotes: [],
             documents: [],
             recentDocuments: [],
             pagination: {
@@ -78,7 +92,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
                 total_pages: 0
             },
             currentStatus: status,
-            error: "Error al cargar los datos de validación"
+            error: "Hubo un problema al cargar los datos. Por favor, recarga la página." // ✅ Mensaje más específico
         });
     }
 }
@@ -127,7 +141,7 @@ export async function action({ request }: ActionFunctionArgs) {
 }
 
 export default function AdminValidacion() {
-    const { summary, documents, recentDocuments, pagination, currentStatus, error } = useLoaderData<typeof loader>();
+    const { summary, view, lotes, documents, recentDocuments, pagination, currentStatus, error } = useLoaderData<typeof loader>();
     const actionData = useActionData<typeof action>();
     const navigation = useNavigation();
 
@@ -136,15 +150,42 @@ export default function AdminValidacion() {
     const [validationComments, setValidationComments] = useState("");
     const [showPreviewModal, setShowPreviewModal] = useState(false);
     const [previewDocument, setPreviewDocument] = useState<any>(null);
-    // ✅ NUEVO: Estado para controlar si estamos en el cliente
-    const [isClient, setIsClient] = useState(false);
+    const [expandedLotes, setExpandedLotes] = useState<Set<string>>(new Set());
+    // ✅ NUEVO: Estado para rastrear documentos procesados (evitar duplicados)
+    const [processingDocs, setProcessingDocs] = useState<Set<string>>(new Set());
 
     const isSubmitting = navigation.state === "submitting";
 
-    // ✅ CRÍTICO: Establecer isClient solo en el navegador
+    // ✅ NUEVO: Limpiar documentos procesados cuando cambie la acción
     useEffect(() => {
-        setIsClient(true);
-    }, []);
+        if (actionData?.success) {
+            // Esperar un momento y limpiar
+            const timer = setTimeout(() => {
+                setProcessingDocs(new Set());
+            }, 2000);
+            return () => clearTimeout(timer);
+        }
+    }, [actionData]);
+
+    // ✅ NUEVO: Función para toggle de lotes
+    const toggleLote = (loteId: string) => {
+        setExpandedLotes(prev => {
+            const newSet = new Set(prev);
+            if (newSet.has(loteId)) {
+                newSet.delete(loteId);
+            } else {
+                newSet.add(loteId);
+            }
+            return newSet;
+        });
+    };
+
+    // ✅ NUEVO: Expandir todos los lotes por defecto
+    useEffect(() => {
+        if (view === 'grouped' && lotes.length > 0) {
+            setExpandedLotes(new Set(lotes.map((l: any) => l.lote_id)));
+        }
+    }, [view, lotes]);
 
     const getDocumentTypeLabel = (type: string) => {
         const types: { [key: string]: string } = {
@@ -161,20 +202,51 @@ export default function AdminValidacion() {
         return types[type] || type;
     };
 
+    // ✅ MEJORADO: Helper para verificar si un documento puede ser modificado
+    const canModifyDocument = (document: any): boolean => {
+        const currentStatus = document.estado || document.metadata?.validation_status || 'pendiente';
+        const isProcessing = processingDocs.has(document.id);
+        
+        return currentStatus === 'pendiente' && !isProcessing && !isSubmitting;
+    };
+
+    // ✅ MEJORADO: Helper para obtener clase de badge según estado
     const getStatusBadgeColor = (status: string) => {
         switch (status) {
             case 'pendiente':
-                return 'bg-yellow-100 text-yellow-800';
+                return 'bg-yellow-100 text-yellow-800 border border-yellow-300';
             case 'validado':
-                return 'bg-green-100 text-green-800';
+                return 'bg-green-100 text-green-800 border border-green-300';
             case 'rechazado':
-                return 'bg-red-100 text-red-800';
+                return 'bg-red-100 text-red-800 border border-red-300';
             default:
-                return 'bg-gray-100 text-gray-800';
+                return 'bg-gray-100 text-gray-800 border border-gray-300';
         }
     };
 
     const handleValidateClick = (document: any, action: "validar" | "rechazar") => {
+        // ✅ EVITAR DUPLICADOS: Verificar si ya está procesándose
+        if (processingDocs.has(document.id)) {
+            console.log('[Admin] ⚠️ Documento ya en procesamiento:', document.id);
+            return;
+        }
+        
+        // ✅ EVITAR DUPLICADOS: Verificar estado actual
+        const currentStatus = document.estado || document.metadata?.validation_status || 'pendiente';
+        
+        if (action === 'validar' && currentStatus === 'validado') {
+            alert('Este documento ya está validado');
+            return;
+        }
+        
+        if (action === 'rechazar' && currentStatus === 'rechazado') {
+            alert('Este documento ya está rechazado');
+            return;
+        }
+        
+        // Marcar como procesándose
+        setProcessingDocs(prev => new Set(prev).add(document.id));
+        
         setSelectedDocument({ ...document, action });
         setShowModal(true);
     };
@@ -253,9 +325,18 @@ export default function AdminValidacion() {
                 </div>
             )}
 
+            {/* ✅ MEJORADO: Solo mostrar error si hay un error real */}
             {error && (
                 <div className="mb-6 bg-red-50 border-l-4 border-red-400 p-4 rounded-lg">
-                    <p className="text-sm text-red-700">{error}</p>
+                    <div className="flex">
+                        <svg className="h-5 w-5 text-red-400 mr-3" fill="currentColor" viewBox="0 0 20 20">
+                            <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+                        </svg>
+                        <div>
+                            <h3 className="text-sm font-medium text-red-800">Error</h3>
+                            <p className="text-sm text-red-700 mt-1">{error}</p>
+                        </div>
+                    </div>
                 </div>
             )}
 
@@ -318,186 +399,391 @@ export default function AdminValidacion() {
                 </div>
             </div>
 
-            {/* Filtros */}
+            {/* ✅ NUEVO: Toggle de vista */}
             <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 mb-6">
+                <div className="flex items-center justify-between mb-4">
+                    <h3 className="text-lg font-medium text-gray-900">Vista de Documentos</h3>
+                    <div className="flex gap-2">
+                        <a
+                            href={`/admin/validacion?view=grouped${currentStatus ? `&status=${currentStatus}` : ''}`}
+                            className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                                view === 'grouped'
+                                    ? 'bg-indigo-600 text-white'
+                                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                            }`}
+                        >
+                            Por Lote
+                        </a>
+                        <a
+                            href={`/admin/validacion?view=flat${currentStatus ? `&status=${currentStatus}` : ''}`}
+                            className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                                view === 'flat'
+                                    ? 'bg-indigo-600 text-white'
+                                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                            }`}
+                        >
+                            Lista Simple
+                        </a>
+                    </div>
+                </div>
+
+                {/* Filtros de estado */}
                 <div className="flex flex-wrap gap-3">
                     <a
-                        href="/admin/validacion"
+                        href={`/admin/validacion?view=${view}`}
                         className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${!currentStatus
                             ? 'bg-indigo-600 text-white'
                             : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                            }`}
+                        }`}
                     >
                         Todos ({summary.total})
                     </a>
                     <a
-                        href="/admin/validacion?status=pendiente"
+                        href={`/admin/validacion?view=${view}&status=pendiente`}
                         className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${currentStatus === 'pendiente'
                             ? 'bg-yellow-600 text-white'
                             : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                            }`}
+                        }`}
                     >
                         Pendientes ({summary.pendientes})
                     </a>
                     <a
-                        href="/admin/validacion?status=validado"
+                        href={`/admin/validacion?view=${view}&status=validado`}
                         className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${currentStatus === 'validado'
                             ? 'bg-green-600 text-white'
                             : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                            }`}
+                        }`}
                     >
                         Validados ({summary.validados})
                     </a>
                     <a
-                        href="/admin/validacion?status=rechazado"
+                        href={`/admin/validacion?view=${view}&status=rechazado`}
                         className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${currentStatus === 'rechazado'
                             ? 'bg-red-600 text-white'
                             : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                            }`}
+                        }`}
                     >
                         Rechazados ({summary.rechazados})
                     </a>
                 </div>
             </div>
 
-            {/* Lista de documentos */}
-            <div className="bg-white rounded-xl shadow-sm border border-gray-200">
-                <div className="px-6 py-4 border-b border-gray-200">
-                    <h3 className="text-lg font-medium text-gray-900">
-                        Documentos {currentStatus ? `- ${currentStatus}` : ''} ({documents.length})
-                    </h3>
-                </div>
+            {/* ✅ MEJORADO: Vista agrupada por lote con collapse */}
+            {view === 'grouped' ? (
+                <div className="space-y-6">
+                    {lotes.length === 0 ? (
+                        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-12 text-center">
+                            <svg className="mx-auto h-16 w-16 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                            </svg>
+                            <h3 className="mt-4 text-lg font-medium text-gray-900">No hay lotes con documentos</h3>
+                            <p className="mt-2 text-sm text-gray-500">
+                                {currentStatus
+                                    ? `No hay lotes con documentos "${currentStatus}"`
+                                    : "No hay lotes con documentos en este momento"}
+                            </p>
+                        </div>
+                    ) : (
+                        lotes.map((lote: any) => {
+                            const isExpanded = expandedLotes.has(lote.lote_id);
+                            
+                            return (
+                                <div key={lote.lote_id} className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+                                    {/* Header del lote */}
+                                    <div 
+                                        className="bg-gradient-to-r from-indigo-50 to-blue-50 px-6 py-4 border-b border-gray-200 cursor-pointer hover:from-indigo-100 hover:to-blue-100 transition-colors"
+                                        onClick={() => toggleLote(lote.lote_id)}
+                                    >
+                                        <div className="flex items-center justify-between">
+                                            <div className="flex-1 flex items-center gap-3">
+                                                {/* ✅ NUEVO: Icono de expand/collapse */}
+                                                <svg 
+                                                    className={`w-5 h-5 text-indigo-600 transition-transform ${isExpanded ? 'rotate-90' : ''}`}
+                                                    fill="none" 
+                                                    stroke="currentColor" 
+                                                    viewBox="0 0 24 24"
+                                                >
+                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                                                </svg>
 
-                {documents.length === 0 ? (
-                    <div className="p-12 text-center">
-                        <svg className="mx-auto h-16 w-16 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                        </svg>
-                        <h3 className="mt-4 text-lg font-medium text-gray-900">No hay documentos</h3>
-                        <p className="mt-2 text-sm text-gray-500">
-                            {currentStatus
-                                ? `No hay documentos con estado "${currentStatus}"`
-                                : "No hay documentos para validar en este momento"}
-                        </p>
-                    </div>
-                ) : (
-                    <div className="divide-y divide-gray-200">
-                        {documents.map((document: any) => (
-                            <div key={document.id} className="p-6 hover:bg-gray-50 transition-colors">
-                                <div className="flex items-start justify-between">
-                                    <div className="flex-1">
-                                        <div className="flex items-center space-x-3 mb-2">
-                                            <h4 className="text-lg font-medium text-gray-900">{document.nombre || document.title}</h4>
-                                            <span className={`px-3 py-1 rounded-full text-xs font-medium ${getStatusBadgeColor(document.estado || 'pendiente')}`}>
-                                                {document.estado || 'pendiente'}
-                                            </span>
+                                                <svg className="w-6 h-6 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
+                                                </svg>
+
+                                                <div className="flex-1">
+                                                    <h3 className="text-xl font-semibold text-gray-900">
+                                                        {lote.lote_nombre}
+                                                    </h3>
+                                                    <p className="text-sm text-gray-600 mt-1">{lote.lote_direccion}</p>
+                                                </div>
+                                            </div>
+
+                                            {/* ✅ CORREGIDO: Mostrar conteo real */}
+                                            <div className="flex items-center gap-6">
+                                                <div className="text-right">
+                                                    <div className="text-2xl font-bold text-indigo-600">
+                                                        {lote.total_documentos}
+                                                    </div>
+                                                    <div className="text-xs text-gray-500">
+                                                        documento{lote.total_documentos !== 1 ? 's' : ''}
+                                                    </div>
+                                                </div>
+                                                
+                                                <div className="flex gap-2">
+                                                    {lote.pendientes > 0 && (
+                                                        <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
+                                                            {lote.pendientes} pendiente{lote.pendientes !== 1 ? 's' : ''}
+                                                        </span>
+                                                    )}
+                                                    {lote.validados > 0 && (
+                                                        <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                                                            {lote.validados} validado{lote.validados !== 1 ? 's' : ''}
+                                                        </span>
+                                                    )}
+                                                    {lote.rechazados > 0 && (
+                                                        <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-red-100 text-red-800">
+                                                            {lote.rechazados} rechazado{lote.rechazados !== 1 ? 's' : ''}
+                                                        </span>
+                                                    )}
+                                                </div>
+                                            </div>
                                         </div>
+                                    </div>
 
-                                        <div className="grid grid-cols-2 gap-4 mt-3 text-sm">
-                                            <div>
-                                                <span className="text-gray-500">Tipo:</span>
-                                                <span className="ml-2 font-medium text-gray-900">
-                                                    {getDocumentTypeLabel(document.tipo || document.document_type)}
+                                    {/* Contenido colapsable */}
+                                    {isExpanded && (
+                                        <div className="divide-y divide-gray-200">
+                                            {lote.documentos.map((document: any) => {
+                                                const currentStatus = document.estado || document.metadata?.validation_status || 'pendiente';
+                                                const canModify = canModifyDocument(document);
+                                                const isProcessing = processingDocs.has(document.id);
+                                                
+                                                return (
+                                                    <div key={document.id} className="p-4 hover:bg-gray-50 transition-colors">
+                                                        <div className="flex items-center justify-between">
+                                                            <div className="flex-1 min-w-0">
+                                                                <div className="flex items-center gap-2 mb-1">
+                                                                    <h4 className="text-base font-medium text-gray-900 truncate">
+                                                                        {document.nombre || document.title}
+                                                                    </h4>
+                                                                    {/* ✅ Badge con estado actualizado */}
+                                                                    <span className={`flex-shrink-0 px-2 py-0.5 rounded-full text-xs font-medium ${getStatusBadgeColor(currentStatus)}`}>
+                                                                        {isProcessing ? 'procesando...' : currentStatus}
+                                                                    </span>
+                                                                </div>
+                                                                
+                                                                <div className="flex items-center gap-4 text-xs text-gray-500">
+                                                                    <span>{getDocumentTypeLabel(document.tipo || document.document_type)}</span>
+                                                                    <span>•</span>
+                                                                    <span suppressHydrationWarning>
+                                                                        {formatDate(document.fecha_subida || document.created_at)}
+                                                                    </span>
+                                                                    {document.solicitante && (
+                                                                        <>
+                                                                            <span>•</span>
+                                                                            <span>{document.solicitante}</span>
+                                                                        </>
+                                                                    )}
+                                                                </div>
+                                                            </div>
+
+                                                            {/* Acciones */}
+                                                            <div className="flex items-center gap-2 ml-4 flex-shrink-0">
+                                                                <button
+                                                                    onClick={() => handlePreviewClick(document)}
+                                                                    className="inline-flex items-center px-3 py-1.5 bg-blue-600 text-white text-xs font-medium rounded hover:bg-blue-700 transition-colors"
+                                                                    title="Ver documento"
+                                                                >
+                                                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                                                                    </svg>
+                                                                </button>
+
+                                                                {/* ✅ Solo mostrar botones si puede modificarse */}
+                                                                {canModify && (
+                                                                    <>
+                                                                        <button
+                                                                            onClick={() => handleValidateClick(document, "validar")}
+                                                                            disabled={!canModify}
+                                                                            className="inline-flex items-center px-3 py-1.5 bg-green-600 text-white text-xs font-medium rounded hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                                                                            title="Validar"
+                                                                        >
+                                                                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                                                                            </svg>
+                                                                        </button>
+                                                                        <button
+                                                                            onClick={() => handleValidateClick(document, "rechazar")}
+                                                                            disabled={!canModify}
+                                                                            className="inline-flex items-center px-3 py-1.5 bg-red-600 text-white text-xs font-medium rounded hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                                                                            title="Rechazar"
+                                                                        >
+                                                                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                                                            </svg>
+                                                                        </button>
+                                                                    </>
+                                                                )}
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+                                    )}
+
+                                    {/* Footer */}
+                                    {!isExpanded && (
+                                        <div className="px-6 py-2 bg-gray-50 text-xs text-gray-500 text-center">
+                                            Click para ver {lote.total_documentos} documento{lote.total_documentos !== 1 ? 's' : ''}
+                                        </div>
+                                    )}
+                                </div>
+                            );
+                        })
+                    )}
+                </div>
+            ) : (
+                // Vista plana (original) - código existente sin cambios
+                <div className="bg-white rounded-xl shadow-sm border border-gray-200">
+                    <div className="px-6 py-4 border-b border-gray-200">
+                        <h3 className="text-lg font-medium text-gray-900">
+                            Documentos {currentStatus ? `- ${currentStatus}` : ''} ({documents.length})
+                        </h3>
+                    </div>
+
+                    {documents.length === 0 ? (
+                        <div className="p-12 text-center">
+                            <svg className="mx-auto h-16 w-16 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                            </svg>
+                            <h3 className="mt-4 text-lg font-medium text-gray-900">No hay documentos</h3>
+                            <p className="mt-2 text-sm text-gray-500">
+                                {currentStatus
+                                    ? `No hay documentos con estado "${currentStatus}"`
+                                    : "No hay documentos para validar en este momento"}
+                            </p>
+                        </div>
+                    ) : (
+                        <div className="divide-y divide-gray-200">
+                            {documents.map((document: any) => (
+                                <div key={document.id} className="p-6 hover:bg-gray-50 transition-colors">
+                                    <div className="flex items-start justify-between">
+                                        <div className="flex-1">
+                                            <div className="flex items-center space-x-3 mb-2">
+                                                <h4 className="text-lg font-medium text-gray-900">{document.nombre || document.title}</h4>
+                                                <span className={`px-3 py-1 rounded-full text-xs font-medium ${getStatusBadgeColor(document.estado || 'pendiente')}`}>
+                                                    {document.estado || 'pendiente'}
                                                 </span>
                                             </div>
-                                            <div>
-                                                <span className="text-gray-500">Solicitante:</span>
-                                                <span className="ml-2 font-medium text-gray-900">
-                                                    {document.solicitante || 'Desconocido'}
-                                                </span>
-                                            </div>
-                                            <div>
-                                                <span className="text-gray-500">Fecha:</span>
-                                                <span className="ml-2 font-medium text-gray-900">
-                                                    {/* ✅ Usar suppressHydrationWarning para fechas */}
-                                                    <span suppressHydrationWarning>
-                                                        {formatDate(document.fecha_subida || document.created_at)}
-                                                    </span>
-                                                </span>
-                                            </div>
-                                            {document.lote_nombre && (
+
+                                            <div className="grid grid-cols-2 gap-4 mt-3 text-sm">
                                                 <div>
-                                                    <span className="text-gray-500">Lote:</span>
+                                                    <span className="text-gray-500">Tipo:</span>
                                                     <span className="ml-2 font-medium text-gray-900">
-                                                        {document.lote_nombre}
+                                                        {getDocumentTypeLabel(document.tipo || document.document_type)}
                                                     </span>
                                                 </div>
+                                                <div>
+                                                    <span className="text-gray-500">Solicitante:</span>
+                                                    <span className="ml-2 font-medium text-gray-900">
+                                                        {document.solicitante || 'Desconocido'}
+                                                    </span>
+                                                </div>
+                                                <div>
+                                                    <span className="text-gray-500">Fecha:</span>
+                                                    <span className="ml-2 font-medium text-gray-900">
+                                                        {/* ✅ Usar suppressHydrationWarning para fechas */}
+                                                        <span suppressHydrationWarning>
+                                                            {formatDate(document.fecha_subida || document.created_at)}
+                                                        </span>
+                                                    </span>
+                                                </div>
+                                                {document.lote_nombre && (
+                                                    <div>
+                                                        <span className="text-gray-500">Lote:</span>
+                                                        <span className="ml-2 font-medium text-gray-900">
+                                                            {document.lote_nombre}
+                                                        </span>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </div>
+
+                                        <div className="flex items-center space-x-2 ml-4">
+                                            <button
+                                                onClick={() => handlePreviewClick(document)}
+                                                className="inline-flex items-center px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors shadow-sm"
+                                            >
+                                                <svg className="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                                                </svg>
+                                                Ver Documento
+                                            </button>
+
+                                            {(!document.estado || document.estado === 'pendiente') && (
+                                                <>
+                                                    <button
+                                                        onClick={() => handleValidateClick(document, "validar")}
+                                                        disabled={isSubmitting}
+                                                        className="inline-flex items-center px-4 py-2 bg-green-600 text-white text-sm font-medium rounded-lg hover:bg-green-700 disabled:opacity-50 transition-colors"
+                                                    >
+                                                        <svg className="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                                                        </svg>
+                                                        Validar
+                                                    </button>
+                                                    <button
+                                                        onClick={() => handleValidateClick(document, "rechazar")}
+                                                        disabled={isSubmitting}
+                                                        className="inline-flex items-center px-4 py-2 bg-red-600 text-white text-sm font-medium rounded-lg hover:bg-red-700 disabled:opacity-50 transition-colors"
+                                                    >
+                                                        <svg className="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                                        </svg>
+                                                        Rechazar
+                                                    </button>
+                                                </>
                                             )}
                                         </div>
                                     </div>
-
-                                    <div className="flex items-center space-x-2 ml-4">
-                                        <button
-                                            onClick={() => handlePreviewClick(document)}
-                                            className="inline-flex items-center px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors shadow-sm"
-                                        >
-                                            <svg className="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-                                            </svg>
-                                            Ver Documento
-                                        </button>
-
-                                        {(!document.estado || document.estado === 'pendiente') && (
-                                            <>
-                                                <button
-                                                    onClick={() => handleValidateClick(document, "validar")}
-                                                    disabled={isSubmitting}
-                                                    className="inline-flex items-center px-4 py-2 bg-green-600 text-white text-sm font-medium rounded-lg hover:bg-green-700 disabled:opacity-50 transition-colors"
-                                                >
-                                                    <svg className="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                                                    </svg>
-                                                    Validar
-                                                </button>
-                                                <button
-                                                    onClick={() => handleValidateClick(document, "rechazar")}
-                                                    disabled={isSubmitting}
-                                                    className="inline-flex items-center px-4 py-2 bg-red-600 text-white text-sm font-medium rounded-lg hover:bg-red-700 disabled:opacity-50 transition-colors"
-                                                >
-                                                    <svg className="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                                                    </svg>
-                                                    Rechazar
-                                                </button>
-                                            </>
-                                        )}
-                                    </div>
                                 </div>
-                            </div>
-                        ))}
-                    </div>
-                )}
-
-                {/* Paginación */}
-                {pagination.total_pages > 1 && (
-                    <div className="px-6 py-4 border-t border-gray-200 flex items-center justify-between">
-                        <p className="text-sm text-gray-700">
-                            Mostrando <span className="font-medium">{((pagination.page - 1) * pagination.page_size) + 1}</span> a{' '}
-                            <span className="font-medium">{Math.min(pagination.page * pagination.page_size, pagination.total)}</span> de{' '}
-                            <span className="font-medium">{pagination.total}</span> documentos
-                        </p>
-                        <div className="flex space-x-2">
-                            {pagination.page > 1 && (
-                                <a
-                                    href={`?page=${pagination.page - 1}${currentStatus ? `&status=${currentStatus}` : ''}`}
-                                    className="px-4 py-2 bg-white border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50"
-                                >
-                                    Anterior
-                                </a>
-                            )}
-                            {pagination.page < pagination.total_pages && (
-                                <a
-                                    href={`?page=${pagination.page + 1}${currentStatus ? `&status=${currentStatus}` : ''}`}
-                                    className="px-4 py-2 bg-white border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50"
-                                >
-                                    Siguiente
-                                </a>
-                            )}
+                            ))}
                         </div>
-                    </div>
-                )}
-            </div>
+                    )}
+
+                    {/* Paginación */}
+                    {pagination.total_pages > 1 && (
+                        <div className="mt-6 px-6 py-4 bg-white border border-gray-200 rounded-xl flex items-center justify-between">
+                            <p className="text-sm text-gray-700">
+                                Mostrando página <span className="font-medium">{pagination.page}</span> de{' '}
+                                <span className="font-medium">{pagination.total_pages}</span>
+                                {' '}({pagination.total} {view === 'grouped' ? 'lotes' : 'documentos'})
+                            </p>
+                            <div className="flex space-x-2">
+                                {pagination.page > 1 && (
+                                    <a
+                                        href={`?view=${view}&page=${pagination.page - 1}${currentStatus ? `&status=${currentStatus}` : ''}`}
+                                        className="px-4 py-2 bg-white border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50"
+                                    >
+                                        Anterior
+                                    </a>
+                                )}
+                                {pagination.page < pagination.total_pages && (
+                                    <a
+                                        href={`?view=${view}&page=${pagination.page + 1}${currentStatus ? `&status=${currentStatus}` : ''}`}
+                                        className="px-4 py-2 bg-white border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50"
+                                    >
+                                        Siguiente
+                                    </a>
+                                )}
+                            </div>
+                        </div>
+                    )}
+                </div>
+            )}
 
             {/* Modal de confirmación */}
             {showModal && selectedDocument && (

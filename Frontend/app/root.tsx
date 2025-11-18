@@ -61,15 +61,25 @@ export default function App() {
   const { user, env } = useLoaderData<typeof loader>();
   const location = useLocation();
 
-  // Function to determine if we're on a dashboard route
-  const isDashboardRoute = () => {
+  // Function to determine if we're on a dashboard route or auth route
+  const shouldHideNavbarAndFooter = () => {
     const dashboardRoutes = ['/admin', '/developer', '/owner'];
-    return dashboardRoutes.some(route =>
+    const authRoutes = ['/login', '/register', '/forgot-password', '/reset-password'];
+    
+    // Check if it's a dashboard route
+    const isDashboard = dashboardRoutes.some(route =>
       location.pathname === route || location.pathname.startsWith(route + '/')
     );
+    
+    // Check if it's an auth route
+    const isAuth = authRoutes.some(route =>
+      location.pathname === route || location.pathname.startsWith(route + '/')
+    );
+    
+    return isDashboard || isAuth;
   };
 
-  const showNavbarAndFooter = !isDashboardRoute();
+  const showNavbarAndFooter = !shouldHideNavbarAndFooter();
 
   return (
     <>

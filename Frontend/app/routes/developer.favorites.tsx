@@ -2,7 +2,6 @@ import { json, redirect, type LoaderFunctionArgs } from "@remix-run/node";
 import { useLoaderData, Link } from "@remix-run/react";
 import { getUser } from "~/utils/auth.server";
 import { getFavoriteLotes } from "~/services/lotes.server";
-import { recordEvent } from "~/services/stats.server";
 
 export async function loader({ request }: LoaderFunctionArgs) {
     const user = await getUser(request);
@@ -12,17 +11,6 @@ export async function loader({ request }: LoaderFunctionArgs) {
     }
 
     try {
-        // ✅ Registrar evento - con manejo de error
-        try {
-            await recordEvent(request, {
-                type: "view",
-                name: "developer_favorites",
-                value: { user_id: user.id }
-            });
-        } catch (eventError) {
-            console.warn("[Favorites] No se pudo registrar el evento:", eventError);
-        }
-
         console.log("[Favorites] Fetching favorite lotes for user:", user.email);
 
         const { favorites, count, headers } = await getFavoriteLotes(request);

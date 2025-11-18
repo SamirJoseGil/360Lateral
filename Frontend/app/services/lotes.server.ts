@@ -783,7 +783,7 @@ function generateAutoDescription(mapgisData: any): string {
 }
 
 /**
- * Verificar un lote (admin only)
+ * ✅ NUEVO: Verificar lote (admin)
  */
 export async function verifyLote(request: Request, loteId: string) {
   try {
@@ -792,36 +792,19 @@ export async function verifyLote(request: Request, loteId: string) {
     const { res, setCookieHeaders } = await fetchWithAuth(
       request, 
       `${API_URL}/api/lotes/${loteId}/verify/`,
-      { 
+      {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({ action: 'verify' })  // ✅ Incluir action en body
+        body: JSON.stringify({ action: 'verify' })
       }
     );
     
     if (!res.ok) {
       const errorText = await res.text();
-      console.error(`[Lotes] Error verificando lote: ${res.status} - ${errorText}`);
-      
-      let errorData;
-      try {
-        errorData = JSON.parse(errorText);
-      } catch {
-        errorData = { error: errorText };
-      }
-      
-      throw new Error(errorData.error || errorData.message || `Error ${res.status}`);
+      throw new Error(`Error verificando lote: ${res.status} ${errorText}`);
     }
     
     const data = await res.json();
-    console.log(`[Lotes] ✅ Lote verificado exitosamente`);
-    
-    return { 
-      data, 
-      headers: setCookieHeaders 
-    };
+    return { data, headers: setCookieHeaders };
   } catch (error) {
     console.error("[Lotes] Error en verifyLote:", error);
     throw error;
@@ -829,48 +812,28 @@ export async function verifyLote(request: Request, loteId: string) {
 }
 
 /**
- * Rechazar un lote (admin only)
+ * ✅ NUEVO: Rechazar lote (admin)
  */
 export async function rejectLote(request: Request, loteId: string, reason: string) {
   try {
-    console.log(`[Lotes] Rechazando lote ${loteId}`);
+    console.log(`[Lotes] Rechazando lote ${loteId}: ${reason}`);
     
     const { res, setCookieHeaders } = await fetchWithAuth(
       request, 
-      `${API_URL}/api/lotes/${loteId}/verify/`,  // ✅ Mismo endpoint
-      { 
+      `${API_URL}/api/lotes/${loteId}/verify/`,
+      {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({ 
-          action: 'reject',  // ✅ Action: reject
-          reason 
-        })
+        body: JSON.stringify({ action: 'reject', reason })
       }
     );
     
     if (!res.ok) {
       const errorText = await res.text();
-      console.error(`[Lotes] Error rechazando lote: ${res.status} - ${errorText}`);
-      
-      let errorData;
-      try {
-        errorData = JSON.parse(errorText);
-      } catch {
-        errorData = { error: errorText };
-      }
-      
-      throw new Error(errorData.error || errorData.message || `Error ${res.status}`);
+      throw new Error(`Error rechazando lote: ${res.status} ${errorText}`);
     }
     
     const data = await res.json();
-    console.log(`[Lotes] ✅ Lote rechazado exitosamente`);
-    
-    return { 
-      data, 
-      headers: setCookieHeaders 
-    };
+    return { data, headers: setCookieHeaders };
   } catch (error) {
     console.error("[Lotes] Error en rejectLote:", error);
     throw error;
@@ -878,7 +841,7 @@ export async function rejectLote(request: Request, loteId: string, reason: strin
 }
 
 /**
- * Archivar un lote (admin only)
+ * ✅ NUEVO: Archivar lote (admin)
  */
 export async function archiveLote(request: Request, loteId: string) {
   try {
@@ -886,8 +849,11 @@ export async function archiveLote(request: Request, loteId: string) {
     
     const { res, setCookieHeaders } = await fetchWithAuth(
       request, 
-      `${API_URL}/api/lotes/${loteId}/archive/`,
-      { method: 'POST' }
+      `${API_URL}/api/lotes/${loteId}/verify/`,
+      {
+        method: 'POST',
+        body: JSON.stringify({ action: 'archive' })
+      }
     );
     
     if (!res.ok) {
@@ -904,7 +870,7 @@ export async function archiveLote(request: Request, loteId: string) {
 }
 
 /**
- * Reactivar un lote (admin only)
+ * ✅ NUEVO: Reactivar lote (admin)
  */
 export async function reactivateLote(request: Request, loteId: string) {
   try {
@@ -912,8 +878,11 @@ export async function reactivateLote(request: Request, loteId: string) {
     
     const { res, setCookieHeaders } = await fetchWithAuth(
       request, 
-      `${API_URL}/api/lotes/${loteId}/reactivate/`,
-      { method: 'POST' }
+      `${API_URL}/api/lotes/${loteId}/verify/`,
+      {
+        method: 'POST',
+        body: JSON.stringify({ action: 'reactivate' })
+      }
     );
     
     if (!res.ok) {

@@ -4,8 +4,7 @@ import { Link, useLoaderData } from "@remix-run/react";
 import type { LoaderFunctionArgs } from "@remix-run/node";
 import { getUser } from "~/utils/auth.server";
 import { getMisLotes, getUserLotesStats } from "~/services/lotes.server";
-import { getUserActivity } from "~/services/stats.server";
-import { recordEvent } from "~/services/stats.server";
+import { API_URL } from "~/utils/api.server";
 
 // Formateador de moneda para COP
 const formatCurrency = (value: number): string => {
@@ -32,23 +31,10 @@ export async function loader({ request }: LoaderFunctionArgs) {
     }
 
     try {
-        // Registrar evento de vista de dashboard
-        await recordEvent(request, {
-            type: "view",
-            name: "owner_dashboard",
-            value: {
-                user_id: user.id
-            }
-        });
-
         // Obtener lotes y estadísticas desde el API
-        const [lotesResponse, statsResponse, userStatsResponse] = await Promise.all([
+        const [lotesResponse, statsResponse] = await Promise.all([
             getMisLotes(request),
             getUserLotesStats(request),
-            getUserActivity(request, 30).catch(err => {
-                console.error("Error obteniendo actividad del usuario:", err);
-                return { activity: null, headers: new Headers() };
-            })
         ]);
 
         // Definir el tipo para lote
@@ -74,6 +60,17 @@ export async function loader({ request }: LoaderFunctionArgs) {
             documentosCompletos: (lote.documentos || []).length >= 3 // Simplificación para el ejemplo
         }));
 
+        // ✅ NUEVO: Obtener resumen de solicitudes
+        const solicitudesResponse = await fetch(`${API_URL}/api/solicitudes/resumen/`, {
+            headers: {
+                "Cookie": request.headers.get("Cookie") || ""
+            }
+        });
+
+        let solicitudesStats = { total: 0, pendientes: 0, completadas: 0 };
+        if (solicitudesResponse.ok) {
+            solicitudesStats = await solicitudesResponse.json();
+        }
 
         // Combinar headers correctamente
         const combinedHeaders = new Headers();
@@ -87,14 +84,6 @@ export async function loader({ request }: LoaderFunctionArgs) {
                 combinedHeaders.append(key, value);
             }
         }
-        if (userStatsResponse.headers) {
-            for (const [key, value] of userStatsResponse.headers.entries()) {
-                combinedHeaders.append(key, value);
-            }
-        }
-
-        // Enriquecer los datos con la actividad del usuario
-        const userActivity = userStatsResponse.activity;
 
         // Calcular valor estimado (podría venir de otra fuente)
         const valorEstimado = lotes.reduce((sum: number, lote: typeof lotes[number]) => sum + (lote.valorEstimado || 0), 0);
@@ -109,10 +98,9 @@ export async function loader({ request }: LoaderFunctionArgs) {
                 lotesPendientes: statsResponse.stats.pendientes || 0,
                 documentosCompletos: statsResponse.stats.documentacion_completa || 0,
                 documentosPendientes: (statsResponse.stats.total || 0) - (statsResponse.stats.documentacion_completa || 0),
-                totalEventos: userActivity?.total_events || 0,
-                ultimaActividad: userActivity?.last_activity?.timestamp || null
             },
             lotes,
+            solicitudesStats,  // ✅ AGREGAR
             headers: combinedHeaders
         });
     } catch (error) {
@@ -130,12 +118,12 @@ export async function loader({ request }: LoaderFunctionArgs) {
             totalEventos: 0
         };
 
-        return json({ user, stats, lotes: [], solicitudes: [] });
+        return json({ user, stats, lotes: [], solicitudesStats: { total: 0, pendientes: 0, completadas: 0 } });
     }
 }
 
 export default function OwnerDashboard() {
-    const { user, stats, lotes } = useLoaderData<typeof loader>();
+    const { user, stats, lotes, solicitudesStats } = useLoaderData<typeof loader>();
 
     return (
         <div className="p-4">
@@ -222,6 +210,24 @@ export default function OwnerDashboard() {
                         </div>
                     </div>
                 </div>
+
+                {/* ✅ NUEVO: Card de Solicitudes */}
+                <Link to="/owner/solicitudes" className="block">
+                    <div className="bg-white p-6 rounded-lg shadow hover:shadow-lg transition-shadow">
+                        <div className="flex items-center justify-between mb-4">
+                            <h3 className="text-lg font-medium text-gray-900">Solicitudes</h3>
+                            <div className="h-12 w-12 bg-purple-100 rounded-full flex items-center justify-center">
+                                <svg className="h-6 w-6 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
+                                </svg>
+                            </div>
+                        </div>
+                        <p className="text-3xl font-bold text-gray-900">{solicitudesStats.total}</p>
+                        <p className="text-sm text-gray-500 mt-2">
+                            {solicitudesStats.pendientes} pendientes
+                        </p>
+                    </div>
+                </Link>
             </div>
 
             {/* Accesos rápidos */}

@@ -4,7 +4,6 @@ import { useLoaderData, Form, useNavigation, useSubmit, Link } from "@remix-run/
 import { useState } from "react";
 import { getUser } from "~/utils/auth.server";
 import { getAllUsers, deleteUser, updateUserStatus, updateUser, type User } from "~/services/users.server";
-import { recordEvent } from "~/services/stats.server";
 
 type LoaderData = {
     user: any;
@@ -30,21 +29,6 @@ export async function loader({ request }: LoaderFunctionArgs): Promise<ReturnTyp
 
         // ✅ LOGGING: Verificar que el usuario está autenticado
         console.log(`[Admin Usuarios] User authenticated: ${user.email} (${user.role})`);
-
-        // Registrar evento con manejo de errores
-        try {
-            await recordEvent(request, {
-                type: "view",
-                name: "admin_usuarios_page",
-                value: {
-                    user_id: user.id,
-                    role: user.role,
-                    timestamp: new Date().toISOString()
-                }
-            });
-        } catch (statsError) {
-            console.warn("[Admin Usuarios] Error recording stats:", statsError);
-        }
 
         const url = new URL(request.url);
         const searchQuery = url.searchParams.get("search") || "";

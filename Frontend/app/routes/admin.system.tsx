@@ -4,7 +4,6 @@ import type { LoaderFunctionArgs } from "@remix-run/node";
 import { useLoaderData, useNavigation } from "@remix-run/react";
 import { useState, useEffect } from "react";
 import { getUser } from "~/utils/auth.server";
-import { recordEvent } from "~/services/stats.server";
 import {
     getComprehensiveHealth,
     getSystemHealth,
@@ -23,17 +22,6 @@ export async function loader({ request }: LoaderFunctionArgs) {
     }
 
     try {
-        // Registrar vista de la página de sistema
-        await recordEvent(request, {
-            type: "view",
-            name: "admin_system_page",
-            value: {
-                user_id: user.id,
-                role: user.role,
-                section: "system_monitoring"
-            }
-        });
-
         // Obtener información completa del sistema
         const comprehensiveData = await getComprehensiveHealth(request);
 

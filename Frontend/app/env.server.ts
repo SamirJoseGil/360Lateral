@@ -1,7 +1,7 @@
 // app/env.server.ts
 export const ENV = {
   // Para SSR, usar URL interna del contenedor Docker
-  API_BASE_URL: process.env.VITE_API_URL ?? "http://backend:8000/api",
+  API_BASE_URL: process.env.VITE_API_URL ?? "http://localhost:8000/api",
   API_BASE_URL_EXTERNAL: process.env.VITE_API_URL_EXTERNAL ?? "http://localhost:8000/api",
   NODE_ENV: process.env.NODE_ENV ?? "development",
   BACKEND_HOST: process.env.VITE_BACKEND_HOST ?? "backend",

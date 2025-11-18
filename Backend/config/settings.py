@@ -69,7 +69,8 @@ INSTALLED_APPS = [
     'apps.pot',                # 4️⃣ CUARTO - Independiente
     'apps.lotes',              # 5️⃣ QUINTO - Depende de User y POT
     'apps.documents',          # 6️⃣ SEXTO - Depende de User y Lotes
-    'apps.stats',              # 7️⃣ SÉPTIMO - Depende de User
+    'apps.solicitudes',        # ✅ AGREGAR - Nueva app para solicitudes
+    'apps.investment_criteria',  # ✅ AGREGAR
 ]
 
 # =============================================================================
@@ -396,8 +397,35 @@ if DEBUG:
 # FILE UPLOADS
 # =============================================================================
 
-FILE_UPLOAD_MAX_MEMORY_SIZE = int(os.getenv('MAX_UPLOAD_SIZE', 10 * 1024 * 1024))  # 10MB
-DATA_UPLOAD_MAX_MEMORY_SIZE = FILE_UPLOAD_MAX_MEMORY_SIZE
+# ===== FILE UPLOAD SETTINGS =====
+# ✅ NUEVO: Configuración de tamaño máximo de archivos
+FILE_UPLOAD_MAX_MEMORY_SIZE = 50 * 1024 * 1024  # 50MB en bytes
+DATA_UPLOAD_MAX_MEMORY_SIZE = 50 * 1024 * 1024  # 50MB en bytes
+
+# Configuración de almacenamiento de archivos
+MEDIA_URL = '/media/'
+MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
+
+# ✅ NUEVO: Tipos MIME permitidos para documentos
+ALLOWED_DOCUMENT_TYPES = [
+    'application/pdf',
+    'application/msword',
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    'application/vnd.ms-excel',
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    'image/jpeg',
+    'image/png',
+    'application/zip',
+    'application/x-rar-compressed',
+    'application/x-7z-compressed',
+]
+
+# ✅ NUEVO: Extensiones permitidas
+ALLOWED_DOCUMENT_EXTENSIONS = [
+    '.pdf', '.doc', '.docx', '.xls', '.xlsx',
+    '.jpg', '.jpeg', '.png', '.dwg', '.dxf',
+    '.zip', '.rar', '.7z'
+]
 
 # ✅ AGREGAR: Handlers para archivos temporales
 FILE_UPLOAD_HANDLERS = [
@@ -413,17 +441,19 @@ FILE_UPLOAD_TEMP_DIR.mkdir(parents=True, exist_ok=True)
 # EMAIL
 # =============================================================================
 
-if DJANGO_ENV == 'production':
-    EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
-    EMAIL_HOST = os.getenv('EMAIL_HOST', 'smtp.gmail.com')
-    EMAIL_PORT = int(os.getenv('EMAIL_PORT', 587))
-    EMAIL_USE_TLS = True
-    EMAIL_HOST_USER = os.getenv('EMAIL_HOST_USER')
-    EMAIL_HOST_PASSWORD = os.getenv('EMAIL_HOST_PASSWORD')
-    DEFAULT_FROM_EMAIL = EMAIL_HOST_USER
-else:
-    EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'
-    DEFAULT_FROM_EMAIL = 'noreply@lateral360.local'
+# ===== EMAIL CONFIGURATION (SMTP) =====
+# ❌ DESHABILITADO: SMTP no implementado aún
+# EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
+# EMAIL_HOST = os.getenv('EMAIL_HOST', 'smtp.gmail.com')
+# EMAIL_PORT = int(os.getenv('EMAIL_PORT', '587'))
+# EMAIL_USE_TLS = os.getenv('EMAIL_USE_TLS', 'True') == 'True'
+# EMAIL_HOST_USER = os.getenv('EMAIL_HOST_USER', '')
+# EMAIL_HOST_PASSWORD = os.getenv('EMAIL_HOST_PASSWORD', '')
+# DEFAULT_FROM_EMAIL = os.getenv('DEFAULT_FROM_EMAIL', 'noreply@lateral360.com')
+
+# ✅ TEMPORAL: Usar console backend (imprime emails en consola)
+EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'
+DEFAULT_FROM_EMAIL = 'noreply@lateral360.com'
 
 # =============================================================================
 # SECURITY HEADERS

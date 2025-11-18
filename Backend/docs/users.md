@@ -275,6 +275,87 @@ El módulo `users` gestiona la autenticación, perfiles y solicitudes de usuario
   - `days`: Días hacia atrás (default: 30)
   - `limit`: Límite de resultados (default: 10)
 
+### 4. Recuperación de Contraseña
+
+#### ⚠️ IMPORTANTE: SMTP NO CONFIGURADO
+
+Actualmente el sistema **NO envía emails**. El token se retorna directamente en la respuesta de la API.
+
+#### `POST /api/users/password-reset/request/`
+Solicitar recuperación de contraseña.
+
+**Request:**
+```json
+{
+    "email": "user@example.com"
+}
+```
+
+**Response (200 OK):**
+```json
+{
+    "success": true,
+    "message": "Token de recuperación generado exitosamente",
+    "data": {
+        "token": "abc123def456...",
+        "expires_at": "2024-01-15T11:30:00Z",
+        "user_email": "user@example.com",
+        "reset_url": "http://localhost:3000/reset-password?token=abc123def456..."
+    },
+    "warning": "⚠️ En producción, el token se enviará por email y NO se retornará en la respuesta"
+}
+```
+
+**⚠️ Nota de Seguridad:**
+- Este comportamiento es **SOLO para desarrollo**
+- En producción, el token debe enviarse por email
+- La respuesta NO debe incluir el token
+
+#### `POST /api/users/password-reset/verify-token/`
+Verificar el token de recuperación de contraseña.
+
+**Request:**
+```json
+{
+    "token": "abc123def456...",
+    "email": "user@example.com"
+}
+```
+
+**Response (200 OK):**
+```json
+{
+    "success": true,
+    "message": "Token verificado exitosamente",
+    "data": {
+        "user_id": "uuid",
+        "email": "user@example.com",
+        "expires_at": "2024-01-15T11:30:00Z"
+    }
+}
+```
+
+### 5. Cambiar Contraseña
+
+#### `POST /api/users/change-password/`
+Cambiar la contraseña del usuario autenticado.
+
+**Request:**
+```json
+{
+    "old_password": "contraseña_actual",
+    "new_password": "nueva_contraseña"
+}
+```
+
+**Response (200 OK):**
+```json
+{
+    "success": true,
+    "message": "Contraseña cambiada exitosamente"
+}
+```
+
 ## Notas Importantes
 
 ### Roles y Permisos

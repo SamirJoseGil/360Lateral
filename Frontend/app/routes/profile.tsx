@@ -3,7 +3,6 @@ import { useLoaderData, useActionData, Form, useNavigation } from "@remix-run/re
 import { useState } from "react";
 import type { LoaderFunctionArgs, ActionFunctionArgs } from "@remix-run/node";
 import { getUser } from "~/utils/auth.server";
-import { recordEvent } from "~/services/stats.server";
 import { getCurrentUser, updateCurrentUserProfile } from "~/services/users.server";
 import { changePassword, validatePassword } from "~/services/auth.server";
 
@@ -30,16 +29,6 @@ export async function loader({ request }: LoaderFunctionArgs) {
     try {
         // Obtener datos completos del usuario
         const { user: fullUserData, headers } = await getCurrentUser(request);
-
-        // Registrar evento de vista del perfil
-        await recordEvent(request, {
-            type: "view",
-            name: "profile_page",
-            value: {
-                user_id: user.id,
-                role: user.role
-            }
-        });
 
         return json({ user: fullUserData }, { headers });
     } catch (error) {

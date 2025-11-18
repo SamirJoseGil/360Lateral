@@ -21,21 +21,41 @@ class LoteSimpleSerializer(serializers.ModelSerializer):
 
 class LoteSerializer(serializers.ModelSerializer):
     """
-    Serializer principal para Lote - CORREGIDO sin campo comuna
+    ✅ MEJORADO: Incluir campos calculados de estado
     """
     owner_info = UserSimpleSerializer(source='owner', read_only=True)
+    status_display = serializers.CharField(source='get_status_display', read_only=True)
+    
+    # ✅ Campos calculados
+    can_be_shown = serializers.BooleanField(read_only=True)
+    can_be_edited = serializers.BooleanField(read_only=True)
+    is_rejected = serializers.BooleanField(read_only=True)
+    is_archived = serializers.BooleanField(read_only=True)
+    is_pending = serializers.BooleanField(read_only=True)
+    is_active = serializers.BooleanField(read_only=True)
     
     class Meta:
         model = Lote
         fields = [
             'id', 'nombre', 'cbml', 'matricula', 'codigo_catastral',
             'direccion', 'area', 'descripcion', 'barrio', 'estrato',
-            # ✅ ELIMINADO: 'comuna' - campo que no existe
             'latitud', 'longitud', 'clasificacion_suelo', 'uso_suelo', 
-            'tratamiento_pot', 'owner', 'owner_info', 'status', 
-            'is_verified', 'created_at', 'updated_at', 'metadatos'
+            'tratamiento_pot', 
+            'owner', 'owner_info', 
+            'status', 'status_display',
+            'is_verified', 'verified_at', 'verified_by',
+            'rejection_reason', 'rejected_at', 'rejected_by',
+            'created_at', 'updated_at', 'metadatos',
+            # ✅ Campos calculados
+            'can_be_shown', 'can_be_edited', 'is_rejected', 'is_archived', 
+            'is_pending', 'is_active'
         ]
-        read_only_fields = ['id', 'created_at', 'updated_at', 'owner']
+        read_only_fields = [
+            'id', 'created_at', 'updated_at', 'owner',
+            'verified_at', 'verified_by', 'rejected_at', 'rejected_by',
+            'status_display', 'can_be_shown', 'can_be_edited', 
+            'is_rejected', 'is_archived', 'is_pending', 'is_active'
+        ]
     
     def get_potencial_constructivo(self, obj):
         """Calcula potencial constructivo"""

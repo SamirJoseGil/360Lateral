@@ -204,50 +204,134 @@ class UserProfileSerializer(serializers.ModelSerializer):
 class UserRequestSerializer(serializers.ModelSerializer):
     """
     Serializer para UserRequest con información básica.
-    Usado en listas y vistas simplificadas.
+    ✅ MEJORADO: Incluye información de lote
     """
     status_display = serializers.CharField(source='get_status_display', read_only=True)
     request_type_display = serializers.CharField(source='get_request_type_display', read_only=True)
+    priority_display = serializers.CharField(source='get_priority_display', read_only=True)
     user_info = UserSimpleSerializer(source='user', read_only=True)
+    
+    # ✅ NUEVO: Información del lote
+    lote_info = serializers.SerializerMethodField()
     
     class Meta:
         model = UserRequest
         fields = [
-            'id', 'user', 'user_info', 'request_type', 'request_type_display', 
-            'title', 'status', 'status_display', 'created_at', 'updated_at'
+            'id', 'user', 'user_info', 'lote', 'lote_info',
+            'request_type', 'request_type_display', 
+            'title', 'status', 'status_display',
+            'priority', 'priority_display',
+            'created_at', 'updated_at', 'resolved_at',
+            'is_resolved', 'is_pending'
         ]
-        read_only_fields = ['id', 'user', 'created_at', 'updated_at']
+        read_only_fields = ['id', 'user', 'created_at', 'updated_at', 'resolved_at']
+    
+    def get_lote_info(self, obj):
+        """Información básica del lote si existe"""
+        if obj.lote:
+            return {
+                'id': str(obj.lote.id),
+                'nombre': obj.lote.nombre,
+                'direccion': obj.lote.direccion,
+                'status': obj.lote.status
+            }
+        return None
 
 
 class UserRequestDetailSerializer(serializers.ModelSerializer):
     """
     Serializer detallado para UserRequest.
-    Incluye toda la información incluyendo reviewer y notas.
+    ✅ MEJORADO: Incluye toda la información
     """
     status_display = serializers.CharField(source='get_status_display', read_only=True)
     request_type_display = serializers.CharField(source='get_request_type_display', read_only=True)
+    priority_display = serializers.CharField(source='get_priority_display', read_only=True)
     user_info = UserSimpleSerializer(source='user', read_only=True)
     reviewer_info = UserSimpleSerializer(source='reviewer', read_only=True)
+    lote_info = serializers.SerializerMethodField()
+    response_time_display = serializers.SerializerMethodField()
     
     class Meta:
         model = UserRequest
         fields = [
-            'id', 'user', 'user_info', 'request_type', 'request_type_display', 
-            'title', 'description', 'status', 'status_display', 'reference_id',
+            'id', 'user', 'user_info', 'lote', 'lote_info',
+            'request_type', 'request_type_display', 
+            'title', 'description', 'status', 'status_display',
+            'priority', 'priority_display', 'reference_id',
             'metadata', 'reviewer', 'reviewer_info', 'review_notes', 
-            'created_at', 'updated_at'
+            'created_at', 'updated_at', 'resolved_at',
+            'is_resolved', 'is_pending', 'response_time_display'
         ]
-        read_only_fields = ['id', 'user', 'created_at', 'updated_at']
+        read_only_fields = ['id', 'user', 'created_at', 'updated_at', 'resolved_at']
+    
+    def get_lote_info(self, obj):
+        """Información completa del lote si existe"""
+        if obj.lote:
+            return {
+                'id': str(obj.lote.id),
+                'nombre': obj.lote.nombre,
+                'direccion': obj.lote.direccion,
+                'cbml': obj.lote.cbml,
+                'area': float(obj.lote.area) if obj.lote.area else None,
+                'status': obj.lote.status,
+                'status_display': obj.lote.get_status_display()
+            }
+        return None
+    
+    def get_response_time_display(self, obj):
+        """Tiempo de respuesta en formato legible"""
+        response_time = obj.response_time
+        if response_time:
+            days = response_time.days
+            hours = response_time.seconds // 3600
+            if days > 0:
+                return f"{days} día{'s' if days != 1 else ''}, {hours} hora{'s' if hours != 1 else ''}"
+            return f"{hours} hora{'s' if hours != 1 else ''}"
+        return None
 
 
 class UserRequestCreateSerializer(serializers.ModelSerializer):
     """
     Serializer para crear nuevas solicitudes de usuario.
-    El usuario se asigna automáticamente del contexto.
+    ✅ MEJORADO: Incluye lote y prioridad
     """
     class Meta:
         model = UserRequest
-        fields = ['request_type', 'title', 'description', 'reference_id', 'metadata']
+        fields = [
+            'request_type', 'title', 'description', 
+            'lote', 'priority', 'reference_id', 'metadata'
+        ]
+    
+    def validate_request_type(self, value):
+        """✅ MEJORADO: Validar con mensaje claro"""
+        valid_types = [choice[0] for choice in UserRequest.REQUEST_TYPE_CHOICES]
+        
+        # ✅ NUEVO: Mapear valores antiguos a nuevos
+        old_to_new_mapping = {
+            'support': 'soporte_tecnico',
+            'analysis': 'analisis_urbanistico',
+            'general': 'consulta_general',
+            'validation': 'validacion_documentos',
+            'correction': 'correccion_datos',
+        }
+        
+        # Si viene un valor antiguo, mapearlo
+        if value in old_to_new_mapping:
+            mapped_value = old_to_new_mapping[value]
+            logger.warning(
+                f"⚠️ Request type '{value}' está deprecated. "
+                f"Usando '{mapped_value}' en su lugar."
+            )
+            return mapped_value
+        
+        # Validar que sea un tipo válido
+        if value not in valid_types:
+            raise serializers.ValidationError(
+                f"❌ Tipo de solicitud inválido: '{value}'. "
+                f"Los tipos válidos son: {', '.join(valid_types)}"
+            )
+        
+        return value
     
     def validate_title(self, value):
         """Validar título de solicitud"""
@@ -261,10 +345,26 @@ class UserRequestCreateSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError("La descripción debe tener al menos 20 caracteres")
         return value
     
+    def validate_lote(self, value):
+        """Validar que el lote exista y pertenezca al usuario"""
+        if value:
+            request = self.context.get('request')
+            if request and request.user:
+                # Verificar que el lote pertenezca al usuario (excepto admins)
+                if not request.user.is_admin and value.owner != request.user:
+                    raise serializers.ValidationError(
+                        "No tienes permiso para crear solicitudes sobre este lote"
+                    )
+        return value
+    
     def create(self, validated_data):
         """Crear solicitud asignando el usuario del contexto"""
         user = self.context['request'].user
         validated_data['user'] = user
+        
+        # ✅ NUEVO: Auto-asignar prioridad según tipo
+        if validated_data.get('request_type') == 'analisis_urbanistico':
+            validated_data.setdefault('priority', 'high')
         
         request = UserRequest.objects.create(**validated_data)
         logger.info(f"New user request created: {request.id} by {user.email}")
@@ -311,3 +411,187 @@ class RequestStatusSummarySerializer(serializers.Serializer):
         child=serializers.IntegerField(),
         read_only=True
     )
+
+
+class PasswordResetRequestSerializer(serializers.Serializer):
+    """
+    Serializer para solicitar recuperación de contraseña.
+    Solo requiere el email del usuario.
+    """
+    email = serializers.EmailField(required=True)
+    
+    def validate_email(self, value):
+        """Validar que el email existe en el sistema"""
+        email = value.lower().strip()
+        
+        if not User.objects.filter(email=email).exists():
+            # ✅ Por seguridad, no revelar si el email existe o no
+            # Retornar el mismo mensaje para evitar enumeration attacks
+            logger.warning(f"Password reset requested for non-existent email: {email}")
+        
+        return email
+
+
+class PasswordResetConfirmSerializer(serializers.Serializer):
+    """
+    Serializer para confirmar el reseteo de contraseña con token.
+    """
+    token = serializers.CharField(required=True, max_length=255)
+    new_password = serializers.CharField(
+        required=True,
+        write_only=True,
+        min_length=8,
+        style={'input_type': 'password'}
+    )
+    confirm_password = serializers.CharField(
+        required=True,
+        write_only=True,
+        min_length=8,
+        style={'input_type': 'password'}
+    )
+    
+    def validate_token(self, value):
+        """Validar que el token existe y es válido"""
+        from .models import PasswordResetToken
+        
+        try:
+            token_obj = PasswordResetToken.objects.get(token=value)
+            
+            if not token_obj.is_valid():
+                if token_obj.is_used:
+                    raise serializers.ValidationError("Este token ya ha sido utilizado")
+                else:
+                    raise serializers.ValidationError("Este token ha expirado")
+            
+            # Guardar el objeto token en el contexto para usarlo después
+            self.context['token_obj'] = token_obj
+            return value
+            
+        except PasswordResetToken.DoesNotExist:
+            raise serializers.ValidationError("Token inválido")
+    
+    def validate_new_password(self, value):
+        """Validar la nueva contraseña con los validadores de Django"""
+        from django.contrib.auth.password_validation import validate_password
+        from django.core.exceptions import ValidationError as DjangoValidationError
+        
+        try:
+            validate_password(value)
+        except DjangoValidationError as e:
+            raise serializers.ValidationError(list(e.messages))
+        
+        return value
+    
+    def validate(self, attrs):
+        """Validar que las contraseñas coincidan"""
+        if attrs['new_password'] != attrs['confirm_password']:
+            raise serializers.ValidationError({
+                'confirm_password': 'Las contraseñas no coinciden'
+            })
+        
+        return attrs
+
+
+class UserRegistrationSerializer(serializers.ModelSerializer):
+    """
+    ✅ NUEVO: Serializer para registro con validación de duplicados
+    """
+    password = serializers.CharField(
+        write_only=True,
+        required=True,
+        min_length=8,
+        style={'input_type': 'password'}
+    )
+    password_confirm = serializers.CharField(
+        write_only=True,
+        required=True,
+        min_length=8,
+        style={'input_type': 'password'}
+    )
+    
+    class Meta:
+        model = User
+        fields = [
+            'email', 'username', 'password', 'password_confirm',
+            'first_name', 'last_name', 'phone', 'company', 'role'
+        ]
+    
+    def validate_email(self, value):
+        """✅ Validar email único (case-insensitive)"""
+        email = value.lower().strip()
+        
+        if User.objects.filter(email__iexact=email).exists():
+            raise serializers.ValidationError(
+                f"Ya existe un usuario registrado con el email: {email}"
+            )
+        
+        return email
+    
+    def validate_phone(self, value):
+        """✅ Validar teléfono único si se proporciona"""
+        if value:
+            phone = value.strip()
+            
+            # Validar formato básico
+            import re
+            if not re.match(r'^[+]?[\d\s\-\(\)]{10,}$', phone):
+                raise serializers.ValidationError(
+                    "Formato de teléfono inválido. Debe tener al menos 10 dígitos."
+                )
+            
+            # Validar duplicados
+            if User.objects.filter(phone=phone).exists():
+                raise serializers.ValidationError(
+                    f"Ya existe un usuario registrado con el teléfono: {phone}"
+                )
+        
+        return value
+    
+    def validate_username(self, value):
+        """Validar username único"""
+        username = value.strip()
+        
+        if User.objects.filter(username__iexact=username).exists():
+            raise serializers.ValidationError(
+                f"El nombre de usuario '{username}' ya está en uso"
+            )
+        
+        return username
+    
+    def validate_password(self, value):
+        """Validar fortaleza de contraseña"""
+        from django.contrib.auth.password_validation import validate_password
+        from django.core.exceptions import ValidationError as DjangoValidationError
+        
+        try:
+            validate_password(value)
+        except DjangoValidationError as e:
+            raise serializers.ValidationError(list(e.messages))
+        
+        return value
+    
+    def validate(self, attrs):
+        """Validaciones cruzadas"""
+        # Verificar que las contraseñas coincidan
+        if attrs['password'] != attrs['password_confirm']:
+            raise serializers.ValidationError({
+                'password_confirm': 'Las contraseñas no coinciden'
+            })
+        
+        # Eliminar password_confirm antes de crear el usuario
+        attrs.pop('password_confirm')
+        
+        return attrs
+    
+    def create(self, validated_data):
+        """Crear usuario con contraseña hasheada"""
+        password = validated_data.pop('password')
+        
+        # Crear usuario
+        user = User.objects.create(**validated_data)
+        user.set_password(password)
+        user.save()
+        
+        logger.info(f"New user registered: {user.email} (role: {user.role})")
+        
+        return user

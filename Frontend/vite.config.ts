@@ -38,9 +38,9 @@ export default defineConfig(({ mode }) => {
     },
     // ✅ CRÍTICO: Exponer variables de entorno al servidor
     define: {
-      "process.env.BACKEND_URL": JSON.stringify(env.BACKEND_URL || "http://backend:8000"),
-      "process.env.API_URL": JSON.stringify(env.API_URL || env.BACKEND_URL || "http://backend:8000"),
-      "process.env.BACKEND_HOST": JSON.stringify(env.BACKEND_HOST || "backend"),
+      "process.env.BACKEND_URL": JSON.stringify(env.BACKEND_URL || "http://localhost:8000"),
+      "process.env.API_URL": JSON.stringify(env.API_URL || env.BACKEND_URL || "http://localhost:8000"),
+      "process.env.BACKEND_HOST": JSON.stringify(env.BACKEND_HOST || "localhost"),
       "process.env.BACKEND_PORT": JSON.stringify(env.BACKEND_PORT || "8000"),
       "process.env.DOCKER_ENV": JSON.stringify(env.DOCKER_ENV || "false"),
       "process.env.VITE_API_URL": JSON.stringify(env.VITE_API_URL || "http://localhost:8000"),

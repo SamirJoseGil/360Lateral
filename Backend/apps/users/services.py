@@ -301,3 +301,116 @@ class RequestStatusService:
         except Exception as e:
             logger.error(f"Error getting requests by date range: {str(e)}", exc_info=True)
             return UserRequest.objects.none()
+
+
+class PasswordResetService:
+    """
+    Servicio para gestionar recuperación de contraseñas.
+    ⚠️ TEMPORAL: Sin envío de emails (SMTP no configurado)
+    """
+    
+    @staticmethod
+    def generate_reset_token(user):
+        """
+        Genera un token de recuperación para un usuario.
+        
+        Args:
+            user: Objeto User
+            
+        Returns:
+            PasswordResetToken: Token generado
+        """
+        from .models import PasswordResetToken
+        from django.utils import timezone
+        from datetime import timedelta
+        import secrets
+        
+        # Generar token seguro
+        token_string = secrets.token_urlsafe(32)
+        
+        # Calcular expiración (1 hora desde ahora)
+        expires_at = timezone.now() + timedelta(hours=1)
+        
+        # Crear token
+        token = PasswordResetToken.objects.create(
+            user=user,
+            token=token_string,
+            expires_at=expires_at
+        )
+        
+        logger.info(f"Password reset token generated for {user.email}: {token_string}")
+        
+        # ⚠️ TEMPORAL: Imprimir token en consola (eliminar en producción)
+        print("\n" + "="*80)
+        print("🔐 PASSWORD RESET TOKEN GENERADO")
+        print("="*80)
+        print(f"Usuario: {user.email}")
+        print(f"Token: {token_string}")
+        print(f"Expira: {expires_at}")
+        print(f"URL: http://localhost:3000/reset-password?token={token_string}")
+        print("="*80 + "\n")
+        
+        return token
+    
+    @staticmethod
+    def reset_password(token_string, new_password):
+        """
+        Resetea la contraseña de un usuario usando un token.
+        
+        Args:
+            token_string: Token de recuperación
+            new_password: Nueva contraseña
+            
+        Returns:
+            tuple: (success: bool, message: str, user: User or None)
+        """
+        from .models import PasswordResetToken
+        
+        try:
+            # Obtener token
+            token = PasswordResetToken.objects.get(token=token_string)
+            
+            # Verificar validez
+            if not token.is_valid():
+                if token.is_used:
+                    return (False, "Este token ya ha sido utilizado", None)
+                else:
+                    return (False, "Este token ha expirado", None)
+            
+            # Cambiar contraseña
+            user = token.user
+            user.set_password(new_password)
+            user.save()
+            
+            # Marcar token como usado
+            token.mark_as_used()
+            
+            logger.info(f"Password reset successful for {user.email}")
+            
+            return (True, "Contraseña actualizada correctamente", user)
+            
+        except PasswordResetToken.DoesNotExist:
+            logger.warning(f"Invalid password reset token attempted: {token_string}")
+            return (False, "Token inválido", None)
+        except Exception as e:
+            logger.error(f"Error resetting password: {str(e)}", exc_info=True)
+            return (False, f"Error al resetear contraseña: {str(e)}", None)
+    
+    @staticmethod
+    def invalidate_user_tokens(user):
+        """
+        Invalida todos los tokens de recuperación de un usuario.
+        Útil cuando el usuario cambia su contraseña exitosamente.
+        
+        Args:
+            user: Objeto User
+        """
+        from .models import PasswordResetToken
+        
+        tokens = PasswordResetToken.objects.filter(
+            user=user,
+            is_used=False
+        )
+        
+        count = tokens.update(is_used=True)
+        logger.info(f"Invalidated {count} password reset tokens for {user.email}")

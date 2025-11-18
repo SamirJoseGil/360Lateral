@@ -32,8 +32,6 @@ class APILoggingMiddleware(MiddlewareMixin):
         
         # Paths que solo loggeamos en caso de error
         self.error_only_paths = [
-            '/api/stats/events/record/',
-            '/api/stats/metrics/',
             '/api/common/health/',
         ]
         

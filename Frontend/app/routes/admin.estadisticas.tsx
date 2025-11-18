@@ -4,19 +4,6 @@ import type { LoaderFunctionArgs } from "@remix-run/node";
 import { useLoaderData } from "@remix-run/react";
 import { useState, useEffect } from "react";
 import { getUser } from "~/utils/auth.server";
-import {
-    recordEvent,
-    getUserActivity,
-    getRecentActivity,
-    getAllChartData,
-    getDocumentsByMonth,
-    getEventDistribution,
-    getEventsDashboard,
-    getEventsCounts,
-    getDailyEvents,
-    getEventTypes
-} from "~/services/stats.server";
-import { PageViewTracker, useEventTracker } from "~/components/StatsTracker";
 
 export async function loader({ request }: LoaderFunctionArgs) {
     console.log("Admin estadisticas loader - processing request");
@@ -34,17 +21,6 @@ export async function loader({ request }: LoaderFunctionArgs) {
     }
 
     try {
-        // Registrar evento de vista de la página de estadísticas
-        await recordEvent(request, {
-            type: "view",
-            name: "admin_statistics_page",
-            value: {
-                user_id: user.id,
-                role: user.role,
-                section: "estadisticas"
-            }
-        });
-
         // Obtener datos para diferentes periodos
         const now = new Date();
 
@@ -68,116 +44,6 @@ export async function loader({ request }: LoaderFunctionArgs) {
         let dailyEvents: any[] = [];
         let eventTypes: any[] = [];
         let combinedHeaders = new Headers();
-
-        try {
-            const allChartDataResponse = await getAllChartData(request);
-            chartData = allChartDataResponse.chartData || {};
-            if (allChartDataResponse.headers) {
-                for (const [key, value] of allChartDataResponse.headers.entries()) {
-                    combinedHeaders.append(key, value);
-                }
-            }
-        } catch (error) {
-            console.error("Error al obtener datos de gráficos:", error);
-        }
-
-        try {
-            const documentsByMonthResponse = await getDocumentsByMonth(request);
-            documentsByMonth = documentsByMonthResponse.documentsByMonth || {};
-            if (documentsByMonthResponse.headers) {
-                for (const [key, value] of documentsByMonthResponse.headers.entries()) {
-                    combinedHeaders.append(key, value);
-                }
-            }
-        } catch (error) {
-            console.error("Error al obtener documentos por mes:", error);
-        }
-
-        try {
-            const eventDistributionResponse = await getEventDistribution(request);
-            eventDistribution = eventDistributionResponse.eventDistribution || {};
-            if (eventDistributionResponse.headers) {
-                for (const [key, value] of eventDistributionResponse.headers.entries()) {
-                    combinedHeaders.append(key, value);
-                }
-            }
-        } catch (error) {
-            console.error("Error al obtener distribución de eventos:", error);
-        }
-
-        try {
-            const userActivityResponse = await getUserActivity(request, 30);
-            userActivity = userActivityResponse.activity || {};
-            if (userActivityResponse.headers) {
-                for (const [key, value] of userActivityResponse.headers.entries()) {
-                    combinedHeaders.append(key, value);
-                }
-            }
-        } catch (error) {
-            console.error("Error al obtener actividad de usuario:", error);
-        }
-
-        try {
-            const recentActivityResponse = await getRecentActivity(request);
-            recentActivity = recentActivityResponse.recentActivity || {};
-            if (recentActivityResponse.headers) {
-                for (const [key, value] of recentActivityResponse.headers.entries()) {
-                    combinedHeaders.append(key, value);
-                }
-            }
-        } catch (error) {
-            console.error("Error al obtener actividad reciente:", error);
-        }
-
-        try {
-            const response = await getEventsDashboard(request);
-            eventsDashboard = response.eventsDashboard || {};
-            if (response.headers) {
-                for (const [key, value] of response.headers.entries()) {
-                    combinedHeaders.append(key, value);
-                }
-            }
-        } catch (error) {
-            console.error("Error al obtener dashboard de eventos:", error);
-        }
-
-        try {
-            const response = await getEventsCounts(request);
-            eventsCounts = response.eventsCounts || {};
-            if (response.headers) {
-                for (const [key, value] of response.headers.entries()) {
-                    combinedHeaders.append(key, value);
-                }
-            }
-        } catch (error) {
-            console.error("Error al obtener conteo de eventos:", error);
-            // Si falla este endpoint, intentamos usar los datos del dashboard de eventos
-            eventsCounts = eventsDashboard;
-        }
-
-        try {
-            const response = await getDailyEvents(request);
-            dailyEvents = response.dailyEvents || [];
-            if (response.headers) {
-                for (const [key, value] of response.headers.entries()) {
-                    combinedHeaders.append(key, value);
-                }
-            }
-        } catch (error) {
-            console.error("Error al obtener eventos diarios:", error);
-        }
-
-        try {
-            const response = await getEventTypes(request);
-            eventTypes = response.eventTypes || [];
-            if (response.headers) {
-                for (const [key, value] of response.headers.entries()) {
-                    combinedHeaders.append(key, value);
-                }
-            }
-        } catch (error) {
-            console.error("Error al obtener tipos de eventos:", error);
-        }
 
         const headers = combinedHeaders;
 
@@ -271,7 +137,6 @@ export default function AdminEstadisticas() {
     const { user, stats: rawStats, error } = useLoaderData<typeof loader>();
     const stats = rawStats as any;
     const [activeTab, setActiveTab] = useState<'general' | 'usuarios' | 'actividad' | 'eventos'>('general');
-    const trackEvent = useEventTracker();
 
     // Procesar y preparar datos para gráficos
     const processedDailyStats = stats.dailyStats.map((point: any) => ({
@@ -306,21 +171,10 @@ export default function AdminEstadisticas() {
     // Registrar cambios de pestañas
     const handleTabChange = (tab: 'general' | 'usuarios' | 'actividad' | 'eventos') => {
         setActiveTab(tab);
-        trackEvent({
-            type: 'action',
-            name: 'stats_tab_change',
-            value: { tab, user_id: user.id }
-        });
     };
 
     return (
         <div className="p-6">
-            {/* Rastreador de vistas de página */}
-            <PageViewTracker
-                pageName="admin_estadisticas"
-                additionalData={{ user_id: user.id, tab: activeTab }}
-            />
-
             {error && (
                 <div className="mb-6 bg-red-100 border-l-4 border-red-400 p-4">
                     <div className="flex">

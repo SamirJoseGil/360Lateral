@@ -8,7 +8,7 @@ const getApiBaseUrl = (): string => {
   if (typeof window === 'undefined') {
     // Estamos en el servidor (SSR) - usar URL interna de Docker
     console.log('[API] SSR - Using internal Docker URL');
-    return process.env.VITE_API_URL || 'http://backend:8000/api';
+    return process.env.VITE_API_URL || 'http://localhost:8000/api';
   }
   
   // En el cliente, usar la URL externa

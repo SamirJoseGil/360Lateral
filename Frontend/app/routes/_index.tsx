@@ -2,7 +2,6 @@ import { json } from "@remix-run/node";
 import { Link, useLoaderData } from "@remix-run/react";
 import type { LoaderFunctionArgs } from "@remix-run/node";
 import { getUser } from "~/utils/auth.server";
-import { recordEvent } from "~/services/stats.server";
 
 export async function loader({ request }: LoaderFunctionArgs) {
   // ✅ ELIMINAR logs excesivos

@@ -56,7 +56,7 @@ def create_users():
     if not wait_for_db():
         sys.exit(1)
     
-    # ✅ Datos base de usuarios con TODOS los campos requeridos según el modelo
+    # ✅ Datos base de usuarios con campos válidos según DEPARTMENT_CHOICES
     users_data = [
         {
             'email': 'admin@lateral360.com',
@@ -66,9 +66,10 @@ def create_users():
             'password': 'admin123',
             'is_staff': True,
             'is_superuser': True,
-            # Campos específicos para admin
-            'department': 'IT',  # Campo requerido para admin
-            'permissions_scope': 'full',  # Campo requerido para admin
+            # ✅ CORREGIDO: Usar valor válido de DEPARTMENT_CHOICES
+            # Opciones: normativa, soporte_tecnico, gestion_usuarios, desarrollo, comercial, legal, general
+            'department': 'desarrollo',  # ✅ Cambiado de 'IT' a 'desarrollo'
+            'permissions_scope': 'full',
         },
         {
             'email': 'propietario@lateral360.com',
@@ -77,8 +78,8 @@ def create_users():
             'role': 'owner',
             'password': 'propietario123',
             'phone': '+57 300 123 4567',
-            # ✅ CRÍTICO: Campos requeridos para propietarios
-            'document_type': 'CC',  # Cédula de ciudadanía
+            # Campos opcionales para owner (NO requeridos)
+            'document_type': 'CC',
             'document_number': '12345678',
             'address': 'Carrera 43A #16-25, Medellín',
         },
@@ -89,12 +90,12 @@ def create_users():
             'role': 'developer',
             'password': 'desarrollador123',
             'phone': '+57 300 765 4321',
-            # ✅ CRÍTICO: Campos requeridos para desarrolladores
-            'company_name': 'Constructora ABC S.A.S.',  # Campo requerido
+            # ✅ CRÍTICO: Campo requerido para developers
+            'company_name': 'Constructora ABC S.A.S.',
             'company_nit': '900123456-7',
             'position': 'Gerente de Proyectos',
             'experience_years': 8,
-            'focus_area': 'residential',  # residential, commercial, mixed, industrial
+            'focus_area': 'residential',
         }
     ]
     
@@ -216,11 +217,16 @@ def get_field_choices_info():
         
         for field in User._meta.get_fields():
             if hasattr(field, 'choices') and field.choices:
-                field_info[field.name] = [choice[0] for choice in field.choices]
+                field_info[field.name] = {
+                    'choices': [choice[0] for choice in field.choices],
+                    'labels': [choice[1] for choice in field.choices]
+                }
         
         if field_info:
-            for field_name, choices in field_info.items():
-                print(f"  - {field_name}: {choices}")
+            for field_name, info in field_info.items():
+                print(f"\n  📋 {field_name}:")
+                for choice, label in zip(info['choices'], info['labels']):
+                    print(f"     - '{choice}': {label}")
         else:
             print("  No se encontraron campos con choices definidas")
             

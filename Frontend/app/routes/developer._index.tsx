@@ -2,7 +2,6 @@ import { json, redirect } from "@remix-run/node";
 import { Link, useLoaderData } from "@remix-run/react";
 import type { LoaderFunctionArgs } from "@remix-run/node";
 import { getUser } from "~/utils/auth.server";
-import { getUserActivity, recordEvent } from "~/services/stats.server";
 import { fetchWithAuth } from "~/utils/auth.server";
 import { getFavoriteLotes } from "~/services/lotes.server";
 
@@ -34,22 +33,11 @@ export async function loader({ request }: LoaderFunctionArgs) {
     const user = await getUser(request);
 
     try {
-        // Registrar evento de visita al dashboard
-        await recordEvent(request, {
-            type: "view",
-            name: "developer_dashboard",
-            value: {
-                user_id: user?.id
-            }
-        });
-
         // Obtener la actividad del usuario de forma paralela
-        const [activityResponse, favoritesResponse] = await Promise.allSettled([
-            getUserActivity(request, 30),
+        const [favoritesResponse] = await Promise.allSettled([
             getFavoriteLotes(request)
         ]);
 
-        const activity = activityResponse.status === 'fulfilled' ? activityResponse.value.activity : null;
         const favoritesData = favoritesResponse.status === 'fulfilled' ? favoritesResponse.value : { favorites: [] };
 
         // Intentar obtener criterios de inversión reales desde la API
@@ -88,26 +76,12 @@ export async function loader({ request }: LoaderFunctionArgs) {
             potentialValue: item.lote?.valor_potencial || item.potentialValue || (item.price * 1.25) || 0
         }));
 
-        // Calcular estadísticas reales basadas en datos de la API
-        const stats = {
-            searches: activity?.events_by_type?.search || 0,
-            favorites: favoriteLots.length,
-            offers: activity?.events_by_type?.action || 0,
-            matches: activity?.events_by_type?.match || 0,
-            analyses: activity?.events_by_type?.analysis || activity?.events_by_type?.view || 0,
-            savedSearches: searchCriteria.length,
-            contacts: activity?.events_by_type?.contact || 0,
-            totalEvents: activity?.total_events || 0
-        };
-
         return json({
             user,
             searchCriteria,
             favoriteLots,
-            stats,
-            activity
         }, {
-            headers: activityResponse.status === 'fulfilled' ? activityResponse.value.headers : new Headers()
+            headers: favoritesResponse.status === 'fulfilled' ? favoritesResponse.value.headers : new Headers()
         });
     } catch (error) {
         console.error("Error cargando dashboard:", error);
@@ -144,7 +118,7 @@ const formatCurrency = (value: number): string => {
 };
 
 export default function DeveloperDashboard() {
-    const { user, searchCriteria, favoriteLots, stats } =
+    const { user, searchCriteria, favoriteLots } =
         useLoaderData<typeof loader>();
 
     return (
@@ -178,7 +152,7 @@ export default function DeveloperDashboard() {
                         </div>
                         <div>
                             <p className="text-gray-500 text-sm">Lotes Favoritos</p>
-                            <p className="text-2xl font-semibold">{stats.favorites}</p>
+                            <p className="text-2xl font-semibold">{favoriteLots.length}</p>
                         </div>
                     </div>
                 </div>

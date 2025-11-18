@@ -190,72 +190,131 @@ export default function AdminLotes() {
     const getStatusBadge = (lote: Lote) => {
         const baseClass = "px-2.5 py-0.5 rounded-full text-xs font-medium inline-flex items-center";
 
-        if (lote.is_verified) {
+        // ✅ PRIORIDAD 1: Lotes rechazados
+        if (lote.status === 'rejected') {
             return (
-                <span className={`${baseClass} bg-green-100 text-green-800`}>
+                <span className={`${baseClass} bg-red-100 text-red-800 border border-red-300`}>
                     <svg className="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20">
-                        <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                        <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
                     </svg>
-                    Verificado
+                    Rechazado
                 </span>
             );
         }
 
-        switch (lote.status) {
-            case 'active':
-                return <span className={`${baseClass} bg-blue-100 text-blue-800`}>Activo</span>;
-            case 'pending':
-                return <span className={`${baseClass} bg-yellow-100 text-yellow-800`}>Pendiente</span>;
-            case 'rejected':
-                return <span className={`${baseClass} bg-red-100 text-red-800`}>Rechazado</span>;
-            case 'archived':
-                return <span className={`${baseClass} bg-gray-100 text-gray-800`}>Archivado</span>;
-            default:
-                return <span className={`${baseClass} bg-gray-100 text-gray-800`}>{lote.status}</span>;
+        // ✅ PRIORIDAD 2: Lotes verificados y activos (LOCKED - solo editar)
+        if (lote.is_verified && lote.status === 'active') {
+            return (
+                <div className="flex items-center gap-2">
+                    <span className={`${baseClass} bg-green-100 text-green-800 border border-green-300`}>
+                        <svg className="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20">
+                            <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                        </svg>
+                        Verificado
+                    </span>
+                    {/* ✅ Indicador visual de que está bloqueado */}
+                    <svg className="w-3 h-3 text-green-600" fill="currentColor" viewBox="0 0 20 20" title="Verificado - Solo editable desde vista de edición">
+                        <path fillRule="evenodd" d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z" clipRule="evenodd" />
+                    </svg>
+                </div>
+            );
         }
+
+        // ✅ PRIORIDAD 3: Lotes archivados
+        if (lote.status === 'archived') {
+            return (
+                <span className={`${baseClass} bg-gray-100 text-gray-800 border border-gray-300`}>
+                    <svg className="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20">
+                        <path d="M4 3a2 2 0 100 4h12a2 2 0 100-4H4z" />
+                        <path fillRule="evenodd" d="M3 8h14v7a2 2 0 01-2 2H5a2 2 0 01-2-2V8zm5 3a1 1 0 011-1h2a1 1 0 110 2H9a1 1 0 01-1-1z" clipRule="evenodd" />
+                    </svg>
+                    Archivado
+                </span>
+            );
+        }
+
+        // ✅ PRIORIDAD 4: Lotes pendientes
+        if (lote.status === 'pending') {
+            return (
+                <span className={`${baseClass} bg-yellow-100 text-yellow-800 border border-yellow-300`}>
+                    <svg className="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20">
+                        <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clipRule="evenodd" />
+                    </svg>
+                    Pendiente
+                </span>
+            );
+        }
+
+        // ✅ FALLBACK: Activo sin verificar
+        if (lote.status === 'active') {
+            return (
+                <span className={`${baseClass} bg-blue-100 text-blue-800 border border-blue-300`}>
+                    <svg className="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20">
+                        <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                    </svg>
+                    Activo
+                </span>
+            );
+        }
+
+        // Default
+        return <span className={`${baseClass} bg-gray-100 text-gray-800`}>{lote.status}</span>;
     };
 
     const getActionButtons = (lote: Lote) => {
+        // ✅ LOTES VERIFICADOS: Solo permitir editar (acciones bloqueadas)
+        if (lote.is_verified && lote.status === 'active') {
+            return (
+                <div className="flex items-center gap-2">
+                    <span className="text-xs text-gray-500 italic">
+                        Verificado
+                    </span>
+                    <span className="text-xs text-gray-400">
+                        (editar para cambiar)
+                    </span>
+                </div>
+            );
+        }
+
+        // ✅ LOTES PENDIENTES: Verificar o Rechazar
         if (lote.status === 'pending') {
             return (
-                <>
+                <div className="flex gap-2">
                     <button
                         onClick={() => handleLoteAction(lote, 'verify')}
-                        className="text-green-600 hover:text-green-900"
-                        title="Verificar lote"
+                        className="inline-flex items-center px-3 py-1 text-xs font-medium text-green-700 bg-green-50 border border-green-300 rounded hover:bg-green-100 transition-colors"
+                        title="Verificar y activar lote"
                     >
+                        <svg className="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20">
+                            <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                        </svg>
                         Verificar
                     </button>
                     <button
                         onClick={() => handleLoteAction(lote, 'reject')}
-                        className="text-red-600 hover:text-red-900 ml-4"
+                        className="inline-flex items-center px-3 py-1 text-xs font-medium text-red-700 bg-red-50 border border-red-300 rounded hover:bg-red-100 transition-colors"
                         title="Rechazar lote"
                     >
+                        <svg className="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20">
+                            <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
+                        </svg>
                         Rechazar
                     </button>
-                </>
+                </div>
             );
         }
 
-        if (lote.status === 'active' || lote.is_verified) {
-            return (
-                <button
-                    onClick={() => handleLoteAction(lote, 'archive')}
-                    className="text-yellow-600 hover:text-yellow-900"
-                    title="Archivar lote"
-                >
-                    Archivar
-                </button>
-            );
-        }
-
+        // ✅ LOTES ARCHIVADOS O RECHAZADOS: Reactivar
         if (lote.status === 'archived' || lote.status === 'rejected') {
             return (
                 <button
                     onClick={() => handleLoteAction(lote, 'reactivate')}
-                    className="text-blue-600 hover:text-blue-900"
+                    className="inline-flex items-center px-3 py-1 text-xs font-medium text-blue-700 bg-blue-50 border border-blue-300 rounded hover:bg-blue-100 transition-colors"
                     title="Reactivar lote"
                 >
+                    <svg className="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20">
+                        <path fillRule="evenodd" d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 010 2H4a1 1 0 01-1-1V3a1 1 0 011-1zm.008 9.057a1 1 0 011.276.61A5.002 5.002 0 0014.001 13H11a1 1 0 110-2h5a1 1 0 011 1v5a1 1 0 11-2 0v-2.101a7.002 7.002 0 01-11.601-2.566 1 1 0 01.61-1.276z" clipRule="evenodd" />
+                    </svg>
                     Reactivar
                 </button>
             );
@@ -318,22 +377,34 @@ export default function AdminLotes() {
             </div>
 
             {/* Estadísticas rápidas */}
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
+            <div className="grid grid-cols-1 md:grid-cols-5 gap-6 mb-8">
                 <div className="bg-white rounded-lg shadow p-6">
                     <div className="text-2xl font-bold text-blue-600">{count}</div>
                     <div className="text-sm text-gray-600">Total Lotes</div>
                 </div>
                 <div className="bg-white rounded-lg shadow p-6">
                     <div className="text-2xl font-bold text-green-600">
-                        {lotes ? lotes.filter(l => l?.status === 'active').length : 0}
+                        {lotes ? lotes.filter(l => l?.status === 'active' && l?.is_verified).length : 0}
                     </div>
-                    <div className="text-sm text-gray-600">Activos</div>
+                    <div className="text-sm text-gray-600">Verificados</div>
                 </div>
                 <div className="bg-white rounded-lg shadow p-6">
                     <div className="text-2xl font-bold text-yellow-600">
                         {lotes ? lotes.filter(l => l?.status === 'pending').length : 0}
                     </div>
                     <div className="text-sm text-gray-600">Pendientes</div>
+                </div>
+                <div className="bg-white rounded-lg shadow p-6">
+                    <div className="text-2xl font-bold text-red-600">
+                        {lotes ? lotes.filter(l => l?.status === 'rejected').length : 0}
+                    </div>
+                    <div className="text-sm text-gray-600">Rechazados</div>
+                </div>
+                <div className="bg-white rounded-lg shadow p-6">
+                    <div className="text-2xl font-bold text-gray-600">
+                        {lotes ? lotes.filter(l => l?.status === 'archived').length : 0}
+                    </div>
+                    <div className="text-sm text-gray-600">Archivados</div>
                 </div>
             </div>
             {/* Tabla de lotes */}
@@ -355,7 +426,7 @@ export default function AdminLotes() {
                                     Área (m²)
                                 </th>
                                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                    Estado / Verificación
+                                    Estado
                                 </th>
                                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                                     Acciones
@@ -376,7 +447,7 @@ export default function AdminLotes() {
                                         </div>
                                     </td>
                                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                                        {lote.cbml}
+                                        {lote.cbml || 'N/A'}
                                     </td>
                                     <td className="px-6 py-4 whitespace-nowrap">
                                         {lote.ownerInfo ? (
@@ -419,26 +490,46 @@ export default function AdminLotes() {
                                     <td className="px-6 py-4 whitespace-nowrap">
                                         {getStatusBadge(lote)}
                                     </td>
-                                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium space-x-2">
-                                        <Link
-                                            to={`/admin/lote/${lote.id}`}
-                                            className="text-blue-600 hover:text-blue-900"
-                                        >
-                                            Ver
-                                        </Link>
-                                        <Link
-                                            to={`/admin/lotes/${lote.id}/editar`}
-                                            className="text-indigo-600 hover:text-indigo-900 ml-4"
-                                        >
-                                            Editar
-                                        </Link>
-                                        {getActionButtons(lote)}
+                                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                                        <div className="flex items-center gap-3">
+                                            {/* ✅ SIEMPRE mostrar botones Ver y Editar */}
+                                            <Link
+                                                to={`/admin/lote/${lote.id}`}
+                                                className="text-blue-600 hover:text-blue-900 font-medium"
+                                            >
+                                                Ver
+                                            </Link>
+                                            <Link
+                                                to={`/admin/lotes/${lote.id}/editar`}
+                                                className="text-indigo-600 hover:text-indigo-900 font-medium"
+                                            >
+                                                Editar
+                                            </Link>
+                                            
+                                            {/* ✅ Acciones según estado */}
+                                            <div className="border-l pl-3 ml-1">
+                                                {getActionButtons(lote)}
+                                            </div>
+                                        </div>
                                     </td>
                                 </tr>
                             )) : null}
                         </tbody>
                     </table>
                 </div>
+
+                {/* ✅ Mensaje si no hay lotes */}
+                {(!lotes || lotes.length === 0) && !isLoading && (
+                    <div className="text-center py-12">
+                        <svg className="mx-auto h-12 w-12 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4" />
+                        </svg>
+                        <h3 className="mt-2 text-sm font-medium text-gray-900">No hay lotes</h3>
+                        <p className="mt-1 text-sm text-gray-500">
+                            {searchQuery ? 'No se encontraron lotes con ese criterio de búsqueda' : 'Aún no hay lotes registrados en el sistema'}
+                        </p>
+                    </div>
+                )}
             </div>
 
             {/* Modal de confirmación MEJORADO */}

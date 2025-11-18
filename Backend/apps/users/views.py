@@ -16,10 +16,13 @@ from .serializers import (
     UserSerializer, UserProfileSerializer, UserRequestSerializer, 
     UserRequestDetailSerializer, UserRequestCreateSerializer, 
     UserRequestUpdateSerializer, RequestStatusSummarySerializer,
-    UpdateProfileSerializer
+    UpdateProfileSerializer,
+    PasswordResetRequestSerializer,
+    PasswordResetConfirmSerializer,
+    UserRegistrationSerializer,
 )
 from .permissions import CanManageUsers, IsOwnerOrAdmin, IsRequestOwnerOrStaff
-from .services import RequestStatusService
+from .services import RequestStatusService, PasswordResetService
 
 # Utilidades comunes
 try:
@@ -125,10 +128,7 @@ class UserListCreateView(generics.ListCreateAPIView):
 class UserDetailView(generics.RetrieveUpdateDestroyAPIView):
     """
     Obtiene, actualiza o elimina un usuario específico.
-    
-    GET: Obtener detalles de usuario
-    PUT/PATCH: Actualizar usuario
-    DELETE: Eliminar usuario (solo admin)
+    ✅ CORREGIDO: Soft delete
     """
     queryset = User.objects.all()
     serializer_class = UserSerializer
@@ -222,6 +222,12 @@ class UserDetailView(generics.RetrieveUpdateDestroyAPIView):
             'message': 'Usuario actualizado exitosamente',
             'user': serializer.data
         })
+    
+    def perform_destroy(self, instance):
+        """✅ SOFT DELETE: Desactivar en lugar de eliminar"""
+        reason = f"Usuario eliminado por {self.request.user.email}"
+        instance.soft_delete(reason=reason)
+        logger.info(f"User {instance.email} soft deleted by {self.request.user.email}")
 
 
 @api_view(['GET'])
@@ -479,6 +485,244 @@ def check_user_exists(request, user_id):
             'error': 'Error interno',
             'details': str(e)
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+# =============================================================================
+# RECUPERACIÓN DE CONTRASEÑA
+# ⚠️ ADVERTENCIA: SMTP NO CONFIGURADO
+# 
+# ESTADO ACTUAL:
+# - El token se retorna directamente en la respuesta (INSEGURO)
+# - El token se imprime en consola
+# - NO se envían emails
+#
+# PENDIENTE PARA PRODUCCIÓN:
+# 1. Configurar SMTP en settings.py
+# 2. Eliminar retorno de token en request_password_reset
+# 3. Implementar envío de email con PasswordResetService.send_reset_email()
+# 4. Actualizar frontend para mostrar mensaje de "revisa tu email"
+# =============================================================================
+
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def request_password_reset(request):
+    """
+    Solicitar recuperación de contraseña.
+    ⚠️ TEMPORAL: Retorna el token directamente (sin envío de email)
+    
+    POST /api/users/password-reset/request/
+    Body: { "email": "user@example.com" }
+    """
+    serializer = PasswordResetRequestSerializer(data=request.data)
+    
+    if not serializer.is_valid():
+        return Response({
+            'success': False,
+            'errors': serializer.errors
+        }, status=status.HTTP_400_BAD_REQUEST)
+    
+    email = serializer.validated_data['email']
+    
+    try:
+        user = User.objects.get(email__iexact=email)
+        
+        # Generar token
+        token = PasswordResetService.generate_reset_token(user)
+        
+        # Audit log
+        audit_log(
+            action='PASSWORD_RESET_REQUESTED',
+            user=user,
+            details={'email': email},
+            ip_address=get_client_ip(request)
+        )
+        
+        logger.info(f"Password reset requested for {email}")
+        
+        # ⚠️ TEMPORAL: Retornar token directamente (INSEGURO - solo para desarrollo)
+        # En producción, esto debería enviar un email y NO retornar el token
+        return Response({
+            'success': True,
+            'message': 'Token de recuperación generado exitosamente',
+            'data': {
+                'token': token.token,  # ⚠️ INSEGURO - Solo para desarrollo
+                'expires_at': token.expires_at.isoformat(),
+                'user_email': user.email,
+                # URL para copiar y pegar
+                'reset_url': f"http://localhost:3000/reset-password?token={token.token}"
+            },
+            'warning': '⚠️ En producción, el token se enviará por email y NO se retornará en la respuesta'
+        })
+    
+    except User.DoesNotExist:
+        # ✅ Por seguridad, retornar el mismo mensaje
+        # Esto evita que atacantes puedan enumerar emails válidos
+        logger.warning(f"Password reset requested for non-existent email: {email}")
+        
+        return Response({
+            'success': False,
+            'error': f'No existe un usuario con el email: {email}'
+        }, status=status.HTTP_404_NOT_FOUND)
+    
+    except Exception as e:
+        logger.error(f"Error in password reset request: {str(e)}", exc_info=True)
+        return Response({
+            'success': False,
+            'error': 'Error interno del servidor'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def verify_reset_token(request):
+    """
+    Verificar si un token de recuperación es válido.
+    
+    POST /api/users/password-reset/verify-token/
+    Body: { "token": "abc123..." }
+    """
+    from .models import PasswordResetToken
+    
+    token_string = request.data.get('token')
+    
+    if not token_string:
+        return Response({
+            'success': False,
+            'error': 'Token es requerido'
+        }, status=status.HTTP_400_BAD_REQUEST)
+    
+    try:
+        token = PasswordResetToken.objects.get(token=token_string)
+        
+        is_valid = token.is_valid()
+        
+        return Response({
+            'success': True,
+            'valid': is_valid,
+            'message': 'Token válido' if is_valid else 'Token inválido o expirado',
+            'user_email': token.user.email if is_valid else None
+        })
+        
+    except PasswordResetToken.DoesNotExist:
+        return Response({
+            'success': True,
+            'valid': False,
+            'message': 'Token inválido'
+        })
+
+
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def confirm_password_reset(request):
+    """
+    Confirmar el reseteo de contraseña con token.
+    
+    POST /api/users/password-reset/confirm/
+    Body: {
+        "token": "abc123...",
+        "new_password": "newpass123",
+        "confirm_password": "newpass123"
+    }
+    """
+    serializer = PasswordResetConfirmSerializer(
+        data=request.data,
+        context={'request': request}
+    )
+    
+    if not serializer.is_valid():
+        return Response({
+            'success': False,
+            'errors': serializer.errors
+        }, status=status.HTTP_400_BAD_REQUEST)
+    
+    # Obtener datos validados
+    token_string = serializer.validated_data['token']
+    new_password = serializer.validated_data['new_password']
+    
+    # Resetear contraseña
+    success, message, user = PasswordResetService.reset_password(
+        token_string,
+        new_password
+    )
+    
+    if success:
+        # Invalidar otros tokens del usuario
+        PasswordResetService.invalidate_user_tokens(user)
+        
+        # Audit log
+        audit_log(
+            action='PASSWORD_RESET_COMPLETED',
+            user=user,
+            details={'email': user.email},
+            ip_address=get_client_ip(request)
+        )
+        
+        logger.info(f"Password reset completed for {user.email}")
+        
+        return Response({
+            'success': True,
+            'message': message
+        })
+    else:
+        return Response({
+            'success': False,
+            'error': message
+        }, status=status.HTTP_400_BAD_REQUEST)
+
+
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def check_email_exists(request):
+    """
+    ✅ NUEVO: Verificar si un email ya está registrado.
+    Útil para validación en tiempo real en el frontend.
+    
+    POST /api/users/check-email/
+    Body: { "email": "user@example.com" }
+    """
+    email = request.data.get('email')
+    
+    if not email:
+        return Response({
+            'success': False,
+            'error': 'Email es requerido'
+        }, status=status.HTTP_400_BAD_REQUEST)
+    
+    email = email.lower().strip()
+    exists = User.objects.filter(email__iexact=email).exists()
+    
+    return Response({
+        'success': True,
+        'exists': exists,
+        'email': email
+    })
+
+
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def check_phone_exists(request):
+    """
+    ✅ NUEVO: Verificar si un teléfono ya está registrado.
+    
+    POST /api/users/check-phone/
+    Body: { "phone": "+57 300 123 4567" }
+    """
+    phone = request.data.get('phone')
+    
+    if not phone:
+        return Response({
+            'success': False,
+            'error': 'Teléfono es requerido'
+        }, status=status.HTTP_400_BAD_REQUEST)
+    
+    phone = phone.strip()
+    exists = User.objects.filter(phone=phone).exists()
+    
+    return Response({
+        'success': True,
+        'exists': exists,
+        'phone': phone
+    })
 
 
 # =============================================================================

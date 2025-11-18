@@ -4,7 +4,6 @@ import type { LoaderFunctionArgs, ActionFunctionArgs } from "@remix-run/node";
 import { Form, useLoaderData, useActionData, useNavigation } from "@remix-run/react";
 import { useState } from "react";
 import { getUser } from "~/utils/auth.server";
-import { recordEvent } from "~/services/stats.server";
 import {
     getTratamientosPOT,
     getTratamientoPOTById,
@@ -22,17 +21,6 @@ export async function loader({ request }: LoaderFunctionArgs) {
     }
 
     try {
-        // Registrar vista de la página POT
-        await recordEvent(request, {
-            type: "view",
-            name: "admin_pot_page",
-            value: {
-                user_id: user.id,
-                role: user.role,
-                section: "pot"
-            }
-        });
-
         // Obtener tratamientos POT con paginación
         const url = new URL(request.url);
         const page = parseInt(url.searchParams.get("page") || "1");
@@ -101,16 +89,6 @@ export async function action({ request }: ActionFunctionArgs) {
                     activo: formData.get("activo") === "true"
                 };
 
-                await recordEvent(request, {
-                    type: "action",
-                    name: "pot_tratamiento_created",
-                    value: {
-                        user_id: user.id,
-                        codigo: tratamientoData.codigo,
-                        nombre: tratamientoData.nombre
-                    }
-                });
-
                 const result = await createTratamientoPOT(request, tratamientoData);
 
                 return json({
@@ -137,16 +115,6 @@ export async function action({ request }: ActionFunctionArgs) {
                     activo: formData.get("activo") === "true"
                 };
 
-                await recordEvent(request, {
-                    type: "action",
-                    name: "pot_tratamiento_updated",
-                    value: {
-                        user_id: user.id,
-                        tratamiento_id: id,
-                        codigo: tratamientoData.codigo
-                    }
-                });
-
                 const result = await updateTratamientoPOT(request, id, tratamientoData);
 
                 return json({
@@ -160,15 +128,6 @@ export async function action({ request }: ActionFunctionArgs) {
 
             case "delete": {
                 const id = formData.get("id") as string;
-
-                await recordEvent(request, {
-                    type: "action",
-                    name: "pot_tratamiento_deleted",
-                    value: {
-                        user_id: user.id,
-                        tratamiento_id: id
-                    }
-                });
 
                 const result = await deleteTratamientoPOT(request, id);
 

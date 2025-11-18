@@ -1,23 +1,53 @@
 import { useFetcher } from "@remix-run/react";
-import { useState } from "react";
-import type { Lote } from "~/services/lotes.server";
+import { useState, useEffect } from "react";
 
-type LoteStatusManagerProps = {
+interface Lote {
+    id: string;
+    nombre: string;
+    status: string;
+    is_verified: boolean;
+    rejection_reason?: string;
+    rejected_at?: string;
+    rejected_by?: string;
+}
+
+interface LoteStatusManagerProps {
     lote: Lote;
     onSuccess?: () => void;
-};
+}
 
 export default function LoteStatusManager({ lote, onSuccess }: LoteStatusManagerProps) {
     const fetcher = useFetcher();
     const [showRejectModal, setShowRejectModal] = useState(false);
-    const [rejectReason, setRejectReason] = useState("");
     const [showConfirmModal, setShowConfirmModal] = useState(false);
+    const [rejectReason, setRejectReason] = useState("");
     const [pendingAction, setPendingAction] = useState<{
         type: 'verify' | 'archive' | 'reactivate';
         label: string;
     } | null>(null);
 
     const isSubmitting = fetcher.state === "submitting" || fetcher.state === "loading";
+
+    // ✅ CRÍTICO: Detectar cuando la acción se completó exitosamente
+    useEffect(() => {
+        if (fetcher.data?.success && !isSubmitting) {
+            console.log("✅ Action completed successfully:", fetcher.data.message);
+            
+            // Cerrar modales
+            setShowRejectModal(false);
+            setShowConfirmModal(false);
+            setPendingAction(null);
+            setRejectReason("");
+            
+            // Callback de éxito
+            if (onSuccess) {
+                // Pequeño delay para que el servidor actualice
+                setTimeout(() => {
+                    onSuccess();
+                }, 500);
+            }
+        }
+    }, [fetcher.data, isSubmitting, onSuccess]);
 
     const handleAction = (action: 'verify' | 'reject' | 'archive' | 'reactivate', label: string) => {
         if (action === 'reject') {
@@ -30,242 +60,199 @@ export default function LoteStatusManager({ lote, onSuccess }: LoteStatusManager
 
     const confirmAction = () => {
         if (pendingAction) {
+            console.log(`🔄 Submitting ${pendingAction.type} action for lote ${lote.id}`);
+            
             const formData = new FormData();
-            formData.append("action", pendingAction.type);
-            formData.append("loteId", lote.id?.toString() || "");
-
-            fetcher.submit(formData, { method: "post" });
-
-            setShowConfirmModal(false);
-            setPendingAction(null);
-
-            if (onSuccess) {
-                setTimeout(onSuccess, 1000);
-            }
+            formData.append("_action", pendingAction.type);
+            formData.append("loteId", lote.id);
+            
+            // ✅ CRÍTICO: Usar fetcher.submit con method POST
+            fetcher.submit(formData, {
+                method: "post"
+            });
         }
     };
 
     const confirmReject = () => {
         if (!rejectReason.trim()) {
-            alert("Por favor, proporciona una razón para el rechazo");
+            alert("Debes proporcionar una razón para el rechazo");
             return;
         }
 
+        console.log(`🔄 Submitting reject action for lote ${lote.id}: ${rejectReason}`);
+        
         const formData = new FormData();
-        formData.append("action", "reject");
-        formData.append("loteId", lote.id?.toString() || "");
-        formData.append("reason", rejectReason);
-
-        fetcher.submit(formData, { method: "post" });
-
-        setShowRejectModal(false);
-        setRejectReason("");
-
-        if (onSuccess) {
-            setTimeout(onSuccess, 1000);
-        }
+        formData.append("_action", "reject");
+        formData.append("loteId", lote.id);
+        formData.append("reason", rejectReason.trim());
+        
+        // ✅ CRÍTICO: Usar fetcher.submit con method POST
+        fetcher.submit(formData, {
+            method: "post"
+        });
     };
 
-    const getStatusInfo = () => {
-        if (lote.is_verified) {
-            return {
-                color: 'green',
+    // ✅ Determinar qué botones mostrar según el estado actual
+    const getAvailableActions = () => {
+        const actions: Array<{
+            type: 'verify' | 'reject' | 'archive' | 'reactivate';
+            label: string;
+            color: string;
+            icon: JSX.Element;
+        }> = [];
+
+        // Estado: PENDING
+        if (lote.status === 'pending') {
+            actions.push({
+                type: 'verify',
+                label: 'Verificar y Activar',
+                color: 'bg-green-600 hover:bg-green-700',
                 icon: (
                     <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
-                        <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                        <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
                     </svg>
-                ),
-                label: 'Verificado',
-                description: lote.verified_at ? `Verificado el ${new Date(lote.verified_at).toLocaleDateString()}` : 'Verificado'
-            };
-        }
-
-        switch (lote.status || lote.estado) {
-            case 'active':
-                return {
-                    color: 'blue',
-                    icon: (
-                        <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
-                            <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-8.707l-3-3a1 1 0 00-1.414 1.414L10.586 9H7a1 1 0 100 2h3.586l-1.293 1.293a1 1 0 101.414 1.414l3-3a1 1 0 000-1.414z" clipRule="evenodd" />
-                        </svg>
-                    ),
-                    label: 'Activo',
-                    description: 'Lote activo sin verificar'
-                };
-            case 'pending':
-                return {
-                    color: 'yellow',
-                    icon: (
-                        <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
-                            <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clipRule="evenodd" />
-                        </svg>
-                    ),
-                    label: 'Pendiente de Revisión',
-                    description: 'Requiere verificación administrativa'
-                };
-            case 'rejected':
-                return {
-                    color: 'red',
-                    icon: (
-                        <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
-                            <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
-                        </svg>
-                    ),
-                    label: 'Rechazado',
-                    description: lote.rejection_reason || 'Lote rechazado'
-                };
-            case 'archived':
-                return {
-                    color: 'gray',
-                    icon: (
-                        <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
-                            <path d="M4 3a2 2 0 100 4h12a2 2 0 100-4H4z" />
-                            <path fillRule="evenodd" d="M3 8h14v7a2 2 0 01-2 2H5a2 2 0 01-2-2V8zm5 3a1 1 0 011-1h2a1 1 0 110 2H9a1 1 0 01-1-1z" clipRule="evenodd" />
-                        </svg>
-                    ),
-                    label: 'Archivado',
-                    description: 'Lote archivado'
-                };
-            default:
-                return {
-                    color: 'gray',
-                    icon: null,
-                    label: 'Estado Desconocido',
-                    description: ''
-                };
-        }
-    };
-
-    const statusInfo = getStatusInfo();
-
-    const getAvailableActions = () => {
-        const actions = [];
-
-        if (lote.status === 'pending' || (!lote.is_verified && lote.status !== 'rejected')) {
-            actions.push({
-                type: 'verify' as const,
-                label: 'Verificar',
-                icon: (
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                    </svg>
-                ),
-                color: 'green'
+                )
             });
 
             actions.push({
-                type: 'reject' as const,
+                type: 'reject',
                 label: 'Rechazar',
+                color: 'bg-red-600 hover:bg-red-700',
                 icon: (
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                        <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
                     </svg>
-                ),
-                color: 'red'
+                )
             });
         }
 
-        if (lote.status === 'active' || lote.is_verified) {
+        // Estado: ACTIVE y VERIFICADO
+        if (lote.status === 'active' && lote.is_verified) {
             actions.push({
-                type: 'archive' as const,
+                type: 'reject',
+                label: 'Rechazar',
+                color: 'bg-red-600 hover:bg-red-700',
+                icon: (
+                    <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                        <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
+                    </svg>
+                )
+            });
+
+            actions.push({
+                type: 'archive',
                 label: 'Archivar',
+                color: 'bg-yellow-600 hover:bg-yellow-700',
                 icon: (
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4" />
+                    <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                        <path d="M4 3a2 2 0 100 4h12a2 2 0 100-4H4z" />
+                        <path fillRule="evenodd" d="M3 8h14v7a2 2 0 01-2 2H5a2 2 0 01-2-2V8zm5 3a1 1 0 011-1h2a1 1 0 110 2H9a1 1 0 01-1-1z" clipRule="evenodd" />
                     </svg>
-                ),
-                color: 'yellow'
+                )
             });
         }
 
-        if (lote.status === 'archived' || lote.status === 'rejected') {
+        // Estado: REJECTED o ARCHIVED
+        if (lote.status === 'rejected' || lote.status === 'archived') {
             actions.push({
-                type: 'reactivate' as const,
+                type: 'reactivate',
                 label: 'Reactivar',
+                color: 'bg-blue-600 hover:bg-blue-700',
                 icon: (
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                    <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                        <path fillRule="evenodd" d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 010 2H4a1 1 0 01-1-1V3a1 1 0 011-1zm.008 9.057a1 1 0 011.276.61A5.002 5.002 0 0014.001 13H11a1 1 0 110-2h5a1 1 0 011 1v5a1 1 0 11-2 0v-2.101a7.002 7.002 0 01-11.601-2.566 1 1 0 01.61-1.276z" clipRule="evenodd" />
                     </svg>
-                ),
-                color: 'blue'
+                )
             });
         }
 
         return actions;
     };
 
-    const actions = getAvailableActions();
+    const availableActions = getAvailableActions();
 
     return (
-        <div className="bg-white rounded-lg shadow p-6">
-            <h3 className="text-lg font-semibold mb-4">Estado y Verificación</h3>
+        <div className="bg-white shadow rounded-lg p-6">
+            <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
+                <svg className="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" />
+                </svg>
+                Gestión de Estado
+            </h3>
 
             {/* Estado actual */}
-            <div className={`flex items-start space-x-3 p-4 rounded-lg bg-${statusInfo.color}-50 border border-${statusInfo.color}-200 mb-4`}>
-                <div className={`flex-shrink-0 text-${statusInfo.color}-600`}>
-                    {statusInfo.icon}
+            <div className="mb-6 p-4 bg-gray-50 rounded-lg">
+                <div className="flex items-center justify-between mb-2">
+                    <span className="text-sm font-medium text-gray-700">Estado Actual:</span>
+                    <span className={`px-3 py-1 rounded-full text-xs font-medium ${
+                        lote.status === 'active' && lote.is_verified
+                            ? 'bg-green-100 text-green-800'
+                            : lote.status === 'pending'
+                            ? 'bg-yellow-100 text-yellow-800'
+                            : lote.status === 'rejected'
+                            ? 'bg-red-100 text-red-800'
+                            : 'bg-gray-100 text-gray-800'
+                    }`}>
+                        {lote.status === 'active' && lote.is_verified ? 'Verificado' :
+                         lote.status === 'pending' ? 'Pendiente' :
+                         lote.status === 'rejected' ? 'Rechazado' :
+                         lote.status === 'archived' ? 'Archivado' : lote.status}
+                    </span>
                 </div>
-                <div className="flex-1">
-                    <h4 className={`font-medium text-${statusInfo.color}-900`}>
-                        {statusInfo.label}
-                    </h4>
-                    <p className={`text-sm text-${statusInfo.color}-700 mt-1`}>
-                        {statusInfo.description}
-                    </p>
-                </div>
+
+                {/* Mostrar razón de rechazo si existe */}
+                {lote.status === 'rejected' && lote.rejection_reason && (
+                    <div className="mt-3 p-3 bg-red-50 border-l-4 border-red-400 rounded">
+                        <p className="text-xs font-medium text-red-800 mb-1">Razón del rechazo:</p>
+                        <p className="text-sm text-red-700">{lote.rejection_reason}</p>
+                        {lote.rejected_at && (
+                            <p className="text-xs text-red-600 mt-2">
+                                {new Date(lote.rejected_at).toLocaleDateString('es-ES', {
+                                    year: 'numeric',
+                                    month: 'long',
+                                    day: 'numeric',
+                                    hour: '2-digit',
+                                    minute: '2-digit'
+                                })}
+                            </p>
+                        )}
+                    </div>
+                )}
             </div>
 
-            {/* Información de verificación */}
-            {lote.verified_by && (
-                <div className="mb-4 p-3 bg-gray-50 rounded-lg">
-                    <p className="text-sm text-gray-600">
-                        Verificado por: <span className="font-medium">Admin #{lote.verified_by}</span>
-                    </p>
-                    {lote.verified_at && (
-                        <p className="text-xs text-gray-500 mt-1">
-                            {new Date(lote.verified_at).toLocaleString()}
-                        </p>
-                    )}
+            {/* Mensaje de éxito/error */}
+            {fetcher.data?.success && (
+                <div className="mb-4 p-3 bg-green-50 border-l-4 border-green-400 rounded">
+                    <p className="text-sm text-green-700">{fetcher.data.message}</p>
                 </div>
             )}
 
-            {/* Razón de rechazo */}
-            {lote.rejection_reason && (
-                <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg">
-                    <p className="text-sm font-medium text-red-900 mb-1">Razón del rechazo:</p>
-                    <p className="text-sm text-red-700">{lote.rejection_reason}</p>
+            {fetcher.data?.success === false && (
+                <div className="mb-4 p-3 bg-red-50 border-l-4 border-red-400 rounded">
+                    <p className="text-sm text-red-700">{fetcher.data.error || 'Error al procesar la acción'}</p>
                 </div>
             )}
 
-            {/* Mensaje de éxito */}
-            {fetcher.data && typeof fetcher.data === "object" && "success" in fetcher.data && (fetcher.data as any).success && (
-                <div className="mb-4 p-3 bg-green-50 border border-green-200 rounded-lg">
-                    <p className="text-sm text-green-700">{(fetcher.data as any).message}</p>
-                </div>
-            )}
-
-            {/* Acciones disponibles */}
-            {actions.length > 0 && (
-                <div className="space-y-2">
-                    <p className="text-sm font-medium text-gray-700 mb-3">Acciones disponibles:</p>
-                    {actions.map((action) => (
+            {/* Botones de acción */}
+            <div className="space-y-3">
+                {availableActions.length > 0 ? (
+                    availableActions.map((action) => (
                         <button
                             key={action.type}
                             onClick={() => handleAction(action.type, action.label)}
                             disabled={isSubmitting}
-                            className={`w-full flex items-center justify-center space-x-2 px-4 py-2 rounded-lg border transition-colors disabled:opacity-50 disabled:cursor-not-allowed
-                                ${action.color === 'green' ? 'bg-green-50 border-green-300 text-green-700 hover:bg-green-100' : ''}
-                                ${action.color === 'red' ? 'bg-red-50 border-red-300 text-red-700 hover:bg-red-100' : ''}
-                                ${action.color === 'yellow' ? 'bg-yellow-50 border-yellow-300 text-yellow-700 hover:bg-yellow-100' : ''}
-                                ${action.color === 'blue' ? 'bg-blue-50 border-blue-300 text-blue-700 hover:bg-blue-100' : ''}
-                            `}
+                            className={`w-full ${action.color} text-white px-4 py-3 rounded-lg focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 transition-colors`}
                         >
                             {action.icon}
-                            <span className="font-medium">{action.label}</span>
+                            <span>{isSubmitting ? 'Procesando...' : action.label}</span>
                         </button>
-                    ))}
-                </div>
-            )}
+                    ))
+                ) : (
+                    <p className="text-sm text-gray-500 text-center py-4">
+                        No hay acciones disponibles para este estado
+                    </p>
+                )}
+            </div>
 
             {/* Modal de confirmación general */}
             {showConfirmModal && pendingAction && (
@@ -276,26 +263,32 @@ export default function LoteStatusManager({ lote, onSuccess }: LoteStatusManager
                                 Confirmar {pendingAction.label}
                             </h3>
                         </div>
+
                         <div className="px-6 py-4">
                             <p className="text-gray-600">
-                                ¿Estás seguro de que quieres {pendingAction.label.toLowerCase()} el lote{' '}
-                                <span className="font-medium">{lote.nombre}</span>?
+                                ¿Estás seguro de que quieres{' '}
+                                <span className="font-medium">
+                                    {pendingAction.label.toLowerCase()}
+                                </span>{' '}
+                                el lote <span className="font-medium">{lote.nombre}</span>?
                             </p>
                         </div>
+
                         <div className="px-6 py-4 border-t flex justify-end space-x-3">
                             <button
                                 onClick={() => {
                                     setShowConfirmModal(false);
                                     setPendingAction(null);
                                 }}
-                                className="px-4 py-2 text-gray-700 bg-gray-200 rounded-md hover:bg-gray-300"
+                                disabled={isSubmitting}
+                                className="px-4 py-2 text-gray-700 bg-gray-200 rounded-md hover:bg-gray-300 disabled:opacity-50"
                             >
                                 Cancelar
                             </button>
                             <button
                                 onClick={confirmAction}
                                 disabled={isSubmitting}
-                                className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50"
+                                className="px-4 py-2 text-white bg-blue-600 rounded-md hover:bg-blue-700 disabled:opacity-50"
                             >
                                 {isSubmitting ? 'Procesando...' : 'Confirmar'}
                             </button>
@@ -309,39 +302,47 @@ export default function LoteStatusManager({ lote, onSuccess }: LoteStatusManager
                 <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
                     <div className="bg-white rounded-lg shadow-xl max-w-md w-full">
                         <div className="px-6 py-4 border-b">
-                            <h3 className="text-lg font-medium text-gray-900">
-                                Rechazar Lote
-                            </h3>
+                            <h3 className="text-lg font-medium text-gray-900">Rechazar Lote</h3>
                         </div>
+
                         <div className="px-6 py-4">
                             <p className="text-gray-600 mb-4">
-                                Por favor, proporciona una razón para rechazar el lote{' '}
-                                <span className="font-medium">{lote.nombre}</span>:
+                                ¿Estás seguro de que quieres rechazar el lote{' '}
+                                <span className="font-medium">{lote.nombre}</span>?
                             </p>
-                            <textarea
-                                value={rejectReason}
-                                onChange={(e) => setRejectReason(e.target.value)}
-                                className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-red-500"
-                                rows={4}
-                                placeholder="Especifica el motivo del rechazo..."
-                            />
+
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-2">
+                                    Razón del rechazo: *
+                                </label>
+                                <textarea
+                                    value={rejectReason}
+                                    onChange={(e) => setRejectReason(e.target.value)}
+                                    className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-red-500"
+                                    rows={3}
+                                    placeholder="Especifica por qué se rechaza este lote..."
+                                    disabled={isSubmitting}
+                                />
+                            </div>
                         </div>
+
                         <div className="px-6 py-4 border-t flex justify-end space-x-3">
                             <button
                                 onClick={() => {
                                     setShowRejectModal(false);
                                     setRejectReason("");
                                 }}
-                                className="px-4 py-2 text-gray-700 bg-gray-200 rounded-md hover:bg-gray-300"
+                                disabled={isSubmitting}
+                                className="px-4 py-2 text-gray-700 bg-gray-200 rounded-md hover:bg-gray-300 disabled:opacity-50"
                             >
                                 Cancelar
                             </button>
                             <button
                                 onClick={confirmReject}
                                 disabled={isSubmitting || !rejectReason.trim()}
-                                className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 disabled:opacity-50"
+                                className="px-4 py-2 text-white bg-red-600 rounded-md hover:bg-red-700 disabled:opacity-50"
                             >
-                                {isSubmitting ? 'Procesando...' : 'Rechazar Lote'}
+                                {isSubmitting ? 'Procesando...' : 'Confirmar Rechazo'}
                             </button>
                         </div>
                     </div>

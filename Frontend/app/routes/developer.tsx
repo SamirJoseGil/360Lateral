@@ -3,7 +3,6 @@ import { Outlet, useLoaderData } from "@remix-run/react";
 import type { LoaderFunctionArgs } from "@remix-run/node";
 import { getUser } from "~/utils/auth.server";
 import Sidebar from "~/components/sidebar";
-import { recordEvent } from "~/services/stats.server";
 
 // Loader para verificar autenticación y rol de desarrollador
 export async function loader({ request }: LoaderFunctionArgs) {
@@ -20,21 +19,6 @@ export async function loader({ request }: LoaderFunctionArgs) {
         return redirect(`/${user.role}`);
     }
 
-    // Registrar evento de acceso al panel de desarrollador
-    try {
-        await recordEvent(request, {
-            type: "view",
-            name: "developer_panel_access",
-            value: {
-                user_id: user.id,
-                role: user.role
-            }
-        });
-    } catch (error) {
-        console.error("Error al registrar evento de acceso a developer:", error);
-        // No interrumpimos el flujo por un error de registro de evento
-    }
-
     return json({ user });
 }
 
@@ -48,7 +32,7 @@ export default function DeveloperLayout() {
         { to: "/developer/search", label: "Buscar Lotes", icon: "search" },
         { to: "/developer/favorites", label: "Favoritos", icon: "heart" },
         // { to: "/developer/analysis", label: "Análisis Urbanístico", icon: "chart-bar" }, // commented out option
-        // { to: "/developer/investment", label: "Criterios de Inversión", icon: "document-text" },
+        { to: "/developer/investment", label: "Criterios de Inversión", icon: "document-text" },
     ];
 
     return (

@@ -2,7 +2,7 @@ import { json } from "@remix-run/node";
 import { Link, useLoaderData } from "@remix-run/react";
 import type { LoaderFunctionArgs } from "@remix-run/node";
 import { getUser } from "~/utils/auth.server";
-import { recordEvent } from "~/services/stats.server";
+
 
 // Tipos para los servicios
 type Service = {
@@ -16,15 +16,6 @@ export async function loader({ request }: LoaderFunctionArgs) {
     const user = await getUser(request);
 
     try {
-        // Registrar visita a la página de portafolio
-        await recordEvent(request, {
-            type: "view",
-            name: "portfolio_page",
-            value: {
-                user_id: user?.id || "anonymous"
-            }
-        });
-
         // Datos estáticos de servicios
         const services: Service[] = [
             {

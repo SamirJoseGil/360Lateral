@@ -1,5 +1,5 @@
 """
-Vistas principales para gestión de lotes
+Vistas principales para gestión de lotes - SIN MapGIS
 """
 from rest_framework import generics, status
 from rest_framework.permissions import IsAuthenticated
@@ -69,6 +69,7 @@ class LoteListCreateView(generics.ListCreateAPIView):
 class LoteDetailView(generics.RetrieveUpdateDestroyAPIView):
     """
     Obtiene, actualiza o elimina un lote específico.
+    ✅ CORREGIDO: Soft delete en lugar de eliminación real
     """
     queryset = Lote.objects.all()
     serializer_class = LoteSerializer
@@ -76,70 +77,14 @@ class LoteDetailView(generics.RetrieveUpdateDestroyAPIView):
     lookup_field = 'pk'
     
     def perform_destroy(self, instance):
-        """Solo permitir eliminación por el propietario"""
-        if instance.owner != self.request.user and not self.request.user.is_admin:
-            return Response(
-                {'error': 'No tienes permiso para eliminar este lote'},
-                status=status.HTTP_403_FORBIDDEN
-            )
-        instance.delete()
-
-
-class LoteMapGISSearchView(APIView):
-    """
-    Busca información de lote en MapGIS (autenticado)
-    """
-    permission_classes = [IsAuthenticated]
-    
-    def post(self, request):
-        """
-        Buscar por CBML, matrícula o dirección
-        
-        Body:
-        {
-            "search_type": "cbml|matricula|direccion",
-            "value": "valor de búsqueda"
-        }
-        """
-        from ..services.mapgis_service import MapGISService
-        
-        search_type = request.data.get('search_type')
-        value = request.data.get('value')
-        
-        if not search_type or not value:
-            return Response({
-                'success': False,
-                'error': 'search_type y value son requeridos'
-            }, status=status.HTTP_400_BAD_REQUEST)
-        
-        service = MapGISService()
-        
-        try:
-            if search_type == 'cbml':
-                result = service.buscar_por_cbml(value)
-            elif search_type == 'matricula':
-                result = service.buscar_por_matricula(value)
-            elif search_type == 'direccion':
-                result = service.buscar_por_direccion(value)
-            else:
-                return Response({
-                    'success': False,
-                    'error': 'search_type inválido'
-                }, status=status.HTTP_400_BAD_REQUEST)
-            
-            return Response(result)
-            
-        except Exception as e:
-            logger.error(f"Error in MapGIS search: {str(e)}")
-            return Response({
-                'success': False,
-                'error': 'Error en la búsqueda de MapGIS'
-            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        """✅ SOFT DELETE: Archivar en lugar de eliminar"""
+        instance.soft_delete()
+        logger.info(f"Lote {instance.id} archivado por {self.request.user.email}")
 
 
 class LoteAnalysisView(APIView):
     """
-    Genera análisis urbanístico de un lote
+    Genera análisis urbanístico de un lote - SIN MapGIS
     """
     permission_classes = [IsAuthenticated]
     
@@ -154,24 +99,27 @@ class LoteAnalysisView(APIView):
                     'error': 'No tienes permiso para ver este análisis'
                 }, status=status.HTTP_403_FORBIDDEN)
             
-            # Calcular análisis
-            potencial = lote.calcular_potencial_constructivo()
-            
+            # Análisis básico con datos del lote
             analysis = {
                 'lote_id': str(lote.id),
                 'cbml': lote.cbml,
-                'potencial_constructivo': potencial,
-                'normativa': {
-                    'tratamiento': lote.tratamiento_urbanistico,
-                    'uso_suelo': lote.uso_suelo,
-                    'altura_maxima': float(lote.altura_maxima) if lote.altura_maxima else None,
-                    'indice_ocupacion': float(lote.indice_ocupacion) if lote.indice_ocupacion else None,
-                    'indice_construccion': float(lote.indice_construccion) if lote.indice_construccion else None,
+                'area': float(lote.area) if lote.area else None,
+                'ubicacion': {
+                    'direccion': lote.direccion,
+                    'barrio': lote.barrio,
+                    'estrato': lote.estrato,
+                    'latitud': float(lote.latitud) if lote.latitud else None,
+                    'longitud': float(lote.longitud) if lote.longitud else None,
                 },
-                'valoracion': {
-                    'avaluo_catastral': float(lote.avaluo_catastral) if lote.avaluo_catastral else None,
-                    'valor_comercial': float(lote.valor_comercial) if lote.valor_comercial else None,
-                    'valor_m2': float(lote.valor_m2) if lote.valor_m2 else None,
+                'normativa': {
+                    'clasificacion_suelo': lote.clasificacion_suelo,
+                    'uso_suelo': lote.uso_suelo,
+                    'tratamiento_pot': lote.tratamiento_pot,
+                },
+                'estado': {
+                    'status': lote.status,
+                    'is_verified': lote.is_verified,
+                    'created_at': lote.created_at.isoformat(),
                 }
             }
             
@@ -196,6 +144,7 @@ class LoteAnalysisView(APIView):
 class AvailableLotesView(generics.ListAPIView):
     """
     Lista lotes disponibles para desarrolladores (verificados y activos)
+    ✅ CORREGIDO: Solo mostrar lotes activos y verificados
     """
     serializer_class = LoteSerializer
     permission_classes = [IsAuthenticated]
@@ -206,10 +155,11 @@ class AvailableLotesView(generics.ListAPIView):
     ordering = ['-created_at']
     
     def get_queryset(self):
-        """Solo lotes verificados y activos para developers"""
+        """✅ Solo lotes que pueden ser mostrados"""
         return Lote.objects.filter(
             status='active',
-            is_verified=True
+            is_verified=True,
+            is_active=True  # Adicional: asegurar que no estén soft-deleted
         ).select_related('owner')
     
     def get(self, request, *args, **kwargs):

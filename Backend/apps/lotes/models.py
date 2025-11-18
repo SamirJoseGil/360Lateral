@@ -16,8 +16,16 @@ logger = logging.getLogger(__name__)
 
 class Lote(models.Model):
     """
-    Modelo simplificado de Lote - CORREGIDO sin campo comuna
+    Modelo simplificado de Lote
+    ✅ ESTADOS CLAROS Y DOCUMENTADOS
     """
+    STATUS_CHOICES = [
+        ('pending', 'Pendiente de Revisión'),
+        ('active', 'Activo y Verificado'),
+        ('rejected', 'Rechazado'),
+        ('archived', 'Archivado'),
+    ]
+    
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     
     # ✅ CAMPOS ESENCIALES (obligatorios)
@@ -124,18 +132,52 @@ class Lote(models.Model):
     )
     status = models.CharField(
         max_length=20,
-        choices=[
-            ('pending', 'Pendiente'),
-            ('active', 'Activo'),
-            ('archived', 'Archivado'),
-        ],
+        choices=STATUS_CHOICES,
         default='pending',
-        help_text="Estado del lote en el sistema"
+        help_text="Estado del lote en el sistema",
+        db_index=True
     )
     is_verified = models.BooleanField(
         default=False,
         help_text="Si el lote ha sido verificado por un administrador"
     )
+    
+    # ✅ NUEVO: Campos para rastrear rechazo
+    rejection_reason = models.TextField(
+        blank=True,
+        null=True,
+        verbose_name="Razón de Rechazo",
+        help_text="Motivo por el cual el lote fue rechazado"
+    )
+    rejected_at = models.DateTimeField(
+        blank=True,
+        null=True,
+        verbose_name="Fecha de Rechazo"
+    )
+    rejected_by = models.ForeignKey(
+        'users.User',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='lotes_rejected',
+        verbose_name="Rechazado por"
+    )
+    
+    # ✅ NUEVO: Campos para verificación
+    verified_at = models.DateTimeField(
+        blank=True,
+        null=True,
+        verbose_name="Fecha de Verificación"
+    )
+    verified_by = models.ForeignKey(
+        'users.User',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='lotes_verified',
+        verbose_name="Verificado por"
+    )
+    
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     
@@ -197,63 +239,94 @@ class Lote(models.Model):
             
         super().save(*args, **kwargs)
 
-    # ✅ MÉTODOS ÚTILES SIMPLIFICADOS
+    # ✅ MÉTODOS ÚTILES MEJORADOS
+    def soft_delete(self):
+        """
+        ✅ Archivar el lote (soft delete)
+        - Cambia status a 'archived'
+        - Mantiene is_verified sin cambios
+        """
+        self.status = 'archived'
+        self.save()
+        logger.info(f"Lote {self.id} archivado (soft delete)")
+    
+    def reject(self, reason, rejected_by=None):
+        """
+        ✅ Rechazar el lote
+        - Cambia status a 'rejected'
+        - Marca is_verified como False
+        - Guarda razón del rechazo
+        """
+        from django.utils import timezone
+        self.status = 'rejected'
+        self.is_verified = False
+        self.rejection_reason = reason
+        self.rejected_at = timezone.now()
+        self.rejected_by = rejected_by
+        self.save()
+        logger.info(f"Lote {self.id} rechazado por {rejected_by}: {reason}")
+    
+    def verify(self, verified_by=None):
+        """
+        ✅ Verificar y activar el lote
+        - Cambia status a 'active'
+        - Marca is_verified como True
+        - Registra quién verificó
+        """
+        from django.utils import timezone
+        self.status = 'active'
+        self.is_verified = True
+        self.verified_at = timezone.now()
+        self.verified_by = verified_by
+        # Limpiar datos de rechazo previo si existían
+        self.rejection_reason = None
+        self.rejected_at = None
+        self.rejected_by = None
+        self.save()
+        logger.info(f"Lote {self.id} verificado y activado por {verified_by}")
+    
+    def reactivate(self):
+        """
+        ✅ Reactivar un lote archivado o rechazado
+        - Si fue verificado, vuelve a 'active'
+        - Si no fue verificado, vuelve a 'pending'
+        """
+        if self.is_verified:
+            self.status = 'active'
+        else:
+            self.status = 'pending'
+        self.save()
+        logger.info(f"Lote {self.id} reactivado a estado {self.status}")
+    
     @property
-    def tiene_coordenadas(self):
-        """Verificar si tiene coordenadas"""
-        return self.latitud is not None and self.longitud is not None
-
+    def can_be_shown(self):
+        """✅ Solo mostrar a developers si está activo y verificado"""
+        return self.status == 'active' and self.is_verified
+    
     @property
-    def informacion_completa(self):
-        """Verificar si tiene información básica completa"""
-        return all([
-            self.nombre,
-            self.direccion,
-            self.area,
-        ])
-
-    def actualizar_desde_mapgis(self, datos_mapgis):
-        """Actualizar lote con datos de MapGIS"""
-        if not datos_mapgis:
-            return False
-            
-        actualizado = False
-        
-        # Mapear campos de MapGIS
-        if datos_mapgis.get('area') and not self.area:
-            self.area = datos_mapgis['area']
-            actualizado = True
-            
-        if datos_mapgis.get('cbml') and not self.cbml:
-            self.cbml = datos_mapgis['cbml']
-            actualizado = True
-            
-        if datos_mapgis.get('clasificacion_suelo') and not self.clasificacion_suelo:
-            self.clasificacion_suelo = datos_mapgis['clasificacion_suelo']
-            actualizado = True
-            
-        if datos_mapgis.get('uso_suelo') and not self.uso_suelo:
-            self.uso_suelo = datos_mapgis['uso_suelo']
-            actualizado = True
-            
-        if datos_mapgis.get('tratamiento_pot') and not self.tratamiento_pot:
-            self.tratamiento_pot = datos_mapgis['tratamiento_pot']
-            actualizado = True
-            
-        if datos_mapgis.get('barrio') and not self.barrio:
-            self.barrio = datos_mapgis['barrio']
-            actualizado = True
-            
-        # Guardar metadatos de MapGIS
-        if not self.metadatos.get('mapgis_data'):
-            self.metadatos['mapgis_data'] = datos_mapgis
-            self.metadatos['mapgis_imported_at'] = timezone.now().isoformat()
-            actualizado = True
-            
-        if actualizado:
-            self.save()
-            
-        return actualizado
+    def can_be_edited(self):
+        """Determina si el lote puede ser editado"""
+        return self.status in ['pending', 'active']
+    
+    @property
+    def is_rejected(self):
+        """✅ Verifica si el lote está rechazado"""
+        return self.status == 'rejected'
+    
+    @property
+    def is_archived(self):
+        """✅ Verifica si el lote está archivado"""
+        return self.status == 'archived'
+    
+    @property
+    def is_pending(self):
+        """✅ Verifica si el lote está pendiente"""
+        return self.status == 'pending'
+    
+    @property
+    def is_active(self):
+        """✅ Verifica si el lote está activo"""
+        return self.status == 'active' and self.is_verified
 
 
 class LoteDocument(models.Model):

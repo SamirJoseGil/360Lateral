@@ -9,7 +9,7 @@ from django.utils.html import format_html
 from django.urls import reverse
 from django.db.models import Count
 
-from .models import User, UserProfile, UserRequest
+from .models import User, UserProfile, UserRequest, PasswordResetToken
 
 
 @admin.register(User)
@@ -281,6 +281,62 @@ class UserRequestAdmin(admin.ModelAdmin):
             f'{updated} solicitud(es) puesta(s) en revisión.'
         )
     mark_as_in_review.short_description = 'Marcar como en revisión'
+
+
+@admin.register(PasswordResetToken)
+class PasswordResetTokenAdmin(admin.ModelAdmin):
+    """
+    Admin para tokens de recuperación de contraseña
+    """
+    list_display = [
+        'id',
+        'get_user_email',
+        'token_preview',
+        'get_status_badge',
+        'created_at',
+        'expires_at',
+        'is_used',
+        'used_at'
+    ]
+    list_filter = ['is_used', 'created_at', 'expires_at']
+    search_fields = ['user__email', 'token']
+    readonly_fields = ['id', 'token', 'created_at', 'used_at']
+    raw_id_fields = ['user']
+    date_hierarchy = 'created_at'
+    
+    def get_user_email(self, obj):
+        """Email del usuario"""
+        return obj.user.email
+    get_user_email.short_description = 'Usuario'
+    
+    def token_preview(self, obj):
+        """Preview del token"""
+        return f"{obj.token[:10]}...{obj.token[-10:]}"
+    token_preview.short_description = 'Token'
+    
+    def get_status_badge(self, obj):
+        """Badge de estado del token"""
+        if obj.is_used:
+            color = '#6c757d'
+            text = 'USADO'
+        elif obj.is_valid():
+            color = '#28a745'
+            text = 'VÁLIDO'
+        else:
+            color = '#dc3545'
+            text = 'EXPIRADO'
+        
+        return format_html(
+            '<span style="background-color: {}; color: white; padding: 3px 10px; '
+            'border-radius: 3px; font-weight: bold;">{}</span>',
+            color,
+            text
+        )
+    get_status_badge.short_description = 'Estado'
+    
+    def has_add_permission(self, request):
+        """No permitir creación manual de tokens"""
+        return False
 
 
 # Personalización del sitio de admin

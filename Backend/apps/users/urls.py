@@ -12,6 +12,11 @@ from .views import (
     update_profile,
     users_health_check,
     check_user_exists,
+    request_password_reset,
+    verify_reset_token,
+    confirm_password_reset,
+    check_email_exists,
+    check_phone_exists,
 )
 
 app_name = 'users'
@@ -34,6 +39,15 @@ urlpatterns = [
     
     # Debug endpoint
     path('check/<uuid:user_id>/', check_user_exists, name='check-user-exists'),
+    
+    # ✅ NUEVO: Recuperación de contraseña
+    path('password-reset/request/', request_password_reset, name='password-reset-request'),
+    path('password-reset/verify-token/', verify_reset_token, name='password-reset-verify'),
+    path('password-reset/confirm/', confirm_password_reset, name='password-reset-confirm'),
+    
+    # ✅ NUEVO: Validación de duplicados
+    path('check-email/', check_email_exists, name='check-email-exists'),
+    path('check-phone/', check_phone_exists, name='check-phone-exists'),
     
     # Include UserRequest routes from router
     path('', include(router.urls)),

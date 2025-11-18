@@ -4,7 +4,6 @@ import { useLoaderData, useActionData, Form, useNavigation, useFetcher } from "@
 import { useState } from "react";
 import type { LoaderFunctionArgs, ActionFunctionArgs } from "@remix-run/node";
 import { getUser } from "~/utils/auth.server";
-import { recordEvent } from "~/services/stats.server";
 import {
     getUserRequests,
     createUserRequest,
@@ -29,16 +28,6 @@ export async function loader({ request }: LoaderFunctionArgs) {
     }
 
     try {
-        // Registrar evento de vista de solicitudes
-        await recordEvent(request, {
-            type: "view",
-            name: "requests_page",
-            value: {
-                user_id: user.id,
-                role: user.role
-            }
-        });
-
         // Obtener solicitudes, resumen y actualizaciones recientes
         const [requestsResponse, summaryResponse, updatesResponse] = await Promise.all([
             getUserRequests(request),

@@ -3,7 +3,6 @@ import { Link, useLoaderData, useFetcher } from "@remix-run/react";
 import type { LoaderFunctionArgs, ActionFunctionArgs } from "@remix-run/node";
 import { getUser } from "~/utils/auth.server";
 import { useState } from "react";
-import { recordEvent } from "~/services/stats.server";
 import { getLoteById, checkLoteIsFavorite, toggleLoteFavorite } from "~/services/lotes.server";
 import { getNormativaPorCBML } from "~/services/pot.server";
 
@@ -27,20 +26,6 @@ export async function loader({ params, request }: LoaderFunctionArgs) {
     }
 
     try {
-        // Registrar evento de vista del lote
-        try {
-            await recordEvent(request, {
-                type: "view",
-                name: "developer_lot_detail",
-                value: {
-                    user_id: user?.id || "unknown",
-                    lot_id: lotId
-                }
-            });
-        } catch (eventError) {
-            console.warn("No se pudo registrar el evento:", eventError);
-        }
-
         // Obtener datos del lote desde la API
         const { lote, headers } = await getLoteById(request, lotId);
 

@@ -22,22 +22,6 @@ export function useRecordEvent(eventData: EventData, dependencies: any[] = []) {
     useEffect(() => {
         // Registrar evento cuando el componente se monte o las dependencias cambien
         console.log(`[useRecordEvent] Registrando evento ${eventData.type} - ${eventData.name}`);
-
-        fetch('/api/stats/record', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-                ...eventData,
-                value: {
-                    ...eventData.value,
-                    timestamp: new Date().toISOString(),
-                    client_time: Date.now()
-                }
-            }),
-        }).catch(error => console.error(`[useRecordEvent] Error registrando evento ${eventData.name}:`, error));
-
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, dependencies);
 }
@@ -62,31 +46,4 @@ export function usePageView(pageName: string, additionalData?: Record<string, an
                 ...additionalData
             }
     }, dependencies);
-}
-
-/**
- * Función para registrar un evento de acción
- * @param actionName Nombre de la acción
- * @param data Datos adicionales
- */
-export function recordAction(actionName: string, data: Record<string, any> = {}) {
-    console.log(`[recordAction] Registrando acción ${actionName}`);
-
-    return fetch('/api/stats/record', {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-            type: 'action',
-            name: actionName,
-            value: {
-                timestamp: new Date().toISOString(),
-                ...data
-            }
-        }),
-    }).catch(error => {
-        console.error(`[recordAction] Error registrando acción ${actionName}:`, error);
-        return { ok: false, error };
-    });
 }

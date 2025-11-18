@@ -5,7 +5,6 @@ import { useState, useEffect } from "react";
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "@remix-run/node";
 import { getUser } from "~/utils/auth.server";
 import { getMisLotes } from "~/services/lotes.server";
-import { recordEvent } from "~/services/stats.server";
 // import { solicitarAnalisis } from "~/services/lotes.server";
 
 export async function loader({ request }: LoaderFunctionArgs) {
@@ -22,16 +21,6 @@ export async function loader({ request }: LoaderFunctionArgs) {
     try {
         // Obtener los lotes del propietario
         const { lotes } = await getMisLotes(request);
-
-        // Registrar evento de vista de solicitud de análisis
-        await recordEvent(request, {
-            type: "view",
-            name: "owner_analysis_request_page",
-            value: {
-                user_id: user.id,
-                role: user.role
-            }
-        });
 
         // Obtener el lote preseleccionado de la URL si existe
         const url = new URL(request.url);

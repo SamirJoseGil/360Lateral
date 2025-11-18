@@ -3,6 +3,9 @@ Servicios para la gestión de documentos.
 """
 from django.utils import timezone
 from .models import Document
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class DocumentValidationService:
@@ -51,14 +54,15 @@ class DocumentValidationService:
             return None
     
     @staticmethod
-    def validate_document(document_id, status, comments=None):
+    def validate_document(document_id, status, comments=None, validated_by=None):
         """
-        Valida o rechaza un documento.
+        ✅ MEJORADO: Valida o rechaza un documento usando los métodos del modelo.
         
         Args:
             document_id: ID del documento
             status: Nuevo estado ('validado' o 'rechazado')
             comments: Comentarios opcionales sobre la validación
+            validated_by: Usuario que realiza la validación
             
         Returns:
             (documento, éxito, mensaje)
@@ -70,20 +74,32 @@ class DocumentValidationService:
             
         if status not in ['validado', 'rechazado']:
             return document, False, "Estado de validación no válido"
-            
-        # Inicializar metadata si no existe
-        if not document.metadata:
-            document.metadata = {}
-            
-        # Actualizar el documento usando el campo metadata
-        document.metadata['validation_status'] = status
-        if comments:
-            document.metadata['validation_comments'] = comments
-        document.metadata['validation_date'] = timezone.now().isoformat()
-        document.updated_at = timezone.now()
-        document.save()
         
-        return document, True, f"Documento {status} correctamente"
+        try:
+            # ✅ USAR MÉTODOS DEL MODELO
+            if status == 'validado':
+                document.validate_document(
+                    validated_by=validated_by,
+                    comments=comments
+                )
+                message = "Documento validado correctamente"
+                
+            elif status == 'rechazado':
+                if not comments:
+                    return document, False, "Se requieren comentarios para rechazar"
+                
+                document.reject_document(
+                    reason=comments,
+                    rejected_by=validated_by
+                )
+                message = "Documento rechazado correctamente"
+            
+            logger.info(f"✅ {message}: {document.id}")
+            return document, True, message
+            
+        except Exception as e:
+            logger.error(f"❌ Error en validación: {str(e)}")
+            return document, False, f"Error al procesar: {str(e)}"
     
     @staticmethod
     def delete_document(document_id):
@@ -115,28 +131,36 @@ class DocumentValidationService:
     @staticmethod
     def get_validation_summary():
         """
-        Obtiene un resumen de los documentos por estado de validación.
+        ✅ MEJORADO: Obtiene un resumen actualizado de documentos por estado.
+        Cuenta TODOS los documentos activos y los agrupa por estado.
         
         Returns:
             Diccionario con el conteo por estado
         """
-        total = Document.objects.count()
+        from django.db.models import Q, Count, Case, When, IntegerField
         
-        # Use the metadata field to determine status
-        pending = Document.objects.filter(metadata__validation_status='pendiente').count()
-        validated = Document.objects.filter(metadata__validation_status='validado').count()
-        rejected = Document.objects.filter(metadata__validation_status='rechazado').count()
+        # Obtener todos los documentos activos
+        total = Document.objects.filter(is_active=True).count()
         
-        # If we can't find any documents with validation status, count all as pending
-        if pending + validated + rejected == 0:
-            pending = total
+        # ✅ MEJORADO: Contar usando agregación en una sola query
+        summary = Document.objects.filter(is_active=True).aggregate(
+            pendientes=Count('id', filter=Q(metadata__validation_status='pendiente')),
+            validados=Count('id', filter=Q(metadata__validation_status='validado')),
+            rechazados=Count('id', filter=Q(metadata__validation_status='rechazado'))
+        )
         
-        return {
+        # Los documentos sin estado de validación se consideran pendientes
+        sin_estado = total - (summary['pendientes'] + summary['validados'] + summary['rechazados'])
+        
+        result = {
             'total': total,
-            'pendientes': pending,
-            'validados': validated,
-            'rechazados': rejected
+            'pendientes': summary['pendientes'] + sin_estado,  # Incluir sin estado
+            'validados': summary['validados'],
+            'rechazados': summary['rechazados']
         }
+        
+        logger.info(f"📊 Resumen de validación: {result}")
+        return result
     
     @staticmethod
     def get_recent_documents(limit=10):
@@ -166,3 +190,90 @@ class DocumentValidationService:
             return list(chain(pending_docs, docs_without_status))[:limit]
             
         return pending_docs[:limit]
+    
+    @staticmethod
+    def get_documents_grouped_by_lote(status=None, page=1, page_size=10):
+        """
+        ✅ MEJORADO: Ordenar documentos por fecha de creación (más reciente primero)
+        """
+        from django.db.models import Count, Q
+        from apps.lotes.models import Lote
+        
+        # Obtener lotes que tienen documentos
+        base_query = Lote.objects.filter(
+            documents__isnull=False,
+            documents__is_active=True  # ✅ Solo documentos activos
+        )
+        
+        # Aplicar filtro de estado si se proporciona
+        if status:
+            base_query = base_query.filter(
+                documents__metadata__validation_status=status
+            )
+        
+        # ✅ CRITICAL: Usar distinct() ANTES de anotar para evitar duplicados
+        lotes_query = base_query.distinct()
+        
+        # ✅ NUEVO: Ordenar por última actualización de documentos
+        lotes_query = lotes_query.order_by('-updated_at', '-created_at')
+        
+        # Paginación
+        total_lotes = lotes_query.count()
+        total_pages = (total_lotes + page_size - 1) // page_size if total_lotes > 0 else 0
+        
+        start = (page - 1) * page_size
+        end = start + page_size
+        lotes_paginated = lotes_query[start:end]
+        
+        # Construir resultado
+        result = {
+            'lotes': [],
+            'total': total_lotes,
+            'page': page,
+            'total_pages': total_pages
+        }
+        
+        for lote in lotes_paginated:
+            # ✅ Obtener documentos del lote ORDENADOS por fecha (más reciente primero)
+            docs_query = Document.objects.filter(
+                lote=lote, 
+                is_active=True
+            )
+            
+            if status:
+                docs_query = docs_query.filter(metadata__validation_status=status)
+            
+            # ✅ NUEVO: Ordenar por fecha de creación descendente (más reciente primero)
+            docs = list(docs_query.order_by('-created_at', '-updated_at'))
+            
+            # ✅ Contar estados correctamente
+            total_docs = len(docs)
+            
+            # Contar cada estado
+            pendientes = 0
+            validados = 0
+            rechazados = 0
+            
+            for d in docs:
+                val_status = d.metadata.get('validation_status') if d.metadata else None
+                if val_status == 'validado':
+                    validados += 1
+                elif val_status == 'rechazado':
+                    rechazados += 1
+                else:
+                    pendientes += 1  # Sin estado o pendiente
+            
+            result['lotes'].append({
+                'lote_id': str(lote.id),
+                'lote_nombre': lote.nombre,
+                'lote_direccion': lote.direccion,
+                'lote_status': lote.status,
+                'documentos': docs,
+                'total_documentos': total_docs,
+                'pendientes': pendientes,
+                'validados': validados,
+                'rechazados': rechazados
+            })
+        
+        logger.info(f"📊 Documentos agrupados: {total_lotes} lotes, página {page}")
+        return result

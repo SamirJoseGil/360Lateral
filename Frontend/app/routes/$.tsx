@@ -28,7 +28,7 @@ export default function NotFound() {
                         <h1 className="text-9xl font-bold text-lateral-200 select-none">
                             404
                         </h1>
-                        
+
                         {/* Elementos decorativos flotantes */}
                         <div className="absolute -top-4 -left-4 w-16 h-16 bg-naranja-500 bg-opacity-20 rounded-full animate-pulse"></div>
                         <div className="absolute -bottom-4 -right-4 w-12 h-12 bg-lateral-500 bg-opacity-20 rounded-full animate-pulse delay-75"></div>
@@ -48,15 +48,15 @@ export default function NotFound() {
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.172 16.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                             </svg>
                         </div>
-                        
+
                         <h2 className="text-3xl md:text-4xl font-bold text-gray-900 mb-3">
                             Página no encontrada
                         </h2>
-                        
+
                         <p className="text-lg text-gray-600 mb-2">
                             Lo sentimos, la página que buscas no existe o ha sido movida.
                         </p>
-                        
+
                         <p className="text-sm text-gray-500">
                             Puede que el enlace esté roto o que la página haya sido eliminada.
                         </p>
@@ -120,15 +120,15 @@ export default function NotFound() {
                                 Acerca de
                             </Link>
                             <span className="text-gray-300">•</span>
-                            <Link to="/contact" className="text-lateral-600 hover:text-lateral-700 font-medium transition-colors">
+                            <Link to="https://360lateral.com/about-us/#" className="text-lateral-600 hover:text-lateral-700 font-medium transition-colors">
                                 Contacto
                             </Link>
                             <span className="text-gray-300">•</span>
-                            <Link to="/terminos" className="text-lateral-600 hover:text-lateral-700 font-medium transition-colors">
+                            <Link to="https://360lateral.com/wp-content/uploads/2024/12/Politica-de-tratamiento-de-datos-I-V3-2024-I-360Lateral.pdf" className="text-lateral-600 hover:text-lateral-700 font-medium transition-colors">
                                 Términos
                             </Link>
                             <span className="text-gray-300">•</span>
-                            <Link to="/privacidad" className="text-lateral-600 hover:text-lateral-700 font-medium transition-colors">
+                            <Link to="https://360lateral.com/wp-content/uploads/2024/12/Politica-de-tratamiento-de-datos-I-V3-2024-I-360Lateral.pdf" className="text-lateral-600 hover:text-lateral-700 font-medium transition-colors">
                                 Privacidad
                             </Link>
                         </div>

@@ -520,3 +520,79 @@ export async function getDocumentValidationDetails(request: Request, documentId:
     throw error;
   }
 }
+
+/**
+ * ✅ NUEVO: Obtener documentos agrupados por lote
+ */
+export async function getValidationDocumentsGrouped(
+  request: Request, 
+  options: { page?: number; page_size?: number; status?: string } = {}
+) {
+  try {
+    const { page = 1, page_size = 10, status } = options;
+    
+    console.log(`[Documentos] Obteniendo documentos agrupados por lote - página ${page}`);
+    
+    const params = new URLSearchParams({
+      page: page.toString(),
+      page_size: page_size.toString()
+    });
+    
+    if (status) {
+      params.append('status', status);
+    }
+    
+    const endpoint = `${API_URL}/api/documents/validation/grouped/?${params.toString()}`;
+    const { res, setCookieHeaders } = await fetchWithAuth(request, endpoint);
+
+    if (!res.ok) {
+      const errorText = await res.text();
+      console.error(`[Documentos] Error obteniendo documentos agrupados: ${res.status} - ${errorText}`);
+      
+      // ✅ MEJORADO: Retornar estructura válida con arrays vacíos
+      return {
+        lotes: [],
+        pagination: {
+          page: 1,
+          page_size: 10,
+          total: 0,
+          total_pages: 0
+        },
+        headers: new Headers()
+      };
+    }
+
+    const data = await res.json();
+    
+    // ✅ MEJORADO: Asegurar que lotes sea siempre un array
+    const lotes = Array.isArray(data.lotes) ? data.lotes : [];
+    
+    console.log(`[Documentos] Documentos agrupados obtenidos: ${lotes.length} lotes`);
+    
+    return {
+      lotes, // ✅ Siempre será un array
+      pagination: {
+        page: data.page || 1,
+        page_size: page_size,
+        total: data.total || 0,
+        total_pages: data.total_pages || 0
+      },
+      headers: setCookieHeaders
+    };
+
+  } catch (error) {
+    console.error('[Documentos] Error obteniendo documentos agrupados:', error);
+    
+    // ✅ MEJORADO: Retornar estructura válida incluso en error
+    return {
+      lotes: [],
+      pagination: {
+        page: 1,
+        page_size: 10,
+        total: 0,
+        total_pages: 0
+      },
+      headers: new Headers()
+    };
+  }
+}
