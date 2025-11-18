@@ -241,19 +241,109 @@ export default function Register() {
         passwordConfirm: ""
     });
 
-    const [passwordsMatch, setPasswordsMatch] = useState(true);
+    // ✅ NUEVO: Estado para validaciones en tiempo real
+    const [touched, setTouched] = useState<Record<string, boolean>>({});
+    const [clientErrors, setClientErrors] = useState<Record<string, string>>({});
 
-    useEffect(() => {
-        if (formData.password && formData.passwordConfirm) {
-            setPasswordsMatch(formData.password === formData.passwordConfirm);
+    // ✅ NUEVO: Validar campo individual
+    const validateField = (field: string, value: string): string => {
+        switch (field) {
+            case 'first_name':
+                if (!value.trim()) return 'El nombre es obligatorio';
+                if (value.trim().length < 2) return 'El nombre debe tener al menos 2 caracteres';
+                return '';
+
+            case 'last_name':
+                if (!value.trim()) return 'El apellido es obligatorio';
+                if (value.trim().length < 2) return 'El apellido debe tener al menos 2 caracteres';
+                return '';
+
+            case 'email':
+                if (!value.trim()) return 'El email es obligatorio';
+                if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)) return 'El formato del email es inválido';
+                return '';
+
+            case 'phone':
+                if (!value.trim()) return 'El teléfono es obligatorio';
+                if (!/^[+]?[\d\s\-\(\)]{10,}$/.test(value)) return 'Ingresa un teléfono válido (mín. 10 dígitos)';
+                return '';
+
+            case 'password':
+                if (!value) return 'La contraseña es obligatoria';
+                if (value.length < 8) return 'La contraseña debe tener al menos 8 caracteres';
+                if (!/[A-Z]/.test(value)) return 'Debe incluir al menos una mayúscula';
+                if (!/[a-z]/.test(value)) return 'Debe incluir al menos una minúscula';
+                if (!/[0-9]/.test(value)) return 'Debe incluir al menos un número';
+                return '';
+
+            case 'passwordConfirm':
+                if (!value) return 'Confirma tu contraseña';
+                if (value !== formData.password) return 'Las contraseñas no coinciden';
+                return '';
+
+            default:
+                return '';
         }
-    }, [formData.password, formData.passwordConfirm]);
-
-    const handleInputChange = (field: string, value: string) => {
-        setFormData(prev => ({ ...prev, [field]: value }));
     };
 
-    const getError = (field: string) => actionData?.errors?.[field];
+    // ✅ NUEVO: Manejar cambio con validación
+    const handleInputChange = (field: string, value: string) => {
+        setFormData(prev => ({ ...prev, [field]: value }));
+
+        // Validar si el campo ya fue tocado
+        if (touched[field]) {
+            const error = validateField(field, value);
+            setClientErrors(prev => ({
+                ...prev,
+                [field]: error
+            }));
+        }
+    };
+
+    // ✅ NUEVO: Manejar blur (cuando el usuario sale del campo)
+    const handleBlur = (field: string) => {
+        setTouched(prev => ({ ...prev, [field]: true }));
+        const error = validateField(field, formData[field as keyof typeof formData]);
+        setClientErrors(prev => ({
+            ...prev,
+            [field]: error
+        }));
+    };
+
+    // ✅ NUEVO: Obtener error (priorizar errores del servidor)
+    const getError = (field: string): string | undefined => {
+        return actionData?.errors?.[field] || clientErrors[field];
+    };
+
+    // ✅ NUEVO: Verificar si el formulario es válido
+    const isFormValid = (): boolean => {
+        const requiredFields = ['first_name', 'last_name', 'email', 'phone', 'password', 'passwordConfirm'];
+
+        for (const field of requiredFields) {
+            const value = formData[field as keyof typeof formData];
+            const error = validateField(field, value);
+            if (error) return false;
+        }
+
+        return true;
+    };
+
+    // ✅ NUEVO: Calcular fortaleza de contraseña
+    const getPasswordStrength = (password: string): { level: number; text: string; color: string } => {
+        if (!password) return { level: 0, text: '', color: '' };
+
+        let strength = 0;
+        if (password.length >= 8) strength++;
+        if (password.length >= 12) strength++;
+        if (/[a-z]/.test(password)) strength++;
+        if (/[A-Z]/.test(password)) strength++;
+        if (/[0-9]/.test(password)) strength++;
+        if (/[^a-zA-Z0-9]/.test(password)) strength++;
+
+        if (strength <= 2) return { level: 1, text: 'Débil', color: 'bg-red-500' };
+        if (strength <= 4) return { level: 2, text: 'Media', color: 'bg-yellow-500' };
+        return { level: 3, text: 'Fuerte', color: 'bg-green-500' };
+    };
 
     const emailIcon = (
         <svg className="h-5 w-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -264,14 +354,14 @@ export default function Register() {
     return (
         <div className="min-h-screen bg-gradient-to-br from-lateral-600 via-lateral-500 to-naranja-500 flex items-center justify-center p-4">
             {/* Botón de regresar */}
-            <Link 
-                to="/" 
+            <Link
+                to="/"
                 className="absolute top-8 left-8 text-white hover:text-naranja-300 transition-colors duration-200 flex items-center gap-2 group"
             >
-                <svg 
-                    className="w-6 h-6 transform group-hover:-translate-x-1 transition-transform duration-200" 
-                    fill="none" 
-                    stroke="currentColor" 
+                <svg
+                    className="w-6 h-6 transform group-hover:-translate-x-1 transition-transform duration-200"
+                    fill="none"
+                    stroke="currentColor"
                     viewBox="0 0 24 24"
                 >
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
@@ -293,93 +383,234 @@ export default function Register() {
 
                 {/* Formulario */}
                 <div className="bg-white rounded-2xl shadow-2xl p-8">
-                    {/* Error general */}
+                    {/* ✅ MEJORADO: Error general más atractivo */}
                     {actionData?.errors?.general && (
-                        <div className="mb-6 bg-red-50 border-l-4 border-red-400 p-4 rounded-lg">
-                            <div className="flex">
-                                <svg className="h-5 w-5 text-red-400 mr-3" fill="currentColor" viewBox="0 0 20 20">
-                                    <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
-                                </svg>
-                                <div>
-                                    <h3 className="text-sm font-medium text-red-800">Error en el registro</h3>
+                        <div className="mb-6 bg-gradient-to-r from-red-50 to-rose-50 border-l-4 border-red-500 p-4 rounded-xl shadow-sm animate-shake">
+                            <div className="flex items-start">
+                                <div className="flex-shrink-0">
+                                    <svg className="h-6 w-6 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                    </svg>
+                                </div>
+                                <div className="ml-3 flex-1">
+                                    <h3 className="text-sm font-semibold text-red-800">Error en el registro</h3>
                                     <p className="text-sm text-red-700 mt-1">{actionData.errors.general}</p>
                                 </div>
+                                <button
+                                    onClick={() => window.location.reload()}
+                                    className="flex-shrink-0 ml-4 text-red-500 hover:text-red-700"
+                                >
+                                    <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                    </svg>
+                                </button>
                             </div>
                         </div>
                     )}
 
-                    <Form method="post" className="space-y-6">
+                    <Form method="post" className="space-y-6" noValidate>
                         {/* Información Personal */}
                         <div className="space-y-4">
-                            <h3 className="text-lg font-semibold text-gray-900 pb-2 border-b">
+                            <h3 className="text-lg font-semibold text-gray-900 pb-2 border-b flex items-center gap-2">
+                                <svg className="w-5 h-5 text-lateral-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                                </svg>
                                 Información Personal
                             </h3>
 
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                <FormInput
-                                    id="first_name"
-                                    name="first_name"
-                                    label="Nombre"
-                                    value={formData.first_name}
-                                    onChange={(e) => handleInputChange('first_name', e.target.value)}
-                                    error={getError('first_name')}
-                                    required
-                                    placeholder="Tu nombre"
-                                />
+                                {/* ✅ MEJORADO: Input con validación visual */}
+                                <div>
+                                    <label htmlFor="first_name" className="block text-sm font-medium text-gray-700 mb-1">
+                                        Nombre <span className="text-red-500">*</span>
+                                    </label>
+                                    <div className="relative">
+                                        <input
+                                            id="first_name"
+                                            name="first_name"
+                                            type="text"
+                                            value={formData.first_name}
+                                            onChange={(e) => handleInputChange('first_name', e.target.value)}
+                                            onBlur={() => handleBlur('first_name')}
+                                            className={`w-full px-4 py-3 rounded-xl border-2 transition-all duration-200 ${getError('first_name')
+                                                    ? 'border-red-300 focus:border-red-500 focus:ring-red-200'
+                                                    : touched.first_name && formData.first_name
+                                                        ? 'border-green-300 focus:border-green-500 focus:ring-green-200'
+                                                        : 'border-gray-300 focus:border-lateral-500 focus:ring-lateral-200'
+                                                } focus:ring-4 focus:outline-none`}
+                                            placeholder="Tu nombre"
+                                            required
+                                        />
+                                        {/* ✅ NUEVO: Icono de validación */}
+                                        {touched.first_name && formData.first_name && !getError('first_name') && (
+                                            <div className="absolute inset-y-0 right-0 pr-3 flex items-center">
+                                                <svg className="h-5 w-5 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                                                </svg>
+                                            </div>
+                                        )}
+                                    </div>
+                                    {/* ✅ MEJORADO: Mensaje de error más atractivo */}
+                                    {getError('first_name') && (
+                                        <p className="mt-1 text-sm text-red-600 flex items-center gap-1 animate-fade-in">
+                                            <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                                                <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                                            </svg>
+                                            {getError('first_name')}
+                                        </p>
+                                    )}
+                                </div>
 
-                                <FormInput
-                                    id="last_name"
-                                    name="last_name"
-                                    label="Apellido"
-                                    value={formData.last_name}
-                                    onChange={(e) => handleInputChange('last_name', e.target.value)}
-                                    error={getError('last_name')}
-                                    required
-                                    placeholder="Tu apellido"
-                                />
+                                {/* Apellido con validación */}
+                                <div>
+                                    <label htmlFor="last_name" className="block text-sm font-medium text-gray-700 mb-1">
+                                        Apellido <span className="text-red-500">*</span>
+                                    </label>
+                                    <div className="relative">
+                                        <input
+                                            id="last_name"
+                                            name="last_name"
+                                            type="text"
+                                            value={formData.last_name}
+                                            onChange={(e) => handleInputChange('last_name', e.target.value)}
+                                            onBlur={() => handleBlur('last_name')}
+                                            className={`w-full px-4 py-3 rounded-xl border-2 transition-all duration-200 ${getError('last_name')
+                                                    ? 'border-red-300 focus:border-red-500 focus:ring-red-200'
+                                                    : touched.last_name && formData.last_name
+                                                        ? 'border-green-300 focus:border-green-500 focus:ring-green-200'
+                                                        : 'border-gray-300 focus:border-lateral-500 focus:ring-lateral-200'
+                                                } focus:ring-4 focus:outline-none`}
+                                            placeholder="Tu apellido"
+                                            required
+                                        />
+                                        {touched.last_name && formData.last_name && !getError('last_name') && (
+                                            <div className="absolute inset-y-0 right-0 pr-3 flex items-center">
+                                                <svg className="h-5 w-5 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                                                </svg>
+                                            </div>
+                                        )}
+                                    </div>
+                                    {getError('last_name') && (
+                                        <p className="mt-1 text-sm text-red-600 flex items-center gap-1 animate-fade-in">
+                                            <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                                                <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                                            </svg>
+                                            {getError('last_name')}
+                                        </p>
+                                    )}
+                                </div>
                             </div>
 
-                            <FormInput
-                                id="email"
-                                name="email"
-                                label="Correo electrónico"
-                                type="email"
-                                value={formData.email}
-                                onChange={(e) => handleInputChange('email', e.target.value)}
-                                error={getError('email')}
-                                required
-                                placeholder="tu@email.com"
-                                autoComplete="email"
-                                icon={emailIcon}
-                            />
+                            {/* Email con validación */}
+                            <div>
+                                <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-1">
+                                    Correo electrónico <span className="text-red-500">*</span>
+                                </label>
+                                <div className="relative">
+                                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                                        {emailIcon}
+                                    </div>
+                                    <input
+                                        id="email"
+                                        name="email"
+                                        type="email"
+                                        value={formData.email}
+                                        onChange={(e) => handleInputChange('email', e.target.value)}
+                                        onBlur={() => handleBlur('email')}
+                                        className={`w-full pl-10 pr-10 py-3 rounded-xl border-2 transition-all duration-200 ${getError('email')
+                                                ? 'border-red-300 focus:border-red-500 focus:ring-red-200'
+                                                : touched.email && formData.email && !getError('email')
+                                                    ? 'border-green-300 focus:border-green-500 focus:ring-green-200'
+                                                    : 'border-gray-300 focus:border-lateral-500 focus:ring-lateral-200'
+                                            } focus:ring-4 focus:outline-none`}
+                                        placeholder="tu@email.com"
+                                        required
+                                    />
+                                    {touched.email && formData.email && !getError('email') && (
+                                        <div className="absolute inset-y-0 right-0 pr-3 flex items-center">
+                                            <svg className="h-5 w-5 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                                            </svg>
+                                        </div>
+                                    )}
+                                </div>
+                                {getError('email') && (
+                                    <p className="mt-1 text-sm text-red-600 flex items-center gap-1 animate-fade-in">
+                                        <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                                            <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                                        </svg>
+                                        {getError('email')}
+                                    </p>
+                                )}
+                            </div>
 
+                            {/* Teléfono y Empresa */}
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                <FormInput
-                                    id="phone"
-                                    name="phone"
-                                    label="Teléfono"
-                                    type="tel"
-                                    value={formData.phone}
-                                    onChange={(e) => handleInputChange('phone', e.target.value)}
-                                    error={getError('phone')}
-                                    required
-                                    placeholder="+57 300 123 4567"
-                                />
+                                {/* Teléfono */}
+                                <div>
+                                    <label htmlFor="phone" className="block text-sm font-medium text-gray-700 mb-1">
+                                        Teléfono <span className="text-red-500">*</span>
+                                    </label>
+                                    <div className="relative">
+                                        <input
+                                            id="phone"
+                                            name="phone"
+                                            type="tel"
+                                            value={formData.phone}
+                                            onChange={(e) => handleInputChange('phone', e.target.value)}
+                                            onBlur={() => handleBlur('phone')}
+                                            className={`w-full px-4 py-3 rounded-xl border-2 transition-all duration-200 ${getError('phone')
+                                                    ? 'border-red-300 focus:border-red-500 focus:ring-red-200'
+                                                    : touched.phone && formData.phone && !getError('phone')
+                                                        ? 'border-green-300 focus:border-green-500 focus:ring-green-200'
+                                                        : 'border-gray-300 focus:border-lateral-500 focus:ring-lateral-200'
+                                                } focus:ring-4 focus:outline-none`}
+                                            placeholder="+57 300 123 4567"
+                                            required
+                                        />
+                                        {touched.phone && formData.phone && !getError('phone') && (
+                                            <div className="absolute inset-y-0 right-0 pr-3 flex items-center">
+                                                <svg className="h-5 w-5 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                                                </svg>
+                                            </div>
+                                        )}
+                                    </div>
+                                    {getError('phone') && (
+                                        <p className="mt-1 text-sm text-red-600 flex items-center gap-1 animate-fade-in">
+                                            <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                                                <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                                            </svg>
+                                            {getError('phone')}
+                                        </p>
+                                    )}
+                                </div>
 
-                                <FormInput
-                                    id="company"
-                                    name="company"
-                                    label="Empresa"
-                                    value={formData.company}
-                                    onChange={(e) => handleInputChange('company', e.target.value)}
-                                    placeholder="Nombre de tu empresa (opcional)"
-                                />
+                                {/* Empresa */}
+                                <div>
+                                    <label htmlFor="company" className="block text-sm font-medium text-gray-700 mb-1">
+                                        Empresa <span className="text-gray-400 text-xs">(opcional)</span>
+                                    </label>
+                                    <input
+                                        id="company"
+                                        name="company"
+                                        type="text"
+                                        value={formData.company}
+                                        onChange={(e) => handleInputChange('company', e.target.value)}
+                                        className="w-full px-4 py-3 rounded-xl border-2 border-gray-300 focus:border-lateral-500 focus:ring-4 focus:ring-lateral-200 focus:outline-none transition-all duration-200"
+                                        placeholder="Nombre de tu empresa"
+                                    />
+                                </div>
                             </div>
                         </div>
 
                         {/* Tipo de Cuenta */}
                         <div className="space-y-4">
-                            <h3 className="text-lg font-semibold text-gray-900 pb-2 border-b">
+                            <h3 className="text-lg font-semibold text-gray-900 pb-2 border-b flex items-center gap-2">
+                                <svg className="w-5 h-5 text-lateral-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 13.255A23.931 23.931 0 0112 15c-3.183 0-6.22-.62-9-1.745M16 6V4a2 2 0 00-2-2h-4a2 2 0 00-2 2v2m4 6h.01M5 20h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                                </svg>
                                 Tipo de Cuenta
                             </h3>
                             <RoleSelector
@@ -391,43 +622,119 @@ export default function Register() {
 
                         {/* Seguridad */}
                         <div className="space-y-4">
-                            <h3 className="text-lg font-semibold text-gray-900 pb-2 border-b">
+                            <h3 className="text-lg font-semibold text-gray-900 pb-2 border-b flex items-center gap-2">
+                                <svg className="w-5 h-5 text-lateral-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                                </svg>
                                 Seguridad de la Cuenta
                             </h3>
 
-                            <FormInput
-                                id="username"
-                                name="username"
-                                label="Nombre de usuario"
-                                value={formData.username}
-                                onChange={(e) => handleInputChange('username', e.target.value)}
-                                error={getError('username')}
-                                placeholder="usuario123 (opcional)"
-                            />
+                            {/* Username */}
+                            <div>
+                                <label htmlFor="username" className="block text-sm font-medium text-gray-700 mb-1">
+                                    Nombre de usuario <span className="text-gray-400 text-xs">(opcional)</span>
+                                </label>
+                                <input
+                                    id="username"
+                                    name="username"
+                                    type="text"
+                                    value={formData.username}
+                                    onChange={(e) => handleInputChange('username', e.target.value)}
+                                    className="w-full px-4 py-3 rounded-xl border-2 border-gray-300 focus:border-lateral-500 focus:ring-4 focus:ring-lateral-200 focus:outline-none transition-all duration-200"
+                                    placeholder="usuario123"
+                                />
+                            </div>
 
+                            {/* Contraseñas */}
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                <PasswordInput
-                                    id="password"
-                                    name="password"
-                                    label="Contraseña"
-                                    value={formData.password}
-                                    onChange={(e) => handleInputChange('password', e.target.value)}
-                                    error={getError('password')}
-                                    required
-                                    placeholder="Min. 8 caracteres"
-                                    showStrength
-                                />
+                                {/* Password con indicador de fortaleza */}
+                                <div>
+                                    <label htmlFor="password" className="block text-sm font-medium text-gray-700 mb-1">
+                                        Contraseña <span className="text-red-500">*</span>
+                                    </label>
+                                    <div className="relative">
+                                        <input
+                                            id="password"
+                                            name="password"
+                                            type="password"
+                                            value={formData.password}
+                                            onChange={(e) => handleInputChange('password', e.target.value)}
+                                            onBlur={() => handleBlur('password')}
+                                            className={`w-full px-4 py-3 rounded-xl border-2 transition-all duration-200 ${getError('password')
+                                                    ? 'border-red-300 focus:border-red-500 focus:ring-red-200'
+                                                    : 'border-gray-300 focus:border-lateral-500 focus:ring-lateral-200'
+                                                } focus:ring-4 focus:outline-none`}
+                                            placeholder="Min. 8 caracteres"
+                                            required
+                                        />
+                                    </div>
 
-                                <PasswordInput
-                                    id="passwordConfirm"
-                                    name="passwordConfirm"
-                                    label="Confirmar contraseña"
-                                    value={formData.passwordConfirm}
-                                    onChange={(e) => handleInputChange('passwordConfirm', e.target.value)}
-                                    error={!passwordsMatch && formData.passwordConfirm ? "Las contraseñas no coinciden" : getError('passwordConfirm')}
-                                    required
-                                    placeholder="Repite tu contraseña"
-                                />
+                                    {/* ✅ NUEVO: Indicador de fortaleza */}
+                                    {formData.password && (
+                                        <div className="mt-2">
+                                            <div className="flex items-center gap-2 mb-1">
+                                                <div className="flex-1 h-2 bg-gray-200 rounded-full overflow-hidden">
+                                                    <div
+                                                        className={`h-full transition-all duration-300 ${getPasswordStrength(formData.password).color}`}
+                                                        style={{ width: `${(getPasswordStrength(formData.password).level / 3) * 100}%` }}
+                                                    />
+                                                </div>
+                                                <span className="text-xs font-medium text-gray-600">
+                                                    {getPasswordStrength(formData.password).text}
+                                                </span>
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {getError('password') && (
+                                        <p className="mt-1 text-sm text-red-600 flex items-center gap-1 animate-fade-in">
+                                            <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                                                <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                                            </svg>
+                                            {getError('password')}
+                                        </p>
+                                    )}
+                                </div>
+
+                                {/* Confirmar Password */}
+                                <div>
+                                    <label htmlFor="passwordConfirm" className="block text-sm font-medium text-gray-700 mb-1">
+                                        Confirmar contraseña <span className="text-red-500">*</span>
+                                    </label>
+                                    <div className="relative">
+                                        <input
+                                            id="passwordConfirm"
+                                            name="passwordConfirm"
+                                            type="password"
+                                            value={formData.passwordConfirm}
+                                            onChange={(e) => handleInputChange('passwordConfirm', e.target.value)}
+                                            onBlur={() => handleBlur('passwordConfirm')}
+                                            className={`w-full px-4 py-3 rounded-xl border-2 transition-all duration-200 ${getError('passwordConfirm')
+                                                    ? 'border-red-300 focus:border-red-500 focus:ring-red-200'
+                                                    : touched.passwordConfirm && formData.passwordConfirm && !getError('passwordConfirm')
+                                                        ? 'border-green-300 focus:border-green-500 focus:ring-green-200'
+                                                        : 'border-gray-300 focus:border-lateral-500 focus:ring-lateral-200'
+                                                } focus:ring-4 focus:outline-none`}
+                                            placeholder="Repite tu contraseña"
+                                            required
+                                        />
+                                        {touched.passwordConfirm && formData.passwordConfirm && !getError('passwordConfirm') && (
+                                            <div className="absolute inset-y-0 right-0 pr-3 flex items-center">
+                                                <svg className="h-5 w-5 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                                                </svg>
+                                            </div>
+                                        )}
+                                    </div>
+                                    {getError('passwordConfirm') && (
+                                        <p className="mt-1 text-sm text-red-600 flex items-center gap-1 animate-fade-in">
+                                            <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                                                <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                                            </svg>
+                                            {getError('passwordConfirm')}
+                                        </p>
+                                    )}
+                                </div>
                             </div>
                         </div>
 
@@ -451,11 +758,14 @@ export default function Register() {
                             </label>
                         </div>
 
-                        {/* Botón Submit */}
+                        {/* Botón Submit con validación visual */}
                         <button
                             type="submit"
-                            disabled={isSubmitting || !passwordsMatch || !formData.password || formData.password.length < 8}
-                            className="w-full bg-lateral-600 text-white px-8 py-4 rounded-lg hover:bg-lateral-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-lateral-500 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 shadow-lg hover:shadow-xl flex items-center justify-center font-semibold text-lg"
+                            disabled={isSubmitting || !isFormValid()}
+                            className={`w-full px-8 py-4 rounded-xl font-semibold text-lg transition-all duration-200 shadow-lg flex items-center justify-center ${isFormValid() && !isSubmitting
+                                    ? 'bg-gradient-to-r from-lateral-600 to-lateral-700 hover:from-lateral-700 hover:to-lateral-800 text-white hover:shadow-xl transform hover:scale-[1.02]'
+                                    : 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                                }`}
                         >
                             {isSubmitting ? (
                                 <>
@@ -474,6 +784,15 @@ export default function Register() {
                                 </>
                             )}
                         </button>
+
+                        {/* ✅ NUEVO: Indicador de progreso del formulario */}
+                        {!isFormValid() && (
+                            <div className="text-center">
+                                <p className="text-sm text-gray-500">
+                                    Completa todos los campos obligatorios para continuar
+                                </p>
+                            </div>
+                        )}
                     </Form>
 
                     {/* Link de login */}
@@ -487,6 +806,34 @@ export default function Register() {
                     </div>
                 </div>
             </div>
+
+            {/* ✅ NUEVO: Estilos para animaciones */}
+            <style>{`
+                @keyframes fade-in {
+                    from {
+                        opacity: 0;
+                        transform: translateY(-4px);
+                    }
+                    to {
+                        opacity: 1;
+                        transform: translateY(0);
+                    }
+                }
+                
+                @keyframes shake {
+                    0%, 100% { transform: translateX(0); }
+                    10%, 30%, 50%, 70%, 90% { transform: translateX(-4px); }
+                    20%, 40%, 60%, 80% { transform: translateX(4px); }
+                }
+                
+                .animate-fade-in {
+                    animation: fade-in 0.3s ease-out;
+                }
+                
+                .animate-shake {
+                    animation: shake 0.5s ease-out;
+                }
+            `}</style>
         </div>
     );
 }

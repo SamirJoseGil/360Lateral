@@ -217,42 +217,68 @@ export default function LoteDocumentos() {
         return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
     };
 
+    // ✅ NUEVO: Función para obtener badge de estado de validación
+    const getValidationStatusBadge = (status: string) => {
+        const configs: Record<string, { bg: string; text: string; icon: React.ReactNode }> = {
+            'pendiente': {
+                bg: 'bg-yellow-100 text-yellow-800 border-yellow-300',
+                text: 'Pendiente',
+                icon: (
+                    <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
+                        <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clipRule="evenodd" />
+                    </svg>
+                )
+            },
+            'validado': {
+                bg: 'bg-green-100 text-green-800 border-green-300',
+                text: 'Validado',
+                icon: (
+                    <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
+                        <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                    </svg>
+                )
+            },
+            'rechazado': {
+                bg: 'bg-red-100 text-red-800 border-red-300',
+                text: 'Rechazado',
+                icon: (
+                    <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
+                        <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+                    </svg>
+                )
+            }
+        };
+
+        const config = configs[status] || configs['pendiente'];
+
+        return (
+            <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium border ${config.bg}`}>
+                {config.icon}
+                {config.text}
+            </span>
+        );
+    };
+
     return (
         <div className="max-w-7xl mx-auto p-4 px-4 sm:px-6 lg:px-8">
             {/* Header */}
-            <div className="mb-8">
-                <div className="flex items-center justify-between">
-                    <div>
-                        <h1 className="text-3xl font-bold text-gray-900">
-                            Documentos del Lote
-                        </h1>
-                        <p className="mt-2 text-sm text-gray-600">
-                            Gestiona los documentos asociados a <strong>{lote.nombre}</strong>
-                        </p>
-                    </div>
-                    <div className="flex space-x-3">
-                        <Link
-                            to={`/owner/lote/${lote.id}`}
-                            className="inline-flex items-center px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50"
-                        >
-                            ← Volver al lote
-                        </Link>
-                        <button
-                            onClick={() => setIsUploadFormVisible(!isUploadFormVisible)}
-                            className="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700"
-                        >
-                            <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
-                            </svg>
-                            Subir Documento
-                        </button>
-                    </div>
-                </div>
+            <div className="mb-6">
+                <Link
+                    to={`/owner/lote/${lote.id}`}
+                    className="text-indigo-600 hover:text-indigo-800 mb-2 inline-flex items-center text-sm font-medium transition-colors"
+                >
+                    <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                    </svg>
+                    Volver al lote
+                </Link>
+                <h1 className="text-3xl font-bold text-gray-900">Documentos del Lote</h1>
+                <p className="mt-1 text-sm text-gray-600">{lote.nombre} - {lote.direccion}</p>
             </div>
 
-            {/* Mensajes de feedback */}
-            {actionData?.success && "message" in actionData && (
-                <div className="mb-6 bg-green-50 border-l-4 border-green-400 p-4 rounded-md">
+            {/* ✅ CORREGIDO: Mensaje de éxito */}
+            {actionData && "success" in actionData && actionData.success && "message" in actionData && actionData.message && (
+                <div className="mb-4 bg-green-50 border-l-4 border-green-400 p-4 rounded-md">
                     <div className="flex">
                         <div className="flex-shrink-0">
                             <svg className="h-5 w-5 text-green-400" viewBox="0 0 20 20" fill="currentColor">
@@ -264,22 +290,26 @@ export default function LoteDocumentos() {
                         </div>
                     </div>
                 </div>
-            )}
+            )
+            }
 
-            {actionData && "error" in actionData && actionData.error && (
-                <div className="mb-6 bg-red-50 border-l-4 border-red-400 p-4 rounded-md">
-                    <div className="flex">
-                        <div className="flex-shrink-0">
-                            <svg className="h-5 w-5 text-red-400" viewBox="0 0 20 20" fill="currentColor">
-                                <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
-                            </svg>
-                        </div>
-                        <div className="ml-3">
-                            <p className="text-sm text-red-700">{actionData.error}</p>
+            {/* ✅ CORREGIDO: Mensaje de error */}
+            {
+                actionData && "error" in actionData && actionData.error && (
+                    <div className="mb-4 bg-red-50 border-l-4 border-red-400 p-4 rounded-md">
+                        <div className="flex">
+                            <div className="flex-shrink-0">
+                                <svg className="h-5 w-5 text-red-400" viewBox="0 0 20 20" fill="currentColor">
+                                    <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+                                </svg>
+                            </div>
+                            <div className="ml-3">
+                                <p className="text-sm text-red-700">{actionData.error}</p>
+                            </div>
                         </div>
                     </div>
-                </div>
-            )}
+                )
+            }
 
             {/* Formulario de subida */}
             {isUploadFormVisible && (
@@ -427,19 +457,45 @@ export default function LoteDocumentos() {
                             <div key={document.id} className="p-6 hover:bg-gray-50 transition-colors">
                                 <div className="flex items-start justify-between">
                                     <div className="flex items-start space-x-4 flex-1">
-                                        <div className="flex-shrink-0">
+                                        <div className="flex-shrink-0 space-y-2">
+                                            {/* Tipo de documento */}
                                             <div className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getDocumentTypeColor(document.document_type)}`}>
                                                 {getDocumentIcon(document.document_type)}
                                                 <span className="ml-1">
                                                     {documentTypes.find(t => t.value === document.document_type)?.label || document.document_type}
                                                 </span>
                                             </div>
+
+                                            {/* ✅ NUEVO: Estado de validación */}
+                                            {document.validation_status && (
+                                                <div>
+                                                    {getValidationStatusBadge(document.validation_status)}
+                                                </div>
+                                            )}
                                         </div>
+
                                         <div className="flex-1 min-w-0">
                                             <p className="text-sm font-medium text-gray-900">{document.title}</p>
+
                                             {document.description && (
                                                 <p className="text-sm text-gray-500 mt-1 line-clamp-2">{document.description}</p>
                                             )}
+
+                                            {/* ✅ NUEVO: Mostrar razón de rechazo si existe */}
+                                            {document.validation_status === 'rechazado' && document.rejection_reason && (
+                                                <div className="mt-2 p-3 bg-red-50 border border-red-200 rounded-md">
+                                                    <div className="flex items-start gap-2">
+                                                        <svg className="w-4 h-4 text-red-600 flex-shrink-0 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
+                                                            <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                                                        </svg>
+                                                        <div className="flex-1">
+                                                            <p className="text-xs font-semibold text-red-800">Razón del rechazo:</p>
+                                                            <p className="text-xs text-red-700 mt-1">{document.rejection_reason}</p>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            )}
+
                                             <div className="flex items-center flex-wrap gap-x-4 gap-y-1 mt-2 text-xs text-gray-500">
                                                 <span className="flex items-center">
                                                     <svg className="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -464,22 +520,27 @@ export default function LoteDocumentos() {
                                                         {document.mime_type.split('/')[1]?.toUpperCase()}
                                                     </span>
                                                 )}
+
+                                                {/* ✅ NUEVO: Mostrar fecha de validación si existe */}
+                                                {document.validated_at && document.validation_status === 'validado' && (
+                                                    <span className="flex items-center text-green-600">
+                                                        <svg className="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20">
+                                                            <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                                                        </svg>
+                                                        Validado el {new Date(document.validated_at).toLocaleDateString('es-ES')}
+                                                    </span>
+                                                )}
                                             </div>
                                         </div>
                                     </div>
 
                                     <div className="flex items-center space-x-2 ml-4">
-                                        {/* ✅ BOTÓN DE DESCARGA MEJORADO */}
+                                        {/* Botón de descarga */}
                                         <a
-                                            href={document.file_url || document.file}  // ✅ Usar file_url primero
+                                            href={document.file_url || document.file}
                                             download={document.file_name || document.title}
                                             target="_blank"
                                             rel="noopener noreferrer"
-                                            onClick={(e) => {
-                                                // ✅ Logging para debugging
-                                                console.log('[Descargar] URL:', document.file_url || document.file);
-                                                console.log('[Descargar] Documento:', document);
-                                            }}
                                             className="inline-flex items-center px-3 py-2 border border-indigo-300 shadow-sm text-xs font-medium rounded-md text-indigo-700 bg-indigo-50 hover:bg-indigo-100 transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
                                         >
                                             <svg className="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -488,7 +549,7 @@ export default function LoteDocumentos() {
                                             Descargar
                                         </a>
 
-                                        {/* ✅ BOTÓN DE ELIMINAR MEJORADO */}
+                                        {/* Botón de eliminar */}
                                         <deleteFetcher.Form method="post">
                                             <input type="hidden" name="intent" value="delete" />
                                             <input type="hidden" name="documentId" value={document.id} />

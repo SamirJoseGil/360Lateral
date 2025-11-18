@@ -30,6 +30,9 @@ export interface Document {
   file_name?: string;  // ✅ NUEVO: Nombre del archivo
   download_url?: string;  // ✅ NUEVO: URL de descarga
   file_size?: number;
+    validation_status?: 'pendiente' | 'validado' | 'rechazado';
+    validated_at?: string;
+    rejection_reason?: string;
   mime_type?: string;
   uploaded_by: string;
   created_at: string;

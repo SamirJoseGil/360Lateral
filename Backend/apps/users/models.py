@@ -167,9 +167,10 @@ class User(AbstractUser):
     
     def clean(self):
         """Validación del modelo"""
-        super().clean()
-        # ✅ ELIMINADO: NO exigir document_type/document_number para propietarios
+        # ✅ CRÍTICO: NO llamar super().clean() porque valida password
+        # super().clean()  # ❌ ELIMINAR ESTA LÍNEA
         
+        # ✅ SOLO validar campos específicos de nuestro modelo
         if self.role == 'developer':
             if not self.company_name:
                 raise ValidationError({
@@ -184,9 +185,17 @@ class User(AbstractUser):
     
     def save(self, *args, **kwargs):
         """Override save para validar y loggear"""
-        self.full_clean()
-        
+        # ✅ CRÍTICO: Solo validar si NO es creación O si ya tiene password hasheada
         is_new = self.pk is None
+        
+        # ✅ Solo hacer full_clean si:
+        # 1. NO es nuevo usuario (está actualizando)
+        # 2. O es nuevo PERO ya tiene password hasheada (viene de set_password)
+        should_validate = not is_new or (is_new and self.password and self.password.startswith('pbkdf2_'))
+        
+        if should_validate:
+            self.full_clean()
+        
         super().save(*args, **kwargs)
         
         if is_new:

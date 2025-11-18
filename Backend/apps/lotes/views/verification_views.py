@@ -11,6 +11,7 @@ import logging
 
 from ..models import Lote
 from ..serializers import LoteSerializer
+from apps.notifications.services import NotificationService  # ✅ AGREGAR
 
 logger = logging.getLogger(__name__)
 
@@ -38,6 +39,9 @@ class LoteVerificationView(APIView):
                 lote.verify(verified_by=request.user)
                 message = f'Lote {lote.nombre} verificado y activado'
                 
+                # ✅ NUEVO: Crear notificación
+                NotificationService.notify_lote_aprobado(lote)
+                
             elif action == 'reject':
                 reason = request.data.get('reason')
                 if not reason:
@@ -48,6 +52,9 @@ class LoteVerificationView(APIView):
                 
                 lote.reject(reason=reason, rejected_by=request.user)
                 message = f'Lote {lote.nombre} rechazado'
+                
+                # ✅ NUEVO: Crear notificación de rechazo
+                NotificationService.notify_lote_rechazado(lote, reason)
                 
             elif action == 'archive':
                 lote.soft_delete()

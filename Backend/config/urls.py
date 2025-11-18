@@ -95,6 +95,9 @@ urlpatterns = [
     path('api/solicitudes/', include('apps.solicitudes.urls')),
     path('api/investment-criteria/', include('apps.investment_criteria.urls')),
     
+    # Notificaciones
+    path('api/notifications/', include('apps.notifications.urls')),
+    
     # Health check
     path('health/', include(('apps.common.urls', 'common'), namespace='health')),
     

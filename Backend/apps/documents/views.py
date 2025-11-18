@@ -20,6 +20,7 @@ from .serializers import (
     DocumentValidateActionSerializer, DocumentValidationSerializer
 )
 from .services import DocumentValidationService
+from apps.notifications.services import NotificationService  # ✅ AGREGAR
 
 logger = logging.getLogger(__name__)
 
@@ -435,6 +436,12 @@ class DocumentValidateActionView(views.APIView):
                 'success': False,
                 'error': message
             }, status=status.HTTP_400_BAD_REQUEST)
+        
+        # ✅ NUEVO: Crear notificación según acción
+        if action == 'validar':
+            NotificationService.notify_documento_validado(document)
+        else:
+            NotificationService.notify_documento_rechazado(document, comments)
         
         # ✅ Serializar con estado actualizado
         serialized = DocumentValidationSerializer(document, context={'request': request})

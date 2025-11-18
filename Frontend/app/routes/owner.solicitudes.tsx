@@ -474,7 +474,7 @@ function CreateView({
             )}
 
             <div className="bg-white shadow-xl rounded-2xl p-8 border border-gray-100">
-                <Form method="post" className="space-y-8">
+                <Form method="post" className="space-y-8" noValidate>
                     <input type="hidden" name="intent" value="create" />
 
                     {/* Tipo de Solicitud */}
@@ -554,7 +554,7 @@ function CreateView({
                             </select>
                         </div>
 
-                        {/* Prioridad */}
+                        {/* Prioridad con SVG en lugar de emoji */}
                         <div>
                             <label className="block text-sm font-semibold text-gray-800 mb-3">
                                 Prioridad
@@ -565,10 +565,10 @@ function CreateView({
                                 onChange={(e) => setFormData(prev => ({ ...prev, prioridad: e.target.value }))}
                                 className="w-full border-2 border-gray-200 rounded-xl px-4 py-3 focus:border-blue-500 focus:ring-4 focus:ring-blue-100 transition-all"
                             >
-                                <option value="baja">🟢 Baja</option>
-                                <option value="normal">🔵 Normal</option>
-                                <option value="alta">🟠 Alta</option>
-                                <option value="urgente">🔴 Urgente</option>
+                                <option value="baja">Baja</option>
+                                <option value="normal">Normal</option>
+                                <option value="alta">Alta</option>
+                                <option value="urgente">Urgente</option>
                             </select>
                         </div>
                     </div>

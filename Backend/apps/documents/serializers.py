@@ -20,9 +20,11 @@ class DocumentSerializer(serializers.ModelSerializer):
     lote_info = serializers.SerializerMethodField()
     size_display = serializers.SerializerMethodField()
     validation_status = serializers.SerializerMethodField()
+    validation_status_display = serializers.SerializerMethodField()  # ✅ NUEVO
     is_validated = serializers.BooleanField(read_only=True)
     is_rejected = serializers.BooleanField(read_only=True)
     is_pending = serializers.BooleanField(read_only=True)
+    rejection_reason = serializers.SerializerMethodField()  # ✅ NUEVO
     
     class Meta:
         model = Document
@@ -33,13 +35,16 @@ class DocumentSerializer(serializers.ModelSerializer):
             'created_at', 'updated_at', 
             'file_size', 'size_display', 'mime_type',
             'tags', 'metadata', 'is_active', 
-            'validation_status', 'is_validated', 'is_rejected', 'is_pending',
+            'validation_status', 'validation_status_display',  # ✅ NUEVO
+            'is_validated', 'is_rejected', 'is_pending',
+            'rejection_reason',  # ✅ NUEVO
             'validated_at', 'validated_by'
         ]
         read_only_fields = [
             'file_size', 'mime_type', 'created_at', 'updated_at',
             'file_url', 'file_name', 'download_url', 'user_name',
             'lote_info', 'size_display', 'validation_status',
+            'validation_status_display', 'rejection_reason',
             'is_validated', 'is_rejected', 'is_pending',
             'validated_at', 'validated_by'
         ]
@@ -85,6 +90,21 @@ class DocumentSerializer(serializers.ModelSerializer):
     def get_validation_status(self, obj):
         """Estado de validación"""
         return obj.validation_status
+    
+    def get_validation_status_display(self, obj):
+        """✅ NUEVO: Texto legible del estado"""
+        status_map = {
+            'pendiente': 'Pendiente de Validación',
+            'validado': 'Validado',
+            'rechazado': 'Rechazado'
+        }
+        return status_map.get(obj.validation_status, 'Desconocido')
+    
+    def get_rejection_reason(self, obj):
+        """✅ NUEVO: Razón de rechazo si existe"""
+        if obj.validation_status == 'rechazado' and obj.metadata:
+            return obj.metadata.get('rejection_reason')
+        return None
 
 
 class DocumentUploadSerializer(serializers.ModelSerializer):

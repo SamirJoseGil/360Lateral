@@ -320,33 +320,59 @@ export async function createUser(request: Request, userData: {
   phone?: string;
   company?: string;
   role: "admin" | "owner" | "developer";
-  password?: string; // Para creación desde admin
+  password: string;
+  // ✅ ELIMINADO: Campos específicos por rol (se manejan después en el perfil)
 }) {
   console.log(`[Users] Creating user: ${userData.email}`);
 
   try {
+    // ✅ Preparar datos simplificados
+    const requestData: any = {
+      email: userData.email,
+      first_name: userData.first_name,
+      last_name: userData.last_name,
+      role: userData.role,
+      password: userData.password,
+    };
+
+    // Campos opcionales comunes
+    if (userData.username) requestData.username = userData.username;
+    if (userData.phone) requestData.phone = userData.phone;
+    if (userData.company) requestData.company = userData.company;
+
+    // ✅ Valores por defecto según rol (para evitar errores de validación)
+    if (userData.role === 'admin') {
+      requestData.department = 'general';  // Valor por defecto
+    } else if (userData.role === 'developer') {
+      requestData.company_name = userData.company || 'Sin especificar';  // Valor temporal
+    }
+
     const { res, setCookieHeaders } = await fetchWithAuth(request, `${API_URL}/api/users/`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'
       },
-      body: JSON.stringify(userData)
+      body: JSON.stringify(requestData)
     });
 
     if (!res.ok) {
       console.error(`[Users] Error creating user: ${res.status}`);
       const errorData = await res.json().catch(() => ({}));
-      throw new Error(
-        errorData.detail || 
+      
+      const errorMessage = 
+        errorData.error || 
+        errorData.detail ||
+        (errorData.errors && JSON.stringify(errorData.errors)) ||
         (errorData.email ? `Email: ${errorData.email[0]}` : null) ||
-        `Error creating user: ${res.status}`
-      );
+        `Error creating user: ${res.status}`;
+      
+      throw new Error(errorMessage);
     }
 
-    const user = await res.json();
+    const response = await res.json();
 
     return {
-      user,
+      user: response.user,
       headers: setCookieHeaders
     };
   } catch (error) {

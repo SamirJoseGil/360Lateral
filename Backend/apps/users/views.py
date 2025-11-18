@@ -2,7 +2,7 @@
 Vistas para la API de usuarios
 Maneja CRUD de usuarios, perfiles y solicitudes de usuario
 """
-from rest_framework import generics, status, permissions, viewsets, filters
+from rest_framework import generics, status, permissions, viewsets, filters, serializers  # ✅ AGREGAR serializers
 from rest_framework.decorators import api_view, permission_classes, action
 from rest_framework.permissions import AllowAny, IsAuthenticated, IsAdminUser
 from rest_framework.response import Response
@@ -50,12 +50,18 @@ class UserListCreateView(generics.ListCreateAPIView):
     GET: Lista usuarios (admin ve todos, otros ven limitado)
     POST: Crear usuario (solo admin)
     """
-    serializer_class = UserSerializer
     permission_classes = [IsAuthenticated, IsAdminUser]
     filter_backends = [filters.SearchFilter, filters.OrderingFilter]
     search_fields = ['email', 'first_name', 'last_name', 'username']
     ordering_fields = ['created_at', 'email', 'role']
     ordering = ['-created_at']
+    
+    # ✅ CORREGIDO: Usar serializer diferente según acción
+    def get_serializer_class(self):
+        """Seleccionar serializer según acción"""
+        if self.request.method == 'POST':
+            return UserRegistrationSerializer  # ✅ Usar serializer con manejo de password
+        return UserSerializer
     
     def get_queryset(self):
         """Filtrar usuarios según rol y permisos"""
@@ -73,7 +79,7 @@ class UserListCreateView(generics.ListCreateAPIView):
         return User.objects.filter(pk=user.pk)
 
     def create(self, request, *args, **kwargs):
-        """Crear usuario con validación de email único"""
+        """✅ CORREGIDO: Crear usuario con validación de email único"""
         email = request.data.get('email')
         
         # Validación de email
@@ -92,9 +98,22 @@ class UserListCreateView(generics.ListCreateAPIView):
             }, status=status.HTTP_400_BAD_REQUEST)
         
         try:
+            # Usar UserRegistrationSerializer que maneja password correctamente
             serializer = self.get_serializer(data=request.data)
             serializer.is_valid(raise_exception=True)
-            self.perform_create(serializer)
+            
+            # Validar campos específicos según rol
+            role = serializer.validated_data.get('role')
+            
+            # Si es admin, validar department
+            if role == 'admin' and not request.data.get('department'):
+                return Response({
+                    'success': False,
+                    'error': 'El campo "department" es requerido para administradores'
+                }, status=status.HTTP_400_BAD_REQUEST)
+            
+            # Crear usuario
+            user = serializer.save()
             
             # Audit log
             audit_log(
@@ -104,13 +123,21 @@ class UserListCreateView(generics.ListCreateAPIView):
                 ip_address=get_client_ip(request)
             )
             
-            headers = self.get_success_headers(serializer.data)
+            # Retornar con UserSerializer para respuesta completa
+            response_serializer = UserSerializer(user)
+            
             return Response({
                 'success': True,
                 'message': 'Usuario creado exitosamente',
-                'user': serializer.data
-            }, status=status.HTTP_201_CREATED, headers=headers)
+                'user': response_serializer.data
+            }, status=status.HTTP_201_CREATED)
             
+        except serializers.ValidationError as e:  # ✅ CORRECTO: Ahora serializers está importado
+            logger.error(f"Validation error creating user: {e.detail}")
+            return Response({
+                'success': False,
+                'errors': e.detail
+            }, status=status.HTTP_400_BAD_REQUEST)
         except IntegrityError as e:
             logger.error(f"IntegrityError creating user: {str(e)}")
             return Response({
@@ -121,7 +148,7 @@ class UserListCreateView(generics.ListCreateAPIView):
             logger.error(f"Unexpected error creating user: {str(e)}", exc_info=True)
             return Response({
                 'success': False,
-                'error': f'Error interno del servidor: {str(e)}'
+                'error': f'Error interno del servidor'
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 

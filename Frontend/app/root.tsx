@@ -13,19 +13,15 @@ import { json } from "@remix-run/node";
 
 import "./tailwind.css";
 import { getUser } from "~/utils/auth.server";
-import { getEnvDebugInfo } from "~/utils/env.server";
 import Navbar from "./components/navbar";
 import Footer from "./components/footer";
-import { API_URL } from "~/utils/env.server";
+import { NotificationProvider } from "~/contexts/NotificationContext";
+import NotificationBell from "~/components/NotificationBell";
 
 // CRÍTICO: Loader SIN timestamp para evitar revalidaciones infinitas
 export async function loader({ request }: LoaderFunctionArgs) {
-  // ✅ ELIMINAR logs excesivos
-  // console.log("=== ROOT LOADER START ===");
-
   const user = await getUser(request);
 
-  // ✅ Solo loguear en desarrollo y sin repetir
   if (process.env.NODE_ENV === 'development') {
     console.log(`[Root] User: ${user ? user.email : 'None'}`);
   }
@@ -33,7 +29,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
   return json({
     user,
     env: {
-      API_URL: process.env.API_URL,
+      API_URL: process.env.API_URL || 'http://localhost:8000',
       NODE_ENV: process.env.NODE_ENV
     }
   });
@@ -47,6 +43,16 @@ export function Layout({ children }: { children: React.ReactNode }) {
         <meta name="viewport" content="width=device-width, initial-scale=1" />
         <Meta />
         <Links />
+        {/* ✅ NUEVO: Exponer variables de entorno al cliente */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `window.ENV = ${JSON.stringify({
+              API_URL: typeof window === 'undefined' 
+                ? process.env.API_URL || 'http://localhost:8000'
+                : window.ENV?.API_URL || 'http://localhost:8000'
+            })}`,
+          }}
+        />
       </head>
       <body>
         {children}
@@ -58,24 +64,21 @@ export function Layout({ children }: { children: React.ReactNode }) {
 }
 
 export default function App() {
-  const { user, env } = useLoaderData<typeof loader>();
+  const { user } = useLoaderData<typeof loader>();
   const location = useLocation();
 
-  // Function to determine if we're on a dashboard route or auth route
   const shouldHideNavbarAndFooter = () => {
     const dashboardRoutes = ['/admin', '/developer', '/owner'];
     const authRoutes = ['/login', '/register', '/forgot-password', '/reset-password'];
-    
-    // Check if it's a dashboard route
+
     const isDashboard = dashboardRoutes.some(route =>
       location.pathname === route || location.pathname.startsWith(route + '/')
     );
-    
-    // Check if it's an auth route
+
     const isAuth = authRoutes.some(route =>
       location.pathname === route || location.pathname.startsWith(route + '/')
     );
-    
+
     return isDashboard || isAuth;
   };
 
@@ -84,7 +87,20 @@ export default function App() {
   return (
     <>
       {showNavbarAndFooter && <Navbar />}
-      <Outlet />
+
+      {/* ✅ NUEVO: Campana de notificaciones flotante (solo si hay usuario) */}
+      {user && (
+        <NotificationProvider>
+          <div className="fixed top-4 right-4 z-50">
+            <NotificationBell />
+          </div>
+          <Outlet />
+        </NotificationProvider>
+      )}
+
+      {/* Si no hay usuario, solo mostrar el Outlet sin notificaciones */}
+      {!user && <Outlet />}
+
       {showNavbarAndFooter && <Footer />}
     </>
   );

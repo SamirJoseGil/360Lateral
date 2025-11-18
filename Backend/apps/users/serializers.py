@@ -494,7 +494,8 @@ class PasswordResetConfirmSerializer(serializers.Serializer):
 
 class UserRegistrationSerializer(serializers.ModelSerializer):
     """
-    ✅ NUEVO: Serializer para registro con validación de duplicados
+    ✅ MEJORADO: Serializer para registro/creación de usuarios
+    Maneja password correctamente y validación según rol
     """
     password = serializers.CharField(
         write_only=True,
@@ -504,16 +505,26 @@ class UserRegistrationSerializer(serializers.ModelSerializer):
     )
     password_confirm = serializers.CharField(
         write_only=True,
-        required=True,
+        required=False,  # ✅ Opcional para admin que crea usuarios
         min_length=8,
         style={'input_type': 'password'}
     )
+    
+    # ✅ NUEVO: Campos opcionales según rol
+    department = serializers.CharField(required=False, allow_blank=True)
+    permissions_scope = serializers.CharField(required=False, allow_blank=True)
+    company_name = serializers.CharField(required=False, allow_blank=True)
+    company_nit = serializers.CharField(required=False, allow_blank=True)
     
     class Meta:
         model = User
         fields = [
             'email', 'username', 'password', 'password_confirm',
-            'first_name', 'last_name', 'phone', 'company', 'role'
+            'first_name', 'last_name', 'phone', 'company', 'role',
+            # ✅ Campos específicos por rol
+            'department', 'permissions_scope',  # Admin
+            'company_name', 'company_nit', 'position', 'experience_years',  # Developer
+            'document_type', 'document_number', 'address'  # Owner
         ]
     
     def validate_email(self, value):
@@ -548,7 +559,21 @@ class UserRegistrationSerializer(serializers.ModelSerializer):
         return value
     
     def validate_username(self, value):
-        """Validar username único"""
+        """✅ Generar username automático si no se proporciona"""
+        if not value:
+            # Generar username desde email
+            email = self.initial_data.get('email', '')
+            base_username = email.split('@')[0] if email else 'user'
+            
+            # Asegurar unicidad
+            username = base_username
+            counter = 1
+            while User.objects.filter(username__iexact=username).exists():
+                username = f"{base_username}{counter}"
+                counter += 1
+            
+            return username
+        
         username = value.strip()
         
         if User.objects.filter(username__iexact=username).exists():
@@ -571,27 +596,62 @@ class UserRegistrationSerializer(serializers.ModelSerializer):
         return value
     
     def validate(self, attrs):
-        """Validaciones cruzadas"""
-        # Verificar que las contraseñas coincidan
-        if attrs['password'] != attrs['password_confirm']:
+        """✅ MEJORADO: Validaciones cruzadas según rol"""
+        # Verificar que las contraseñas coincidan (si se proporciona confirmación)
+        password_confirm = attrs.pop('password_confirm', None)
+        
+        if password_confirm and attrs['password'] != password_confirm:
             raise serializers.ValidationError({
                 'password_confirm': 'Las contraseñas no coinciden'
             })
         
-        # Eliminar password_confirm antes de crear el usuario
-        attrs.pop('password_confirm')
+        # ✅ Validaciones específicas por rol
+        role = attrs.get('role')
+        
+        if role == 'admin':
+            # Admin requiere department
+            if not attrs.get('department'):
+                attrs['department'] = 'general'  # ✅ Valor por defecto
+                logger.info("Admin created without department, using 'general'")
+        
+        elif role == 'developer':
+            # Developer requiere company_name
+            if not attrs.get('company_name'):
+                raise serializers.ValidationError({
+                    'company_name': 'Requerido para desarrolladores'
+                })
+        
+        # ✅ Owner NO requiere campos obligatorios en creación
         
         return attrs
     
     def create(self, validated_data):
-        """Crear usuario con contraseña hasheada"""
+        """✅ CORREGIDO: Crear usuario con contraseña hasheada correctamente"""
+        # ✅ CRÍTICO: Extraer password ANTES de crear el usuario
         password = validated_data.pop('password')
         
-        # Crear usuario
-        user = User.objects.create(**validated_data)
-        user.set_password(password)
-        user.save()
-        
-        logger.info(f"New user registered: {user.email} (role: {user.role})")
-        
-        return user
+        try:
+            # ✅ CORREGIDO: Usar create_user en lugar de objects.create
+            # Esto asegura que la contraseña se hashee correctamente ANTES de cualquier validación
+            from django.contrib.auth import get_user_model
+            User = get_user_model()
+            
+            # ✅ Extraer campos requeridos
+            email = validated_data.pop('email')
+            username = validated_data.pop('username', None) or email.split('@')[0]
+            
+            # ✅ Crear usuario con método correcto que hashea password
+            user = User.objects.create_user(
+                email=email,
+                username=username,
+                password=password,
+                **validated_data
+            )
+            
+            logger.info(f"✅ New user created: {user.email} (role: {user.role})")
+            
+            return user
+            
+        except Exception as e:
+            logger.error(f"❌ Error creating user: {str(e)}")
+            raise

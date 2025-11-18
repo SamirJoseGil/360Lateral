@@ -54,13 +54,12 @@ INSTALLED_APPS = [
     'django.contrib.messages',
     'django.contrib.staticfiles',
     
-    # Third party
+    # Third party apps
     'rest_framework',
     'rest_framework_simplejwt',
-    'rest_framework_simplejwt.token_blacklist',  # ✅ Agregar para JWT blacklist
     'corsheaders',
-    'drf_yasg',
     'django_filters',
+    'drf_yasg',
     
     # Local apps - ORDEN IMPORTANTE
     'apps.users',              # 1️⃣ PRIMERO - Define el modelo User
@@ -71,6 +70,7 @@ INSTALLED_APPS = [
     'apps.documents',          # 6️⃣ SEXTO - Depende de User y Lotes
     'apps.solicitudes',        # ✅ AGREGAR - Nueva app para solicitudes
     'apps.investment_criteria',  # ✅ AGREGAR
+    'apps.notifications',        # ✅ NUEVO: App de notificaciones
 ]
 
 # =============================================================================
