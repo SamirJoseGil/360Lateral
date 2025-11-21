@@ -1,9 +1,8 @@
-import { json, redirect } from "@remix-run/node";
-import { useLoaderData, useActionData, useNavigate, useSearchParams, Form } from "@remix-run/react";
-import { useState, useEffect } from "react";
-import type { LoaderFunctionArgs, ActionFunctionArgs } from "@remix-run/node";
-import { getUser, fetchWithAuth } from "~/utils/auth.server";
+import { json, LoaderFunctionArgs, ActionFunctionArgs, redirect } from "@remix-run/node";
+import { useLoaderData, Link, useNavigation, useSubmit, useNavigate } from "@remix-run/react";
+import { requireUser, fetchWithAuth } from "~/utils/auth.server";
 import { API_URL } from "~/utils/env.server";
+import GoBackButton from "~/components/GoBackButton";
 
 // ============================================================================
 // TIPOS
@@ -30,82 +29,57 @@ type ActionData = {
 // ============================================================================
 
 export async function loader({ request }: LoaderFunctionArgs) {
-    const user = await getUser(request);
-    if (!user) return redirect("/login");
-    if (user.role !== "owner") return redirect(`/${user.role}`);
+    const user = await requireUser(request);
+
+    if (user.role !== "owner") {
+        throw redirect("/login");
+    }
 
     try {
-        const url = new URL(request.url);
-        const pathname = url.pathname;
-        const success = url.searchParams.get("success");
-
-        // Determinar vista según la URL
-        let view: 'list' | 'create' | 'detail' = 'list';
-        let selectedRequest = null;
-
-        if (pathname.includes('/nueva')) {
-            view = 'create';
-        } else if (pathname.match(/\/\d+$/)) {
-            view = 'detail';
-            const requestId = pathname.split('/').pop();
-
-            // ✅ CORREGIDO: Usar fetchWithAuth
-            const { res: detailResponse, setCookieHeaders: detailCookies } = await fetchWithAuth(
-                request,
-                `${API_URL}/api/solicitudes/${requestId}/`
-            );
-
-            if (detailResponse.ok) {
-                selectedRequest = await detailResponse.json();
-            }
-        }
-
-        // ✅ CORREGIDO: Usar fetchWithAuth en lugar de fetch directo
-        const { res: requestsResponse, setCookieHeaders } = await fetchWithAuth(
+        // ✅ Usar endpoint de solicitudes
+        const { res: requestsRes, setCookieHeaders } = await fetchWithAuth(
             request,
-            `${API_URL}/api/solicitudes/mis_solicitudes/`
+            `${API_URL}/api/solicitudes/mis_solicitudes/`,
+            { method: "GET" }
         );
 
         let requests = [];
-        if (requestsResponse.ok) {
-            requests = await requestsResponse.json();
-        } else {
-            console.error("[Solicitudes] Error:", requestsResponse.status, await requestsResponse.text());
-        }
-
-        // Cargar lotes si es vista de creación
-        let lotes = [];
-        if (view === 'create') {
-            const { res: lotesResponse } = await fetchWithAuth(
-                request,
-                `${API_URL}/api/lotes/`
-            );
-
-            if (lotesResponse.ok) {
-                const lotesData = await lotesResponse.json();
-                lotes = lotesData.results || lotesData || [];
+        if (requestsRes.ok) {
+            const data = await requestsRes.json();
+            requests = Array.isArray(data) ? data : (data.results || data.solicitudes || []);
+            
+            console.log(`[owner.solicitudes] Loaded ${requests.length} requests for ${user.email}`);
+            
+            // ✅ NUEVO: Log para debug - ver qué contiene la primera solicitud
+            if (requests.length > 0) {
+                console.log("[owner.solicitudes] First request sample:", {
+                    id: requests[0].id,
+                    titulo: requests[0].titulo,
+                    notas_revision: requests[0].notas_revision,
+                    estado: requests[0].estado,
+                    revisor: requests[0].revisor
+                });
             }
+        } else {
+            console.error(`[owner.solicitudes] Error loading requests: ${requestsRes.status}`);
+            const errorText = await requestsRes.text();
+            console.error(`[owner.solicitudes] Error details: ${errorText}`);
         }
 
-        return json<LoaderData>({
-            user,
-            view,
-            requests,
-            lotes,
-            selectedRequest,
-            success: success === "created",
-            error: undefined
-        }, {
-            headers: setCookieHeaders // ✅ Propagar cookies
-        });
-
+        return json(
+            {
+                user,
+                requests,
+            },
+            {
+                headers: setCookieHeaders || new Headers()
+            }
+        );
     } catch (error) {
-        console.error("Error loading:", error);
-        return json<LoaderData>({
+        console.error("[owner.solicitudes] Error:", error);
+        return json({
             user,
-            view: 'list',
             requests: [],
-            error: "Error al cargar"
         });
     }
 }
@@ -115,310 +89,246 @@ export async function loader({ request }: LoaderFunctionArgs) {
 // ============================================================================
 
 export async function action({ request }: ActionFunctionArgs) {
-    const user = await getUser(request);
-    if (!user || user.role !== "owner") {
-        return redirect("/login");
+    const user = await requireUser(request);
+
+    if (user.role !== "owner") {
+        throw redirect("/login");
     }
 
-    try {
-        const formData = await request.formData();
-        const intent = formData.get("intent");
+    const formData = await request.formData();
+    const intent = formData.get("intent");
 
-        if (intent === "create") {
-            const requestData = {
-                tipo: formData.get("tipo")?.toString() || "consulta_general",
-                titulo: formData.get("titulo")?.toString(),
-                descripcion: formData.get("descripcion")?.toString(),
-                lote: formData.get("lote")?.toString() || null,
-                prioridad: formData.get("prioridad")?.toString() || "normal"
-            };
-
-            // Validaciones
-            const errors: Record<string, string> = {};
-            if (!requestData.titulo || requestData.titulo.length < 5) {
-                errors.titulo = "El título debe tener al menos 5 caracteres";
-            }
-            if (!requestData.descripcion || requestData.descripcion.length < 20) {
-                errors.descripcion = "La descripción debe tener al menos 20 caracteres";
-            }
-
-            if (Object.keys(errors).length > 0) {
-                return json<ActionData>({
-                    success: false,
-                    errors,
-                    values: requestData
-                }, { status: 400 });
-            }
-
-            // ✅ CORREGIDO: Usar fetchWithAuth
-            const { res: response, setCookieHeaders } = await fetchWithAuth(
+    if (intent === "create") {
+        try {
+            // ✅ CORREGIDO: Crear en /api/solicitudes/ para que el admin las vea
+            const { res: createRes, setCookieHeaders } = await fetchWithAuth(
                 request,
-                `${API_URL}/api/solicitudes/`,
+                `${API_URL}/api/solicitudes/`,  // ✅ Endpoint correcto
                 {
                     method: "POST",
                     headers: {
-                        "Content-Type": "application/json"
+                        "Content-Type": "application/json",
                     },
-                    body: JSON.stringify(requestData)
+                    body: JSON.stringify({
+                        tipo: formData.get("request_type") || "consulta_general",
+                        titulo: formData.get("title"),
+                        descripcion: formData.get("description"),
+                        prioridad: formData.get("priority") || "normal",
+                        lote: formData.get("lote") || null,
+                    }),
                 }
             );
 
-            if (!response.ok) {
-                const errorData = await response.json();
-                return json<ActionData>({
+            if (!createRes.ok) {
+                const errorData = await createRes.json();
+                console.error("[owner.solicitudes] Create error:", errorData);
+                return json({
                     success: false,
-                    errors: { general: errorData.message || "Error al crear la solicitud" },
-                    values: requestData
-                }, { status: response.status });
+                    error: errorData.error || "Error al crear la solicitud",
+                }, { 
+                    status: createRes.status,
+                    headers: setCookieHeaders || new Headers()
+                });
             }
 
-            return redirect("/owner/solicitudes?success=created", {
-                headers: setCookieHeaders // ✅ Propagar cookies
+            const data = await createRes.json();
+            console.log("[owner.solicitudes] Request created:", data.id || data);
+
+            return json({
+                success: true,
+                message: "Solicitud creada exitosamente",
+            }, {
+                headers: setCookieHeaders || new Headers()
             });
+        } catch (error) {
+            console.error("[owner.solicitudes] Action error:", error);
+            return json({
+                success: false,
+                error: "Error al crear la solicitud",
+            }, { status: 500 });
         }
-
-        return json<ActionData>({ success: false });
-
-    } catch (error) {
-        console.error("Error in action:", error);
-        return json<ActionData>({
-            success: false,
-            errors: { general: "Error al procesar la solicitud" }
-        }, { status: 500 });
     }
+
+    return json({ success: false, error: "Intent desconocido" }, { status: 400 });
 }
 
 // ============================================================================
 // COMPONENTE PRINCIPAL
 // ============================================================================
 
-export default function Solicitudes() {
-    const data = useLoaderData<LoaderData>();
-    const actionData = useActionData<ActionData>();
-    const [searchParams] = useSearchParams();
+export default function OwnerSolicitudes() {
+    const { user, requests } = useLoaderData<typeof loader>();
+    const navigation = useNavigation();
+    const submit = useSubmit();
+    const navigate = useNavigate(); // ✅ NUEVO: Hook para navegación
 
-    // ✅ NUEVO: Controlar vista con estado interno
-    const [currentView, setCurrentView] = useState<'list' | 'create'>('list');
-    const [selectedRequestId, setSelectedRequestId] = useState<string | null>(null);
+    const isLoading = navigation.state === "loading";
 
-    // ✅ Detectar si viene parámetro de éxito
-    useEffect(() => {
-        if (searchParams.get('success') === 'created') {
-            setCurrentView('list');
-        }
-    }, [searchParams]);
-
-    // ✅ Si el action fue exitoso, volver a lista
-    useEffect(() => {
-        if (actionData?.success) {
-            setCurrentView('list');
-        }
-    }, [actionData]);
-
-    // Renderizar según vista actual
-    if (currentView === 'create') {
-        return <CreateView
-            lotes={data.lotes || []}
-            actionData={actionData}
-            onCancel={() => setCurrentView('list')}
-        />;
-    }
-
-    return <ListView
-        requests={data.requests || []}
-        success={data.success}
-        error={data.error}
-        onCreateNew={() => setCurrentView('create')}
-    />;
-}
-
-// ============================================================================
-// VISTA: LISTA
-// ============================================================================
-
-function ListView({ requests, success, error, onCreateNew }: { requests: any[], success?: boolean, error?: string, onCreateNew: () => void }) {
-    const navigate = useNavigate();
-    const [filteredRequests, setFilteredRequests] = useState(requests);
-    const [statusFilter, setStatusFilter] = useState<string>("all");
-    const [typeFilter, setTypeFilter] = useState<string>("all");
-
-    useEffect(() => {
-        let filtered = requests;
-        if (statusFilter !== "all") filtered = filtered.filter((r: any) => r.estado === statusFilter);
-        if (typeFilter !== "all") filtered = filtered.filter((r: any) => r.tipo === typeFilter);
-        setFilteredRequests(filtered);
-    }, [statusFilter, typeFilter, requests]);
-
-    const getStatusBadge = (status: string) => {
-        const badges: Record<string, string> = {
-            pendiente: "bg-yellow-100 text-yellow-800",
-            en_revision: "bg-blue-100 text-blue-800",
-            aprobado: "bg-green-100 text-green-800",
-            rechazado: "bg-red-100 text-red-800",
-            completado: "bg-gray-100 text-gray-800"
-        };
-        return badges[status] || badges.pendiente;
+    // ✅ NUEVO: Función para volver atrás
+    const handleGoBack = () => {
+        navigate(-1); // Vuelve a la página anterior
+        // O si prefieres ir a una ruta específica:
+        // navigate("/owner");
     };
 
     return (
         <div className="p-6">
-            {/* Header con gradiente */}
-            <div className="mb-8">
-                <div className="flex items-center justify-between">
+            {/* ✅ NUEVO: Header con botón de volver */}
+            <div className="mb-6">
+                {/* Título y acciones */}
+                <div className="flex justify-between items-center">
                     <div>
-                        <h1 className="text-4xl font-bold text-gray-900 mb-2">Mis Solicitudes</h1>
-                        <p className="text-gray-600">
-                            Gestiona tus solicitudes de soporte y consultas
+                        <h1 className="text-2xl font-bold text-gray-900">Mis Solicitudes</h1>
+                        <p className="text-gray-600 mt-1">
+                            Gestiona y da seguimiento a tus solicitudes
                         </p>
                     </div>
-                    <button
-                        onClick={onCreateNew}
-                        className="px-6 py-3 bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-xl hover:from-blue-700 hover:to-blue-800 transform hover:scale-105 transition-all duration-200 flex items-center gap-2 shadow-lg hover:shadow-xl"
+                    <Link
+                        to="/owner/solicitudes/nueva"
+                        className="px-4 py-2 bg-lateral-600 text-white rounded-lg hover:bg-lateral-700 transition-colors flex items-center gap-2"
                     >
                         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
                         </svg>
                         Nueva Solicitud
-                    </button>
+                    </Link>
                 </div>
             </div>
 
-            {/* Mensajes mejorados */}
-            {success && (
-                <div className="mb-6 bg-gradient-to-r from-green-50 to-emerald-50 border-l-4 border-green-500 p-4 rounded-r-xl shadow-sm">
-                    <div className="flex items-center">
-                        <svg className="w-6 h-6 text-green-500 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                        </svg>
-                        <p className="text-sm text-green-800 font-medium">✅ Solicitud creada correctamente</p>
-                    </div>
+            {/* Lista de solicitudes */}
+            {isLoading ? (
+                <div className="flex justify-center items-center py-12">
+                    <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-lateral-600"></div>
                 </div>
-            )}
-
-            {error && (
-                <div className="mb-6 bg-gradient-to-r from-red-50 to-rose-50 border-l-4 border-red-500 p-4 rounded-r-xl shadow-sm">
-                    <div className="flex items-center">
-                        <svg className="w-6 h-6 text-red-500 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                        </svg>
-                        <p className="text-sm text-red-700">{error}</p>
-                    </div>
-                </div>
-            )}
-
-            {/* Filtros con diseño mejorado */}
-            <div className="bg-white p-6 rounded-2xl shadow-md mb-8 border border-gray-100">
-                <h3 className="text-lg font-semibold text-gray-800 mb-4 flex items-center gap-2">
-                    <svg className="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
-                    </svg>
-                    Filtros
-                </h3>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">
-                            Estado
-                        </label>
-                        <select
-                            value={statusFilter}
-                            onChange={(e) => setStatusFilter(e.target.value)}
-                            className="w-full rounded-xl border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 transition-colors"
-                        >
-                            <option value="all">Todos los estados</option>
-                            <option value="pendiente">Pendiente</option>
-                            <option value="en_revision">En Revisión</option>
-                            <option value="completado">Completado</option>
-                        </select>
-                    </div>
-
-                    <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">
-                            Tipo
-                        </label>
-                        <select
-                            value={typeFilter}
-                            onChange={(e) => setTypeFilter(e.target.value)}
-                            className="w-full rounded-xl border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 transition-colors"
-                        >
-                            <option value="all">Todos los tipos</option>
-                            <option value="soporte_tecnico">Soporte Técnico</option>
-                            <option value="consulta_general">Consulta General</option>
-                        </select>
-                    </div>
-                </div>
-            </div>
-
-            {/* Lista mejorada */}
-            {filteredRequests.length > 0 ? (
-                <div className="space-y-4">
-                    {filteredRequests.map((req: any) => (
-                        <div key={req.id} className="bg-white rounded-2xl shadow-md hover:shadow-xl p-6 transition-all duration-300 border border-gray-100 hover:border-blue-200">
-                            <div className="flex justify-between items-start">
-                                <div className="flex-1">
-                                    <div className="flex items-center gap-3 mb-3">
-                                        <h3 className="text-xl font-semibold text-gray-900">
-                                            {req.titulo}
-                                        </h3>
-                                        <span className={`inline-block px-4 py-1.5 rounded-full text-sm font-medium ${getStatusBadge(req.estado)}`}>
-                                            {req.estado}
-                                        </span>
-                                    </div>
-                                    <p className="text-sm text-gray-600 mb-3">
-                                        {req.tipo_display}
-                                    </p>
-                                    {req.lote_info && (
-                                        <div className="flex items-center gap-2 text-sm text-gray-500 bg-gray-50 rounded-lg px-3 py-2 w-fit">
-                                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
-                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
-                                            </svg>
-                                            Lote: {req.lote_info.nombre}
-                                        </div>
-                                    )}
-                                </div>
-                            </div>
-
-                            <div className="border-t border-gray-100 mt-4 pt-4 flex items-center justify-between text-sm text-gray-500">
-                                <div className="flex items-center gap-4">
-                                    <span className="flex items-center gap-1">
-                                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                                        </svg>
-                                        {new Date(req.created_at).toLocaleDateString('es-ES')}
-                                    </span>
-                                </div>
-                            </div>
-                        </div>
-                    ))}
-                </div>
-            ) : (
-                <div className="bg-gradient-to-br from-gray-50 to-gray-100 shadow-xl rounded-2xl p-16 text-center border border-gray-200">
-                    <svg className="mx-auto h-20 w-20 text-gray-400 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            ) : requests.length === 0 ? (
+                <div className="bg-white rounded-lg shadow p-8 text-center">
+                    <svg className="mx-auto h-12 w-12 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                     </svg>
-                    <h3 className="text-xl font-semibold text-gray-900 mb-2">
-                        {statusFilter !== "all" || typeFilter !== "all"
-                            ? "No hay solicitudes con estos filtros"
-                            : "No tienes solicitudes aún"
-                        }
-                    </h3>
-                    <p className="text-gray-600 mb-6">
-                        {statusFilter !== "all" || typeFilter !== "all"
-                            ? "Prueba ajustando los filtros para ver más resultados"
-                            : "Crea tu primera solicitud de soporte o consulta"
-                        }
+                    <h3 className="mt-2 text-sm font-medium text-gray-900">No tienes solicitudes</h3>
+                    <p className="mt-1 text-sm text-gray-500">
+                        Comienza creando una nueva solicitud.
                     </p>
-                    {statusFilter === "all" && typeFilter === "all" && (
-                        <button
-                            onClick={onCreateNew}
-                            className="inline-flex items-center px-8 py-4 bg-gradient-to-r from-blue-600 to-blue-700 text-white font-semibold rounded-xl hover:from-blue-700 hover:to-blue-800 shadow-lg hover:shadow-xl transform hover:scale-105 transition-all duration-200"
+                    <div className="mt-6">
+                        <Link
+                            to="/owner/solicitudes/nueva"
+                            className="inline-flex items-center px-4 py-2 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-lateral-600 hover:bg-lateral-700"
                         >
-                            <svg className="w-6 h-6 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
                             </svg>
-                            Crear Primera Solicitud
-                        </button>
-                    )}
+                            Nueva Solicitud
+                        </Link>
+                    </div>
+                </div>
+            ) : (
+                <div className="space-y-4">
+                    {requests.map((req: any) => (
+                        <div key={req.id} className="bg-white rounded-lg shadow hover:shadow-md transition-shadow p-6">
+                            {/* ✅ ELIMINADO: flex justify-between - Ya no hay botón de acciones */}
+                            <div className="w-full">
+                                {/* Header de la solicitud */}
+                                <div className="flex items-center gap-3 mb-3">
+                                    <h3 className="text-lg font-semibold text-gray-900">
+                                        {req.titulo || req.title}
+                                    </h3>
+                                    <span className="text-xs px-2 py-1 rounded-full bg-gray-100 text-gray-700">
+                                        {req.tipo_display || req.request_type_display || req.tipo || req.request_type}
+                                    </span>
+                                </div>
+
+                                {/* Descripción */}
+                                <p className="text-sm text-gray-600 mb-4">
+                                    {req.descripcion || req.description}
+                                </p>
+
+                                {/* Estado y Metadata */}
+                                <div className="flex items-center gap-3 flex-wrap mb-4">
+                                    {/* Estado */}
+                                    <span className={`text-xs px-3 py-1 rounded-full font-medium ${
+                                        (req.estado || req.status) === 'pendiente' || (req.estado || req.status) === 'pending' ? 'bg-yellow-100 text-yellow-800' :
+                                        (req.estado || req.status) === 'en_revision' || (req.estado || req.status) === 'in_review' ? 'bg-blue-100 text-blue-800' :
+                                        (req.estado || req.status) === 'completado' || (req.estado || req.status) === 'completed' ? 'bg-green-100 text-green-800' :
+                                        (req.estado || req.status) === 'rechazado' || (req.estado || req.status) === 'rejected' ? 'bg-red-100 text-red-800' :
+                                        'bg-gray-100 text-gray-800'
+                                    }`}>
+                                        {req.estado_display || req.status_display || req.estado || req.status}
+                                    </span>
+
+                                    {/* Prioridad */}
+                                    {(req.prioridad || req.priority) && (
+                                        <span className={`text-xs px-3 py-1 rounded-full font-medium ${
+                                            (req.prioridad || req.priority) === 'urgente' || (req.prioridad || req.priority) === 'urgent' ? 'bg-red-100 text-red-800' :
+                                            (req.prioridad || req.priority) === 'alta' || (req.prioridad || req.priority) === 'high' ? 'bg-orange-100 text-orange-800' :
+                                            (req.prioridad || req.priority) === 'normal' ? 'bg-blue-100 text-blue-800' :
+                                            'bg-gray-100 text-gray-800'
+                                        }`}>
+                                            {req.prioridad_display || req.priority_display || req.prioridad || req.priority}
+                                        </span>
+                                    )}
+
+                                    {/* Fecha de creación */}
+                                    <span className="text-xs text-gray-500">
+                                        {new Date(req.created_at).toLocaleDateString('es-CO', {
+                                            year: 'numeric',
+                                            month: 'long',
+                                            day: 'numeric'
+                                        })}
+                                    </span>
+
+                                    {/* Fecha de resolución */}
+                                    {(req.resuelta_at || req.resolved_at) && (
+                                        <span className="text-xs text-gray-500">
+                                            Resuelta: {new Date(req.resuelta_at || req.resolved_at).toLocaleDateString('es-CO')}
+                                        </span>
+                                    )}
+                                </div>
+
+                                {/* ✅ CRÍTICO: Respuesta del Admin - Verificar notas_revision */}
+                                {req.notas_revision && req.notas_revision.trim() ? (
+                                    <div className="mt-4 p-4 bg-blue-50 border-l-4 border-blue-500 rounded-md">
+                                        <div className="flex items-start gap-3">
+                                            <div className="flex-shrink-0">
+                                                <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center">
+                                                    <svg className="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                                                    </svg>
+                                                </div>
+                                            </div>
+                                            <div className="flex-1">
+                                                <div className="flex items-center justify-between mb-2">
+                                                    <div className="text-sm font-semibold text-blue-900">
+                                                        Respuesta del Administrador
+                                                    </div>
+                                                    {(req.updated_at || req.resuelta_at || req.resolved_at) && (
+                                                        <div className="text-xs text-gray-500">
+                                                            {new Date(req.updated_at || req.resuelta_at || req.resolved_at).toLocaleString('es-CO')}
+                                                        </div>
+                                                    )}
+                                                </div>
+                                                <div className="bg-white p-3 rounded-md border border-blue-200">
+                                                    <p className="text-sm text-gray-800 whitespace-pre-wrap leading-relaxed">
+                                                        {req.notas_revision}
+                                                    </p>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                ) : (
+                                    <div className="mt-4 p-3 bg-gray-50 border-l-4 border-gray-300 rounded-md">
+                                        <div className="flex items-center gap-2 text-sm text-gray-600">
+                                            <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                            </svg>
+                                            <span>Aún no ha sido respondida por un administrador.</span>
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+
+                            {/* ✅ ELIMINADO: Botón "Ver detalles" */}
+                        </div>
+                    ))}
                 </div>
             )}
         </div>

@@ -83,7 +83,7 @@ export default function Navbar() {
             return [
                 { to: "/", label: "Inicio", end: false },
                 { to: "/about", label: "Acerca de", end: false },
-                { to: "/contact", label: "Contacto", end: false },
+                { to: "https://360lateral.com/#", label: "Contacto", end: false },
             ];
         }
 

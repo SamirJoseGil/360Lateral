@@ -45,14 +45,14 @@ function getDashboardRoute(role: string): string {
 // Acción de login - USAR commitAuthCookies
 export async function action({ request }: ActionFunctionArgs) {
     console.log("=== LOGIN ACTION START ===");
-    console.log(`🔗 Using API_URL: ${API_URL}`);
-
+    
     const formData = await request.formData();
 
     const email = (formData.get("email") as string)?.trim().toLowerCase();
     const password = formData.get("password") as string;
+    const remember = formData.get("remember") === "on"; // ✅ NUEVO: Leer checkbox
 
-    console.log(`Login attempt for: ${email}`);
+    console.log(`Login attempt for: ${email} (remember: ${remember})`);
 
     if (!email || !password) {
         return json(
@@ -77,9 +77,8 @@ export async function action({ request }: ActionFunctionArgs) {
         console.log(`✅ API response status: ${response.status}`);
 
         const responseText = await response.text();
-        console.log("API raw response:", responseText.substring(0, 200));
-
         let data;
+        
         try {
             data = responseText ? JSON.parse(responseText) : {};
         } catch (parseError) {
@@ -110,32 +109,23 @@ export async function action({ request }: ActionFunctionArgs) {
         const { refresh, access, user } = data.data;
 
         if (!refresh || !access || !user) {
-            console.error("Missing required data:", { refresh: !!refresh, access: !!access, user: !!user });
+            console.error("Missing required data");
             return json(
                 { errors: { general: "Datos incompletos en la respuesta" } },
                 { status: 500 }
             );
         }
 
-        console.log(`✅ Login successful for user: ${user.email} (role: ${user.role})`);
-        console.log(`📝 Access token: ${access.substring(0, 20)}...`);
-        console.log(`📝 Refresh token: ${refresh.substring(0, 20)}...`);
+        console.log(`✅ Login successful for: ${user.email} (remember: ${remember})`);
 
         const dashboardRoute = getDashboardRoute(user.role);
 
-        // ✅ CRÍTICO: Usar commitAuthCookies de auth.server.ts
-        console.log(`🍪 Creating auth cookies...`);
-        const headers = await commitAuthCookies({
-            access,
-            refresh
-        });
-
-        // Verificar que los headers se crearon
-        const setCookies = headers.getSetCookie();
-        console.log(`✅ Set-Cookie headers created: ${setCookies.length}`);
-        setCookies.forEach((cookie, index) => {
-            console.log(`   Cookie ${index + 1}: ${cookie.substring(0, 50)}...`);
-        });
+        // ✅ CRÍTICO: Pasar remember a commitAuthCookies
+        console.log(`🍪 Creating auth cookies (remember: ${remember})...`);
+        const headers = await commitAuthCookies(
+            { access, refresh },
+            remember // ✅ Pasar el valor del checkbox
+        );
 
         console.log(`➡️  Redirecting to: ${dashboardRoute}`);
         console.log("=== LOGIN ACTION END (SUCCESS) ===");

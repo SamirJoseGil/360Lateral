@@ -6,8 +6,9 @@ from django.utils import timezone
 from django.db.models import Count, Q
 from datetime import timedelta
 import logging
+import hashlib
 
-from .models import UserRequest
+from .models import UserRequest  # ✅ Solo importar UserRequest aquí (evitar import circular)
 
 logger = logging.getLogger(__name__)
 
@@ -22,6 +23,7 @@ class RequestStatusService:
     def get_user_requests(user, request_type=None, status=None):
         """
         Obtiene todas las solicitudes de un usuario con filtros opcionales.
+        ✅ CORREGIDO: Usar 'user' en lugar de 'user_id' para filtrar
         
         Args:
             user: Objeto User o ID de usuario
@@ -39,29 +41,49 @@ class RequestStatusService:
             ... )
         """
         try:
-            # Obtener ID del usuario
+            # ✅ CORREGIDO: Obtener el ID o usar el objeto directamente
             user_id = user.id if hasattr(user, 'id') else user
             
-            # Query base
-            queryset = UserRequest.objects.filter(user_id=user_id)
+            # ✅ CRÍTICO: Filtrar por 'user' no 'user_id'
+            queryset = UserRequest.objects.filter(
+                user=user  # ✅ Usar el objeto user o user_id
+            ).select_related('reviewer', 'lote').order_by('-created_at')
             
-            # Aplicar filtros si se proporcionan
+            logger.info(f"🔍 Base queryset count: {queryset.count()}")
+
             if request_type:
                 queryset = queryset.filter(request_type=request_type)
                 logger.debug(f"Filtering by request_type: {request_type}")
-            
+
             if status:
                 queryset = queryset.filter(status=status)
                 logger.debug(f"Filtering by status: {status}")
+
+            count = queryset.count()
+            logger.info(f"✅ Retrieved {count} requests for user {user_id}")
             
-            # Ordenar por más reciente primero
-            queryset = queryset.order_by('-created_at')
+            # ✅ NUEVO: Log detallado si no encuentra nada
+            if count == 0:
+                # Verificar si existen solicitudes en la BD para este usuario
+                total_in_db = UserRequest.objects.filter(user=user).count()
+                logger.warning(
+                    f"⚠️ No requests found after filters. "
+                    f"Total in DB for user {user_id}: {total_in_db}"
+                )
+                
+                # Mostrar todas las solicitudes del usuario sin filtros
+                all_requests = UserRequest.objects.filter(user=user)
+                logger.info(f"📋 All user requests ({all_requests.count()}):")
+                for req in all_requests[:5]:  # Mostrar max 5
+                    logger.info(
+                        f"  - ID: {req.id}, Type: {req.request_type}, "
+                        f"Status: {req.status}, Title: {req.title}"
+                    )
             
-            logger.info(f"Retrieved {queryset.count()} requests for user {user_id}")
             return queryset
-            
+
         except Exception as e:
-            logger.error(f"Error getting user requests: {str(e)}", exc_info=True)
+            logger.error(f"❌ Error getting user requests: {str(e)}", exc_info=True)
             return UserRequest.objects.none()
     
     @staticmethod
@@ -414,3 +436,126 @@ class PasswordResetService:
         
         count = tokens.update(is_used=True)
         logger.info(f"Invalidated {count} password reset tokens for {user.email}")
+
+
+class SessionService:
+    """
+    Servicio para gestionar sesiones de usuario
+    Se importa UserSession dentro de cada método para evitar import circular en startup.
+    """
+    
+    @staticmethod
+    def create_session(
+        user,
+        role_context=None,
+        ip_address=None,
+        user_agent=None,
+        device_info=None,
+        access_token=None,
+        refresh_token=None,
+        expires_hours=168  # 7 días por defecto
+    ):
+        """
+        Crea una nueva sesión para un usuario
+        
+        Args:
+            user: Objeto User
+            role_context: Rol específico para esta sesión
+            ip_address: IP del cliente
+            user_agent: User agent del navegador
+            device_info: Dict con info del dispositivo
+            access_token: JWT access token
+            refresh_token: JWT refresh token
+            expires_hours: Horas hasta que expire la sesión
+            
+        Returns:
+            UserSession: Sesión creada
+        """
+        # Importar aquí para evitar ImportError durante el startup
+        from .models import UserSession
+
+        access_hash = hashlib.sha256(access_token.encode()).hexdigest() if access_token else None
+        refresh_hash = hashlib.sha256(refresh_token.encode()).hexdigest() if refresh_token else None
+
+        session = UserSession.objects.create(
+            user=user,
+            role_context=role_context or user.role,
+            ip_address=ip_address,
+            user_agent=user_agent,
+            device_info=device_info or {},
+            access_token_hash=access_hash,
+            refresh_token_hash=refresh_hash,
+            expires_at=timezone.now() + timedelta(hours=expires_hours)
+        )
+
+        logger.info(
+            f"✅ Session created: {session.id} for {user.email} "
+            f"(role: {session.role_context}, IP: {ip_address})"
+        )
+
+        return session
+
+    @staticmethod
+    def get_session(session_token):
+        from .models import UserSession
+        try:
+            session = UserSession.objects.select_related('user').get(session_token=session_token)
+            if not session.is_valid():
+                logger.warning(f"Invalid session attempted: {session.id}")
+                return None
+            session.refresh()
+            return session
+        except UserSession.DoesNotExist:
+            logger.warning(f"Session not found: {session_token[:10]}...")
+            return None
+
+    @staticmethod
+    def invalidate_session(session_token):
+        from .models import UserSession
+        try:
+            session = UserSession.objects.get(session_token=session_token)
+            session.invalidate()
+            return True
+        except UserSession.DoesNotExist:
+            return False
+
+    @staticmethod
+    def invalidate_user_sessions(user, except_session_id=None):
+        from .models import UserSession
+        sessions = UserSession.objects.filter(user=user, is_active=True)
+        if except_session_id:
+            sessions = sessions.exclude(id=except_session_id)
+        count = sessions.update(is_active=False)
+        logger.info(f"Invalidated {count} sessions for {user.email}")
+        return count
+
+    @staticmethod
+    def get_user_sessions(user, active_only=True):
+        from .models import UserSession
+        sessions = UserSession.objects.filter(user=user)
+        if active_only:
+            sessions = sessions.filter(is_active=True, expires_at__gt=timezone.now())
+        return sessions.order_by('-last_activity')
+
+    @staticmethod
+    def cleanup_expired_sessions():
+        from .models import UserSession
+        expired = UserSession.objects.filter(expires_at__lt=timezone.now())
+        count = expired.count()
+        expired.delete()
+        logger.info(f"Cleaned up {count} expired sessions")
+        return count
+
+    @staticmethod
+    def get_session_info(session):
+        return {
+            'session_id': str(session.id),
+            'user_email': session.user.email,
+            'role': session.role_context,
+            'device': session.device_info.get('browser', 'Unknown'),
+            'ip': session.ip_address,
+            'created_at': session.created_at.isoformat(),
+            'expires_at': session.expires_at.isoformat(),
+            'last_activity': session.last_activity.isoformat(),
+            'is_current': True
+        }

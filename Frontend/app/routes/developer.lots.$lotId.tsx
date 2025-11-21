@@ -5,6 +5,7 @@ import { getUser } from "~/utils/auth.server";
 import { useState } from "react";
 import { getLoteById, checkLoteIsFavorite, toggleLoteFavorite } from "~/services/lotes.server";
 import { getNormativaPorCBML } from "~/services/pot.server";
+import { useNavigate } from "@remix-run/react";
 
 type LoaderData = {
     lote: any;
@@ -130,6 +131,12 @@ export default function LotDetail() {
     const fetcher = useFetcher<FetcherData>();
     const [activeImage, setActiveImage] = useState(0);
 
+    const navigate = useNavigate();
+
+    const handleGoBack = () => {
+        navigate(-1); // Vuelve a la página anterior
+    };
+
     // ✅ Estado de favorito actualizado sin favoriteId
     const currentFavoriteStatus = fetcher.data?.isFavorite !== undefined ? fetcher.data.isFavorite : isFavorite;
 
@@ -182,6 +189,26 @@ export default function LotDetail() {
 
     return (
         <div>
+{/* Botón de volver atrás */}
+                <button
+                    onClick={handleGoBack}
+                    className="mb-4 flex items-center gap-2 text-gray-600 hover:text-lateral-600 transition-colors duration-200 group"
+                >
+                    <svg 
+                        className="w-5 h-5 transform group-hover:-translate-x-1 transition-transform duration-200" 
+                        fill="none" 
+                        stroke="currentColor" 
+                        viewBox="0 0 24 24"
+                    >
+                        <path 
+                            strokeLinecap="round" 
+                            strokeLinejoin="round" 
+                            strokeWidth={2} 
+                            d="M15 19l-7-7 7-7" 
+                        />
+                    </svg>
+                    <span className="font-medium">Volver</span>
+                </button>
             <div className="p-4 mb-6 flex justify-between items-center">
                 <div>
                     <h1 className="text-3xl font-bold">{lote.nombre}</h1>

@@ -174,30 +174,19 @@ export async function action({ request }: ActionFunctionArgs) {
 
         const { refresh, access, user } = registerData.data;
 
-        if (!refresh || !access || !user) {
-            console.error("Missing required data:", { refresh: !!refresh, access: !!access, user: !!user });
-            return json({
-                success: false,
-                errors: { general: "Datos incompletos en la respuesta" },
-                values: { email, username, first_name, last_name, phone, company, role }
-            }, { status: 500 });
-        }
-
         console.log(`Registration complete for: ${user.email} (role: ${user.role})`);
 
-        // ✅ CORRECCIÓN: Usar commitAuthCookies en lugar de sesión de Remix
-        const headers = await commitAuthCookies({
-            access,
-            refresh
-        });
+        // ✅ En registro, siempre recordar por 7 días
+        const headers = await commitAuthCookies(
+            { access, refresh },
+            true // ✅ Siempre recordar en registro
+        );
 
-        // Determinar ruta de redirección
         const finalRedirectTo = getDashboardRoute(user.role);
 
         console.log(`Redirecting to: ${finalRedirectTo}`);
         console.log("=== REGISTER ACTION END (SUCCESS) ===");
 
-        // Retornar con las cookies correctas
         return redirect(finalRedirectTo, { headers });
 
     } catch (error) {
@@ -818,7 +807,6 @@ export default function Register() {
                         opacity: 1;
                         transform: translateY(0);
                     }
-                }
                 
                 @keyframes shake {
                     0%, 100% { transform: translateX(0); }

@@ -213,6 +213,10 @@ class UserRequestSerializer(serializers.ModelSerializer):
     
     # ✅ NUEVO: Información del lote
     lote_info = serializers.SerializerMethodField()
+
+    # ✅ NUEVO: Información de revisión (para que aparezca en listados)
+    reviewer_info = UserSimpleSerializer(source='reviewer', read_only=True)
+    review_notes = serializers.CharField(read_only=True)
     
     class Meta:
         model = UserRequest
@@ -222,7 +226,9 @@ class UserRequestSerializer(serializers.ModelSerializer):
             'title', 'status', 'status_display',
             'priority', 'priority_display',
             'created_at', 'updated_at', 'resolved_at',
-            'is_resolved', 'is_pending'
+            'is_resolved', 'is_pending',
+            # campos de revisión añadidos
+            'reviewer', 'reviewer_info', 'review_notes'
         ]
         read_only_fields = ['id', 'user', 'created_at', 'updated_at', 'resolved_at']
     
@@ -263,6 +269,22 @@ class UserRequestDetailSerializer(serializers.ModelSerializer):
             'is_resolved', 'is_pending', 'response_time_display'
         ]
         read_only_fields = ['id', 'user', 'created_at', 'updated_at', 'resolved_at']
+    
+    # ✅ NUEVO: Override to_representation para logging detallado
+    def to_representation(self, instance):
+        """Serializar con logging para debug"""
+        ret = super().to_representation(instance)
+        
+        # Log solo para la primera solicitud (evitar spam)
+        if not hasattr(self, '_logged_first'):
+            logger.info(f"[UserRequestDetailSerializer] Serializing request {instance.id}")
+            logger.info(f"  - Has reviewer: {instance.reviewer is not None}")
+            logger.info(f"  - Review notes: {instance.review_notes}")
+            logger.info(f"  - Serialized reviewer_info: {ret.get('reviewer_info')}")
+            logger.info(f"  - Serialized review_notes: {ret.get('review_notes')}")
+            self.__class__._logged_first = True
+        
+        return ret
     
     def get_lote_info(self, obj):
         """Información completa del lote si existe"""

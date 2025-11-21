@@ -341,7 +341,6 @@ def update_profile(request):
 class UserRequestViewSet(viewsets.ModelViewSet):
     """
     ViewSet para gestionar solicitudes de usuario.
-    Permite crear, ver, actualizar y eliminar solicitudes.
     """
     queryset = UserRequest.objects.all()
     permission_classes = [IsAuthenticated, IsRequestOwnerOrStaff]
@@ -397,22 +396,65 @@ class UserRequestViewSet(viewsets.ModelViewSet):
     
     @action(detail=False, methods=['get'])
     def my_requests(self, request):
-        """Obtener todas las solicitudes del usuario actual"""
+        """Obtener todas las solicitudes del usuario actual (con info de revisión)"""
         request_type = request.query_params.get('type')
         request_status = request.query_params.get('status')
-        
-        requests = RequestStatusService.get_user_requests(
+
+        # ✅ NUEVO: Logging detallado
+        logger.info("="*60)
+        logger.info(f"[my_requests] User: {request.user.email}")
+        logger.info(f"[my_requests] Filters - type: {request_type}, status: {request_status}")
+
+        # Obtener queryset enriquecido (select_related ya en el servicio)
+        requests_qs = RequestStatusService.get_user_requests(
             user=request.user,
             request_type=request_type,
             status=request_status
         )
+
+        # ✅ NUEVO: Log de cantidad y datos de primera solicitud
+        logger.info(f"[my_requests] Found {requests_qs.count()} requests")
         
-        page = self.paginate_queryset(requests)
+        if requests_qs.exists():
+            first_req = requests_qs.first()
+            logger.info(f"[my_requests] First request:")
+            logger.info(f"  - ID: {first_req.id}")
+            logger.info(f"  - Title: {first_req.title}")
+            logger.info(f"  - Status: {first_req.status}")
+            logger.info(f"  - Reviewer: {first_req.reviewer}")
+            logger.info(f"  - Review notes: {first_req.review_notes}")
+            logger.info(f"  - Reviewer info exists: {first_req.reviewer is not None}")
+            if first_req.reviewer:
+                logger.info(f"  - Reviewer email: {first_req.reviewer.email}")
+                logger.info(f"  - Reviewer full_name: {first_req.reviewer.get_full_name()}")
+
+        page = self.paginate_queryset(requests_qs)
+        # Usar el serializer detallado para incluir reviewer/review_notes en la lista
+        serializer_class = UserRequestDetailSerializer
+
         if page is not None:
-            serializer = UserRequestSerializer(page, many=True)
+            serializer = serializer_class(page, many=True, context={'request': request})
+            
+            # ✅ NUEVO: Log de datos serializados
+            logger.info(f"[my_requests] Serialized {len(serializer.data)} items")
+            if serializer.data:
+                first_item = serializer.data[0]
+                logger.info(f"[my_requests] First serialized item keys: {list(first_item.keys())}")
+                logger.info(f"[my_requests] reviewer_info: {first_item.get('reviewer_info')}")
+                logger.info(f"[my_requests] review_notes: {first_item.get('review_notes')}")
+            
+            logger.info("="*60)
             return self.get_paginated_response(serializer.data)
+
+        serializer = serializer_class(requests_qs, many=True, context={'request': request})
         
-        serializer = UserRequestSerializer(requests, many=True)
+        # ✅ NUEVO: Log para respuesta sin paginación
+        logger.info(f"[my_requests] Non-paginated response with {len(serializer.data)} items")
+        if serializer.data:
+            logger.info(f"[my_requests] First item reviewer_info: {serializer.data[0].get('reviewer_info')}")
+            logger.info(f"[my_requests] First item review_notes: {serializer.data[0].get('review_notes')}")
+        logger.info("="*60)
+        
         return Response(serializer.data)
     
     @action(detail=False, methods=['get'])
@@ -436,6 +478,38 @@ class UserRequestViewSet(viewsets.ModelViewSet):
         
         serializer = UserRequestSerializer(updates, many=True)
         return Response(serializer.data)
+    
+    @action(detail=True, methods=['get'], permission_classes=[IsAuthenticated])
+    def response(self, request, pk=None):
+        """
+        Retorna la solicitud con la información de revisión del admin:
+        - reviewer (info)
+        - review_notes
+        - status, resolved_at
+        Endpoint: /api/users/requests/{pk}/response/
+        """
+        try:
+            obj = self.get_object()  # aplica permisos automáticamente
+            # Usar el serializer detallado que ya incluye reviewer_info y review_notes
+            from .serializers import UserRequestDetailSerializer
+            serializer = UserRequestDetailSerializer(obj, context={'request': request})
+            
+            data = serializer.data
+            # Añadir campos de conveniencia
+            data['reviewed'] = obj.is_resolved
+            data['reviewer_response'] = obj.review_notes
+            data['reviewer'] = None
+            if obj.reviewer:
+                from .serializers import UserSimpleSerializer
+                data['reviewer'] = UserSimpleSerializer(obj.reviewer).data
+
+            return Response({
+                'success': True,
+                'request': data
+            })
+        except Exception as e:
+            logger.error(f"Error retrieving request response for {pk}: {e}", exc_info=True)
+            return Response({'success': False, 'error': 'Error al obtener la solicitud'}, status=500)
 
 
 # =============================================================================

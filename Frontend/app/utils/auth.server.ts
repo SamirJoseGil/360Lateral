@@ -193,6 +193,20 @@ export async function getUser(request: Request): Promise<ApiUser | null> {
   }
 }
 
+/**
+ * ✅ NUEVO: Obtener usuario autenticado o redirigir
+ * Similar a requireUser pero retorna el objeto completo
+ */
+export async function requireUser(request: Request): Promise<ApiUser> {
+  const user = await getUser(request);
+  
+  if (!user) {
+    throw redirect("/login");
+  }
+  
+  return user;
+}
+
 // =============================================================================
 // FETCH AUTENTICADO - Con refresh automático
 // =============================================================================
@@ -283,6 +297,7 @@ export async function loginAction(request: Request) {
   const form = await request.formData();
   const email = form.get("email") as string;
   const password = form.get("password") as string;
+  const remember = form.get("remember") === "on"; // ✅ Obtener estado de "Recordarme"
   
   console.log(`[loginAction] Attempting login at: ${API_URL}/api/auth/login/`);
   
@@ -310,7 +325,7 @@ export async function loginAction(request: Request) {
   const headers = await commitAuthCookies({
     access: token,
     refresh: refreshToken || token,
-  });
+  }, remember); // ✅ Pasar estado de "Recordarme"
 
   // Guardar en caché
   setCachedUser(token, user);

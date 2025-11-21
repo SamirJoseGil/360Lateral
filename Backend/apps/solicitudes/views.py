@@ -1,8 +1,9 @@
 """
 Vistas para solicitudes
 """
-from rest_framework import viewsets, permissions, status
+from rest_framework import viewsets, status
 from rest_framework.decorators import action
+from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework import filters
@@ -11,89 +12,174 @@ import logging
 from .models import Solicitud
 from .serializers import (
     SolicitudSerializer,
-    SolicitudDetailSerializer,
-    SolicitudCreateSerializer
+    SolicitudCreateSerializer,
+    SolicitudUpdateSerializer
 )
+from apps.notifications.services import NotificationService
 
 logger = logging.getLogger(__name__)
 
 
 class SolicitudViewSet(viewsets.ModelViewSet):
-    """ViewSet para gestionar solicitudes"""
-    queryset = Solicitud.objects.all()
-    permission_classes = [permissions.IsAuthenticated]
+    """
+    ViewSet para gestionar solicitudes
+    ✅ MEJORADO: Incluye select_related para optimizar queries
+    """
+    serializer_class = SolicitudSerializer
+    permission_classes = [IsAuthenticated]
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
-    filterset_fields = ['tipo', 'estado', 'prioridad', 'lote']
+    filterset_fields = ['tipo', 'estado', 'prioridad']
     search_fields = ['titulo', 'descripcion']
-    ordering_fields = ['created_at', 'prioridad', 'estado']
+    ordering_fields = ['created_at', 'updated_at', 'prioridad']
     ordering = ['-created_at']
+    
+    def get_queryset(self):
+        """✅ CRÍTICO: Incluir select_related para evitar N+1 queries"""
+        user = self.request.user
+        
+        # ✅ MEJORADO: select_related para traer usuario, revisor y lote en una sola query
+        queryset = Solicitud.objects.select_related(
+            'usuario',
+            'revisor',
+            'lote'
+        ).order_by('-created_at')
+        
+        # Admin ve todas
+        if user.is_staff:
+            return queryset
+        
+        # Usuario regular solo ve las suyas
+        return queryset.filter(usuario=user)
     
     def get_serializer_class(self):
         """Seleccionar serializer según acción"""
         if self.action == 'create':
             return SolicitudCreateSerializer
-        elif self.action == 'retrieve':
-            return SolicitudDetailSerializer
+        elif self.action in ['update', 'partial_update']:
+            return SolicitudUpdateSerializer
         return SolicitudSerializer
     
-    def get_queryset(self):
-        """Filtrar según usuario"""
-        user = self.request.user
-        
-        # Admin ve todas
-        if user.is_staff or user.role == 'admin':
-            return Solicitud.objects.all()
-        
-        # Usuario ve solo las suyas
-        return Solicitud.objects.filter(usuario=user)
+    def perform_create(self, serializer):
+        """Crear solicitud"""
+        solicitud = serializer.save(usuario=self.request.user)
+        logger.info(f"Solicitud creada: {solicitud.id} por {self.request.user.email}")
     
     @action(detail=False, methods=['get'])
     def mis_solicitudes(self, request):
-        """Obtener mis solicitudes"""
-        solicitudes = Solicitud.objects.filter(usuario=request.user).order_by('-created_at')
+        """
+        Obtener solicitudes del usuario actual
+        ✅ MEJORADO: Con logging detallado y select_related
+        """
+        logger.info("="*60)
+        logger.info(f"[mis_solicitudes] User: {request.user.email}")
         
-        serializer = self.get_serializer(solicitudes, many=True)
+        # ✅ CRÍTICO: Usar select_related
+        solicitudes = Solicitud.objects.filter(
+            usuario=request.user
+        ).select_related('usuario', 'revisor', 'lote').order_by('-created_at')
+        
+        count = solicitudes.count()
+        logger.info(f"[mis_solicitudes] Found {count} solicitudes")
+        
+        if count > 0:
+            first = solicitudes.first()
+            logger.info(f"[mis_solicitudes] First solicitud:")
+            logger.info(f"  - ID: {first.id}")
+            logger.info(f"  - Titulo: {first.titulo}")
+            logger.info(f"  - Estado: {first.estado}")
+            logger.info(f"  - Revisor: {first.revisor}")
+            logger.info(f"  - Notas revision: {first.notas_revision}")
+        
+        # ✅ Serializar con contexto
+        serializer = SolicitudSerializer(
+            solicitudes,
+            many=True,
+            context={'request': request}
+        )
+        
+        # ✅ NUEVO: Log de datos serializados
+        if serializer.data:
+            first_data = serializer.data[0]
+            logger.info(f"[mis_solicitudes] First serialized:")
+            logger.info(f"  - notas_revision: {first_data.get('notas_revision')}")
+            logger.info(f"  - revisor_info: {first_data.get('revisor_info')}")
+        
+        logger.info("="*60)
+        
         return Response(serializer.data)
     
     @action(detail=False, methods=['get'])
     def resumen(self, request):
-        """Resumen de estados"""
-        user_solicitudes = Solicitud.objects.filter(usuario=request.user)
+        """Obtener resumen de solicitudes del usuario"""
+        user = request.user
         
-        resumen = {
-            'total': user_solicitudes.count(),
-            'pendientes': user_solicitudes.filter(estado='pendiente').count(),
-            'en_revision': user_solicitudes.filter(estado='en_revision').count(),
-            'completadas': user_solicitudes.filter(estado='completado').count(),
-            'rechazadas': user_solicitudes.filter(estado='rechazado').count(),
-        }
+        if user.is_staff:
+            solicitudes = Solicitud.objects.all()
+        else:
+            solicitudes = Solicitud.objects.filter(usuario=user)
         
-        return Response(resumen)
+        total = solicitudes.count()
+        pendientes = solicitudes.filter(estado='pendiente').count()
+        completadas = solicitudes.filter(estado='completado').count()
+        
+        return Response({
+            'total': total,
+            'pendientes': pendientes,
+            'completadas': completadas
+        })
     
     @action(detail=True, methods=['post'])
     def cambiar_estado(self, request, pk=None):
-        """Cambiar estado de solicitud (solo staff)"""
-        if not (request.user.is_staff or request.user.role == 'admin'):
+        """
+        ✅ MEJORADO: Cambiar estado de solicitud (solo admin)
+        Incluye actualización de notas_revision
+        """
+        if not request.user.is_staff:
             return Response({
-                'error': 'No tienes permiso'
+                'success': False,
+                'error': 'No tienes permisos para cambiar el estado'
             }, status=status.HTTP_403_FORBIDDEN)
         
         solicitud = self.get_object()
         nuevo_estado = request.data.get('estado')
-        notas = request.data.get('notas', '')
+        notas = request.data.get('notas_revision', '')
         
-        if nuevo_estado not in dict(Solicitud.ESTADO_CHOICES):
+        if not nuevo_estado:
             return Response({
-                'error': 'Estado inválido'
+                'success': False,
+                'error': 'El estado es requerido'
             }, status=status.HTTP_400_BAD_REQUEST)
         
+        old_estado = solicitud.estado
         solicitud.estado = nuevo_estado
         solicitud.revisor = request.user
+        
+        # ✅ CRÍTICO: Actualizar notas_revision
         if notas:
             solicitud.notas_revision = notas
+        
         solicitud.save()
         
-        logger.info(f"Solicitud {pk} cambió a {nuevo_estado} por {request.user.email}")
+        logger.info(
+            f"Solicitud {solicitud.id} estado cambiado: "
+            f"{old_estado} → {nuevo_estado} por {request.user.email}"
+        )
         
-        serializer = SolicitudDetailSerializer(solicitud)
-        return Response(serializer.data)
+        # ✅ Crear notificación
+        if nuevo_estado in ['aprobado', 'rechazado', 'completado']:
+            NotificationService.create_notification(
+                user=solicitud.usuario,
+                type='solicitud_respondida',
+                title='Solicitud actualizada',
+                message=f'Tu solicitud "{solicitud.titulo}" ha sido {nuevo_estado}',
+                action_url='/owner/solicitudes'
+            )
+        
+        # ✅ Serializar con contexto
+        serializer = SolicitudSerializer(solicitud, context={'request': request})
+        
+        return Response({
+            'success': True,
+            'message': f'Estado actualizado a {nuevo_estado}',
+            'data': serializer.data
+        })
