@@ -603,3 +603,38 @@ export function handleApiError(error: unknown, defaultMessage: string = "Error d
     status: 500 
   };
 }
+
+// ✅ MEJORADO: Marcar primera sesión como completada
+export async function markFirstLoginCompleted(request: Request) {
+  console.log("[Users] Marking first login as completed");
+
+  try {
+    const { res, setCookieHeaders } = await fetchWithAuth(
+      request, 
+      `${API_URL}/api/users/first-login-completed/`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        }
+      }
+    );
+
+    if (!res.ok) {
+      console.error(`[Users] Error marking first login: ${res.status}`);
+      throw new Error(`Error marking first login: ${res.status}`);
+    }
+
+    const response = await res.json();
+
+    return {
+      success: response.success,
+      message: response.message,
+      user: response.user,
+      headers: setCookieHeaders
+    };
+  } catch (error) {
+    console.error("[Users] Error in markFirstLoginCompleted:", error);
+    throw error;
+  }
+}

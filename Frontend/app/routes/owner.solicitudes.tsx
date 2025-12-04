@@ -1,8 +1,8 @@
 import { json, LoaderFunctionArgs, ActionFunctionArgs, redirect } from "@remix-run/node";
-import { useLoaderData, Link, useNavigation, useSubmit, useNavigate } from "@remix-run/react";
+import { useLoaderData, Link, useNavigation, Form, useActionData } from "@remix-run/react";
+import React, { useState } from "react";
 import { requireUser, fetchWithAuth } from "~/utils/auth.server";
 import { API_URL } from "~/utils/env.server";
-import GoBackButton from "~/components/GoBackButton";
 
 // ============================================================================
 // TIPOS
@@ -158,24 +158,38 @@ export async function action({ request }: ActionFunctionArgs) {
 
 export default function OwnerSolicitudes() {
     const { user, requests } = useLoaderData<typeof loader>();
+    const actionData = useActionData<any>();
     const navigation = useNavigation();
-    const submit = useSubmit();
-    const navigate = useNavigate(); // ✅ NUEVO: Hook para navegación
-
+    
     const isLoading = navigation.state === "loading";
+    const isSubmitting = navigation.state === "submitting";
 
-    // ✅ NUEVO: Función para volver atrás
-    const handleGoBack = () => {
-        navigate(-1); // Vuelve a la página anterior
-        // O si prefieres ir a una ruta específica:
-        // navigate("/owner");
-    };
+    // ✅ NUEVO: Estado para mostrar/ocultar formulario
+    const [showCreateForm, setShowCreateForm] = useState(false);
+    const [formData, setFormData] = useState({
+        request_type: "consulta_general",
+        title: "",
+        description: "",
+        priority: "normal"
+    });
+
+    // ✅ NUEVO: Cerrar formulario cuando se crea exitosamente
+    React.useEffect(() => {
+        if (actionData?.success) {
+            setShowCreateForm(false);
+            setFormData({
+                request_type: "consulta_general",
+                title: "",
+                description: "",
+                priority: "normal"
+            });
+        }
+    }, [actionData]);
 
     return (
         <div className="p-6">
-            {/* ✅ NUEVO: Header con botón de volver */}
+            {/* Header */}
             <div className="mb-6">
-                {/* Título y acciones */}
                 <div className="flex justify-between items-center">
                     <div>
                         <h1 className="text-2xl font-bold text-gray-900">Mis Solicitudes</h1>
@@ -183,17 +197,179 @@ export default function OwnerSolicitudes() {
                             Gestiona y da seguimiento a tus solicitudes
                         </p>
                     </div>
-                    <Link
-                        to="/owner/solicitudes/nueva"
-                        className="px-4 py-2 bg-lateral-600 text-white rounded-lg hover:bg-lateral-700 transition-colors flex items-center gap-2"
+                    {/* ✅ CORREGIDO: Botón que muestra/oculta formulario */}
+                    <button
+                        onClick={() => setShowCreateForm(!showCreateForm)}
+                        className={`px-4 py-2 rounded-lg transition-colors flex items-center gap-2 ${
+                            showCreateForm 
+                                ? 'bg-gray-200 text-gray-700 hover:bg-gray-300' 
+                                : 'bg-lateral-600 text-white hover:bg-lateral-700'
+                        }`}
                     >
-                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                        </svg>
-                        Nueva Solicitud
-                    </Link>
+                        {showCreateForm ? (
+                            <>
+                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                </svg>
+                                Cancelar
+                            </>
+                        ) : (
+                            <>
+                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                                </svg>
+                                Nueva Solicitud
+                            </>
+                        )}
+                    </button>
                 </div>
             </div>
+
+            {/* ✅ NUEVO: Alertas de éxito/error */}
+            {actionData?.success && (
+                <div className="mb-6 bg-green-50 border-l-4 border-green-500 p-4 rounded-r-lg animate-fade-in">
+                    <div className="flex items-center">
+                        <svg className="w-5 h-5 text-green-500 mr-3" fill="currentColor" viewBox="0 0 20 20">
+                            <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                        </svg>
+                        <p className="text-green-800 font-medium">Solicitud creada exitosamente</p>
+                    </div>
+                </div>
+            )}
+
+            {actionData?.error && (
+                <div className="mb-6 bg-red-50 border-l-4 border-red-500 p-4 rounded-r-lg animate-fade-in">
+                    <div className="flex items-center">
+                        <svg className="w-5 h-5 text-red-500 mr-3" fill="currentColor" viewBox="0 0 20 20">
+                            <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+                        </svg>
+                        <p className="text-red-800 font-medium">{actionData.error}</p>
+                    </div>
+                </div>
+            )}
+
+            {/* ✅ NUEVO: Formulario de creación (desplegable) */}
+            {showCreateForm && (
+                <div className="mb-6 bg-white rounded-lg shadow-lg border-2 border-lateral-200 p-6 animate-slide-down">
+                    <h2 className="text-xl font-bold text-gray-900 mb-4 flex items-center gap-2">
+                        <svg className="w-6 h-6 text-lateral-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                        </svg>
+                        Nueva Solicitud
+                    </h2>
+
+                    <Form method="post" className="space-y-4">
+                        <input type="hidden" name="intent" value="create" />
+
+                        {/* Tipo de Solicitud */}
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-2">
+                                Tipo de Solicitud <span className="text-red-500">*</span>
+                            </label>
+                            <select
+                                name="request_type"
+                                value={formData.request_type}
+                                onChange={(e) => setFormData(prev => ({ ...prev, request_type: e.target.value }))}
+                                className="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:border-lateral-500 focus:ring-4 focus:ring-lateral-200 focus:outline-none transition-all"
+                                required
+                            >
+                                <option value="consulta_general">Consulta General</option>
+                                <option value="soporte_tecnico">Soporte Técnico</option>
+                                <option value="analisis_urbanistico">Análisis Urbanístico</option>
+                                <option value="validacion_documentos">Validación de Documentos</option>
+                                <option value="correccion_datos">Corrección de Datos</option>
+                            </select>
+                        </div>
+
+                        {/* Grid para Título y Prioridad */}
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                            {/* Título (ocupa 2 columnas) */}
+                            <div className="md:col-span-2">
+                                <label className="block text-sm font-medium text-gray-700 mb-2">
+                                    Título <span className="text-red-500">*</span>
+                                </label>
+                                <input
+                                    type="text"
+                                    name="title"
+                                    value={formData.title}
+                                    onChange={(e) => setFormData(prev => ({ ...prev, title: e.target.value }))}
+                                    className="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:border-lateral-500 focus:ring-4 focus:ring-lateral-200 focus:outline-none transition-all"
+                                    placeholder="Ej: Problema con la carga de documentos"
+                                    required
+                                />
+                            </div>
+
+                            {/* Prioridad */}
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-2">
+                                    Prioridad
+                                </label>
+                                <select
+                                    name="priority"
+                                    value={formData.priority}
+                                    onChange={(e) => setFormData(prev => ({ ...prev, priority: e.target.value }))}
+                                    className="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:border-lateral-500 focus:ring-4 focus:ring-lateral-200 focus:outline-none transition-all"
+                                >
+                                    <option value="low">Baja</option>
+                                    <option value="normal">Normal</option>
+                                    <option value="high">Alta</option>
+                                    <option value="urgent">Urgente</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        {/* Descripción */}
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-2">
+                                Descripción <span className="text-red-500">*</span>
+                            </label>
+                            <textarea
+                                name="description"
+                                value={formData.description}
+                                onChange={(e) => setFormData(prev => ({ ...prev, description: e.target.value }))}
+                                rows={4}
+                                className="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:border-lateral-500 focus:ring-4 focus:ring-lateral-200 focus:outline-none transition-all resize-none"
+                                placeholder="Describe detalladamente tu solicitud..."
+                                required
+                            />
+                        </div>
+
+                        {/* Botones */}
+                        <div className="flex justify-end gap-3 pt-4 border-t">
+                            <button
+                                type="button"
+                                onClick={() => setShowCreateForm(false)}
+                                className="px-6 py-2 border-2 border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 font-medium transition-all"
+                                disabled={isSubmitting}
+                            >
+                                Cancelar
+                            </button>
+                            <button
+                                type="submit"
+                                disabled={isSubmitting}
+                                className="px-6 py-2 bg-gradient-to-r from-lateral-600 to-lateral-700 text-white rounded-lg hover:from-lateral-700 hover:to-lateral-800 font-semibold shadow-lg hover:shadow-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                            >
+                                {isSubmitting ? (
+                                    <>
+                                        <svg className="animate-spin h-5 w-5" fill="none" viewBox="0 0 24 24">
+                                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                                        </svg>
+                                        Enviando...
+                                    </>
+                                ) : (
+                                    <>
+                                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l-9 2-9-18-9 18 9-2zm0 0v-8" />
+                                        </svg>
+                                        Enviar Solicitud
+                                    </>
+                                )}
+                            </button>
+                        </div>
+                    </Form>
+                </div>
+            )}
 
             {/* Lista de solicitudes */}
             {isLoading ? (
@@ -207,25 +383,29 @@ export default function OwnerSolicitudes() {
                     </svg>
                     <h3 className="mt-2 text-sm font-medium text-gray-900">No tienes solicitudes</h3>
                     <p className="mt-1 text-sm text-gray-500">
-                        Comienza creando una nueva solicitud.
+                        {showCreateForm 
+                            ? "Completa el formulario de arriba para crear tu primera solicitud" 
+                            : "Comienza creando una nueva solicitud"
+                        }
                     </p>
-                    <div className="mt-6">
-                        <Link
-                            to="/owner/solicitudes/nueva"
-                            className="inline-flex items-center px-4 py-2 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-lateral-600 hover:bg-lateral-700"
-                        >
-                            <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                            </svg>
-                            Nueva Solicitud
-                        </Link>
-                    </div>
+                    {!showCreateForm && (
+                        <div className="mt-6">
+                            <button
+                                onClick={() => setShowCreateForm(true)}
+                                className="inline-flex items-center px-4 py-2 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-lateral-600 hover:bg-lateral-700"
+                            >
+                                <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                                </svg>
+                                Nueva Solicitud
+                            </button>
+                        </div>
+                    )}
                 </div>
             ) : (
                 <div className="space-y-4">
                     {requests.map((req: any) => (
                         <div key={req.id} className="bg-white rounded-lg shadow hover:shadow-md transition-shadow p-6">
-                            {/* ✅ ELIMINADO: flex justify-between - Ya no hay botón de acciones */}
                             <div className="w-full">
                                 {/* Header de la solicitud */}
                                 <div className="flex items-center gap-3 mb-3">
@@ -267,7 +447,7 @@ export default function OwnerSolicitudes() {
                                         </span>
                                     )}
 
-                                    {/* Fecha de creación */}
+                                    {/* Fecha */}
                                     <span className="text-xs text-gray-500">
                                         {new Date(req.created_at).toLocaleDateString('es-CO', {
                                             year: 'numeric',
@@ -275,16 +455,9 @@ export default function OwnerSolicitudes() {
                                             day: 'numeric'
                                         })}
                                     </span>
-
-                                    {/* Fecha de resolución */}
-                                    {(req.resuelta_at || req.resolved_at) && (
-                                        <span className="text-xs text-gray-500">
-                                            Resuelta: {new Date(req.resuelta_at || req.resolved_at).toLocaleDateString('es-CO')}
-                                        </span>
-                                    )}
                                 </div>
 
-                                {/* ✅ CRÍTICO: Respuesta del Admin - Verificar notas_revision */}
+                                {/* Respuesta del Admin */}
                                 {req.notas_revision && req.notas_revision.trim() ? (
                                     <div className="mt-4 p-4 bg-blue-50 border-l-4 border-blue-500 rounded-md">
                                         <div className="flex items-start gap-3">
@@ -298,11 +471,11 @@ export default function OwnerSolicitudes() {
                                             <div className="flex-1">
                                                 <div className="flex items-center justify-between mb-2">
                                                     <div className="text-sm font-semibold text-blue-900">
-                                                        Respuesta del Administrador
+                                                        💬 Respuesta del Administrador
                                                     </div>
-                                                    {(req.updated_at || req.resuelta_at || req.resolved_at) && (
+                                                    {req.updated_at && (
                                                         <div className="text-xs text-gray-500">
-                                                            {new Date(req.updated_at || req.resuelta_at || req.resolved_at).toLocaleString('es-CO')}
+                                                            {new Date(req.updated_at).toLocaleString('es-CO')}
                                                         </div>
                                                     )}
                                                 </div>
@@ -325,12 +498,41 @@ export default function OwnerSolicitudes() {
                                     </div>
                                 )}
                             </div>
-
-                            {/* ✅ ELIMINADO: Botón "Ver detalles" */}
                         </div>
                     ))}
                 </div>
             )}
+
+            {/* Estilos para animaciones */}
+            <style>{`
+                @keyframes slide-down {
+                    from {
+                        opacity: 0;
+                        transform: translateY(-10px);
+                    }
+                    to {
+                        opacity: 1;
+                        transform: translateY(0);
+                    }
+                }
+                
+                @keyframes fade-in {
+                    from {
+                        opacity: 0;
+                    }
+                    to {
+                        opacity: 1;
+                    }
+                }
+                
+                .animate-slide-down {
+                    animation: slide-down 0.3s ease-out;
+                }
+                
+                .animate-fade-in {
+                    animation: fade-in 0.3s ease-out;
+                }
+            `}</style>
         </div>
     );
 }

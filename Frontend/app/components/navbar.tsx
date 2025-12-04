@@ -88,12 +88,42 @@ export default function Navbar() {
         }
 
         // Enlaces según rol
-        const dashboardLink = { to: `/${user.role}`, label: "Menú", end: true }; // Add end prop
+        const dashboardLink = { to: `/${user.role}`, label: "Menú", end: true };
 
         const commonLinks = [
             { to: "/about", label: "Acerca de", end: false },
-            { to: "/contact", label: "Contacto", end: false },
         ];
+
+        // ✅ NUEVO: Enlaces específicos por rol
+        if (user.role === 'admin') {
+            return [
+                dashboardLink,
+                { to: "/admin/lotes", label: "Lotes", end: false },
+                { to: "/admin/usuarios", label: "Usuarios", end: false },
+                { to: "/admin/solicitudes", label: "Solicitudes", end: false },
+                { to: "/admin/analisis", label: "Análisis IA", end: false }, // ✅ NUEVO
+                ...commonLinks
+            ];
+        }
+
+        if (user.role === 'owner') {
+            return [
+                dashboardLink,
+                { to: "/owner/lotes", label: "Mis Lotes", end: false },
+                { to: "/owner/solicitudes", label: "Solicitudes", end: false },
+                { to: "/owner/analisis", label: "Análisis", end: false }, // ✅ NUEVO
+                ...commonLinks
+            ];
+        }
+
+        if (user.role === 'developer') {
+            return [
+                dashboardLink,
+                { to: "/developer/search", label: "Buscar Lotes", end: false },
+                { to: "/developer/investment", label: "Inversión", end: false },
+                ...commonLinks
+            ];
+        }
 
         return [dashboardLink, ...commonLinks];
     };

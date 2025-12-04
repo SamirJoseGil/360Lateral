@@ -13,14 +13,14 @@ class Notification(models.Model):
     """
     Notificaciones del sistema para usuarios
     """
-    TYPE_CHOICES = [
+    TIPO_CHOICES = [
         ('lote_aprobado', 'Lote Aprobado'),
         ('lote_rechazado', 'Lote Rechazado'),
         ('documento_validado', 'Documento Validado'),
-        ('documento_rechazado', 'Documento Rechazado'),
         ('solicitud_respondida', 'Solicitud Respondida'),
-        ('nuevo_mensaje', 'Nuevo Mensaje'),
-        ('sistema', 'Notificación del Sistema'),
+        ('lote_recomendado', 'Lote Recomendado'),  # ✅ NUEVO
+        ('mensaje', 'Mensaje'),
+        ('sistema', 'Sistema'),
     ]
     
     PRIORITY_CHOICES = [
@@ -43,7 +43,7 @@ class Notification(models.Model):
     # Contenido
     type = models.CharField(
         max_length=50,
-        choices=TYPE_CHOICES,
+        choices=TIPO_CHOICES,
         verbose_name='Tipo',
         db_index=True
     )

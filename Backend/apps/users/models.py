@@ -6,8 +6,11 @@ Define el usuario personalizado y modelos relacionados
 from django.contrib.auth.models import AbstractUser
 from django.db import models
 from django.core.exceptions import ValidationError
-import uuid
 import logging
+import secrets
+from datetime import timedelta
+from django.utils import timezone
+import uuid
 
 logger = logging.getLogger(__name__)
 
@@ -31,156 +34,190 @@ class User(AbstractUser):
         ('TI', 'Tarjeta de Identidad')
     ]
     
-    FOCUS_AREA_CHOICES = [
-        ('residential', 'Residencial'),
-        ('commercial', 'Comercial'),
-        ('mixed', 'Mixto'),
-        ('vis', 'VIS (Vivienda de Interés Social)'),
-        ('industrial', 'Industrial'),
-        ('other', 'Otro')
+    # ✅ NUEVO: Tipos de desarrollador
+    DEVELOPER_TYPE_CHOICES = [
+        ('constructora', 'Constructora'),
+        ('fondo_inversion', 'Fondo de Inversión'),
+        ('inversionista', 'Inversionista'),
+        ('otro', 'Otro'),
     ]
     
-    DEPARTMENT_CHOICES = [
-        ('normativa', 'Normativa'),
-        ('soporte_tecnico', 'Soporte Técnico'),
-        ('gestion_usuarios', 'Gestión de Usuarios'),
-        ('desarrollo', 'Desarrollo'),
-        ('comercial', 'Comercial'),
-        ('legal', 'Legal'),
-        ('general', 'General')
+    # ✅ NUEVO: Tipo de persona
+    PERSON_TYPE_CHOICES = [
+        ('natural', 'Persona Natural'),
+        ('juridica', 'Persona Jurídica'),
     ]
-    
-    PERMISSIONS_SCOPE_CHOICES = [
-        ('full', 'Administrador Completo'),
-        ('limited', 'Administrador Limitado'),
-        ('readonly', 'Solo Lectura'),
-        ('department', 'Solo Departamento')
-    ]
-    
+
     # Campos base
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    email = models.EmailField(unique=True, verbose_name='Email', db_index=True)
-    username = models.CharField(max_length=150, unique=True, verbose_name='Username', db_index=True)
-    first_name = models.CharField(max_length=150, verbose_name='Nombre')
-    last_name = models.CharField(max_length=150, verbose_name='Apellido')
+    email = models.EmailField(unique=True, verbose_name='Email')
+    phone = models.CharField(max_length=20, null=True, blank=True, verbose_name='Teléfono')
+    role = models.CharField(max_length=20, choices=ROLE_CHOICES, default='owner')
     
-    # Campos comunes
-    phone = models.CharField(max_length=20, blank=True, null=True, verbose_name='Teléfono')
-    company = models.CharField(max_length=200, blank=True, null=True, verbose_name='Empresa')
-    role = models.CharField(
-        max_length=20, 
-        choices=ROLE_CHOICES, 
-        default='owner',
-        verbose_name='Rol',
-        db_index=True
-    )
-    is_verified = models.BooleanField(default=False, verbose_name='Email Verificado')
-    
-    # ✅ NUEVO: Campos para soft delete
-    deleted_at = models.DateTimeField(
+    # ===== CAMPOS DE DESARROLLADOR =====
+    developer_type = models.CharField(
+        max_length=50,
+        choices=DEVELOPER_TYPE_CHOICES,
         null=True,
         blank=True,
-        verbose_name='Fecha de Eliminación'
-    )
-    deletion_reason = models.TextField(
-        blank=True,
-        null=True,
-        verbose_name='Razón de Eliminación'
+        help_text="Tipo de desarrollador"
     )
     
-    # Campos específicos para Owner
+    person_type = models.CharField(
+        max_length=10,
+        choices=PERSON_TYPE_CHOICES,
+        null=True,
+        blank=True,
+        verbose_name='Tipo de Persona',
+        help_text='Natural o Jurídica'
+    )
+    
     document_type = models.CharField(
-        max_length=20, 
+        max_length=10,
         choices=DOCUMENT_TYPE_CHOICES,
-        blank=True, 
         null=True,
+        blank=True,
         verbose_name='Tipo de Documento'
     )
+    
     document_number = models.CharField(
-        max_length=50, 
-        blank=True, 
-        null=True, 
-        verbose_name='Número de Documento',
-        db_index=True
-    )
-    address = models.TextField(blank=True, null=True, verbose_name='Dirección de Residencia')
-    id_verification_file = models.FileField(
-        upload_to='documents/id_verification/', 
-        blank=True, 
-        null=True,
-        verbose_name='Archivo de Verificación de Identidad'
-    )
-    lots_count = models.PositiveIntegerField(default=0, verbose_name='Cantidad de Lotes')
-    
-    # Campos específicos para Developer
-    company_name = models.CharField(max_length=200, blank=True, null=True, verbose_name='Nombre de la Empresa')
-    company_nit = models.CharField(max_length=50, blank=True, null=True, verbose_name='NIT de la Empresa')
-    position = models.CharField(max_length=100, blank=True, null=True, verbose_name='Cargo')
-    experience_years = models.PositiveIntegerField(blank=True, null=True, verbose_name='Años de Experiencia')
-    portfolio_url = models.URLField(blank=True, null=True, verbose_name='URL del Portafolio')
-    focus_area = models.CharField(
         max_length=50,
-        choices=FOCUS_AREA_CHOICES,
-        blank=True,
         null=True,
-        verbose_name='Área de Enfoque'
+        blank=True,
+        verbose_name='Número de Documento',
+        help_text='Solo números'
     )
     
-    # Campos específicos para Admin
-    department = models.CharField(
-        max_length=100,
-        choices=DEPARTMENT_CHOICES,
-        blank=True,
+    # ✅ ACTUALIZADO: Campo nombre/empresa
+    legal_name = models.CharField(
+        max_length=255,
         null=True,
-        verbose_name='Departamento'
+        blank=True,
+        verbose_name='Nombre Legal/Empresa',
+        help_text='Nombre completo si es natural, Nombre de empresa si es jurídica'
     )
-    permissions_scope = models.CharField(
+    
+    # ✅ Campo de verificación
+    is_verified = models.BooleanField(default=False, verbose_name='Email Verificado')
+    is_phone_verified = models.BooleanField(default=False, verbose_name='Teléfono Verificado')
+    
+    email_verified_at = models.DateTimeField(null=True, blank=True, verbose_name='Email Verificado En')
+    phone_verified_at = models.DateTimeField(null=True, blank=True, verbose_name='Teléfono Verificado En')
+    
+    # ✅ NUEVO: Campo para tracking de primera sesión
+    first_login_completed = models.BooleanField(
+        default=False,
+        help_text="Indica si el usuario ha completado su primera sesión y visto el mensaje de bienvenida"
+    )
+    
+    # ✅ NUEVO: PERFIL DE INVERSIÓN
+    ciudades_interes = models.JSONField(
+        default=list, 
+        blank=True,
+        help_text="Lista de ciudades de interés (para desarrolladores)"
+    )
+    
+    usos_preferidos = models.JSONField(
+        default=list,
+        blank=True,
+        help_text="Usos de suelo preferidos: ['residencial', 'comercial', 'industrial', 'logistico']"
+    )
+    
+    modelos_pago = models.JSONField(
+        default=list,
+        blank=True,
+        help_text="Modelos de pago: ['contado', 'aporte', 'hitos']"
+    )
+    
+    volumen_ventas_min = models.CharField(
         max_length=20,
-        choices=PERMISSIONS_SCOPE_CHOICES,
-        default='limited',
-        blank=True,
+        choices=[
+            ('menos_150', '< 150.000.000.000'),
+            ('entre_150_350', 'Entre 150.000.000.000 y 350.000.000.000'),
+            ('mas_350', 'Más de 350.000.000.000'),
+        ],
         null=True,
-        verbose_name='Alcance de Permisos'
+        blank=True,
+        help_text="Volumen mínimo de ventas esperado"
     )
     
-    # Timestamps
-    created_at = models.DateTimeField(auto_now_add=True, verbose_name='Fecha de Creación')
-    updated_at = models.DateTimeField(auto_now=True, verbose_name='Última Actualización')
+    ticket_inversion_min = models.CharField(
+        max_length=20,
+        choices=[
+            ('menos_150', '< 150.000.000.000'),
+            ('entre_150_350', 'Entre 150.000.000.000 y 350.000.000.000'),
+            ('mas_350', 'Más de 350.000.000.000'),
+        ],
+        null=True,
+        blank=True,
+        help_text="Ticket mínimo de inversión (solo para fondos e inversionistas)"
+    )
     
-    USERNAME_FIELD = 'email'
-    REQUIRED_FIELDS = ['username', 'first_name', 'last_name']
+    perfil_completo = models.BooleanField(
+        default=False,
+        help_text="Indica si el perfil de inversión está completo"
+    )
+    
+    # Campos de auditoría
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name='Creado')
+    updated_at = models.DateTimeField(auto_now=True, verbose_name='Actualizado')
     
     class Meta:
-        verbose_name = 'Usuario'
-        verbose_name_plural = 'Usuarios'
+        verbose_name = "Usuario"
+        verbose_name_plural = "Usuarios"
         ordering = ['-created_at']
-        db_table = 'users_user'
+        # ✅ NUEVO: Índices para mejorar performance
         indexes = [
-            models.Index(fields=['email']),
-            models.Index(fields=['username']),
-            models.Index(fields=['role']),
-            models.Index(fields=['created_at']),
+            models.Index(fields=['email'], name='user_email_idx'),
+            models.Index(fields=['role', 'is_active'], name='user_role_active_idx'),
+            models.Index(fields=['created_at'], name='user_created_at_idx'),
+            models.Index(fields=['is_verified'], name='user_verified_idx'),
         ]
         
     def __str__(self):
         return f"{self.get_full_name()} ({self.email})"
     
     def clean(self):
-        """Validación del modelo"""
-        # ✅ CRÍTICO: NO llamar super().clean() porque valida password
-        # super().clean()  # ❌ ELIMINAR ESTA LÍNEA
+        """Validaciones personalizadas"""
+        super().clean()
         
-        # ✅ SOLO validar campos específicos de nuestro modelo
+        # ✅ NUEVO: Validar campos según rol developer
         if self.role == 'developer':
-            if not self.company_name:
+            if not self.developer_type:
                 raise ValidationError({
-                    'company_name': 'Requerido para desarrolladores'
+                    'developer_type': 'El tipo de desarrollador es obligatorio'
                 })
-        
-        elif self.role == 'admin':
-            if not self.department:
+            
+            if not self.person_type:
                 raise ValidationError({
-                    'department': 'Requerido para administradores'
+                    'person_type': 'El tipo de persona es obligatorio'
+                })
+            
+            # Validar documento según tipo de persona
+            if self.person_type == 'juridica' and self.document_type != 'NIT':
+                raise ValidationError({
+                    'document_type': 'Personas jurídicas deben usar NIT'
+                })
+            
+            if self.person_type == 'natural' and self.document_type == 'NIT':
+                raise ValidationError({
+                    'document_type': 'Personas naturales no pueden usar NIT'
+                })
+            
+            if not self.document_number:
+                raise ValidationError({
+                    'document_number': 'El número de documento es obligatorio para desarrolladores'
+                })
+            
+            # Validar que document_number sea numérico
+            if not self.document_number.isdigit():
+                raise ValidationError({
+                    'document_number': 'El número de documento debe contener solo números'
+                })
+            
+            if not self.legal_name:
+                raise ValidationError({
+                    'legal_name': 'El nombre legal o empresa es obligatorio para desarrolladores'
                 })
     
     def save(self, *args, **kwargs):
@@ -287,6 +324,92 @@ class User(AbstractUser):
     def is_deleted(self):
         """Verifica si el usuario está eliminado (soft delete)"""
         return not self.is_active and self.deleted_at is not None
+
+
+class VerificationCode(models.Model):
+    """
+    Modelo para códigos de verificación (email y WhatsApp)
+    ⚠️ PREPARADO para futura integración con SMTP/WhatsApp
+    """
+    CODE_TYPE_CHOICES = [
+        ('email', 'Email'),
+        ('whatsapp', 'WhatsApp'),
+        ('sms', 'SMS'),
+    ]
+    
+    user = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        related_name='verification_codes',
+        verbose_name='Usuario'
+    )
+    
+    code = models.CharField(
+        max_length=6,
+        verbose_name='Código',
+        help_text='Código de 6 dígitos'
+    )
+    
+    code_type = models.CharField(
+        max_length=10,
+        choices=CODE_TYPE_CHOICES,
+        verbose_name='Tipo de Código'
+    )
+    
+    is_used = models.BooleanField(
+        default=False,
+        verbose_name='Usado'
+    )
+    
+    expires_at = models.DateTimeField(
+        verbose_name='Expira en'
+    )
+    
+    created_at = models.DateTimeField(
+        auto_now_add=True,
+        verbose_name='Creado'
+    )
+    
+    used_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        verbose_name='Usado en'
+    )
+    
+    class Meta:
+        verbose_name = 'Código de Verificación'
+        verbose_name_plural = 'Códigos de Verificación'
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['user', 'code_type', 'is_used']),
+            models.Index(fields=['code', 'expires_at']),
+        ]
+    
+    def __str__(self):
+        return f"{self.user.email} - {self.code_type} - {self.code}"
+    
+    @staticmethod
+    def generate_code():
+        """Genera un código de 6 dígitos"""
+        return ''.join([str(secrets.randbelow(10)) for _ in range(6)])
+    
+    def is_valid(self):
+        """Verifica si el código es válido"""
+        if self.is_used:
+            return False
+        
+        if timezone.now() > self.expires_at:
+            return False
+        
+        return True
+    
+    def mark_as_used(self):
+        """Marca el código como usado"""
+        self.is_used = True
+        self.used_at = timezone.now()
+        self.save(update_fields=['is_used', 'used_at'])
+        
+        logger.info(f"Verification code {self.code} marked as used for {self.user.email}")
 
 
 class UserProfile(models.Model):

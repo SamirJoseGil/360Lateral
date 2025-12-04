@@ -468,15 +468,19 @@ class CanManageLotes(permissions.BasePermission):
 ```python
 def validate_cbml(cbml: str) -> bool:
     """
-    Valida formato de CBML según estructura de Medellín
-    Formato: 14 dígitos (zona-sector-manzana-predio)
+    Valida formato de CBML según MapGIS Medellín
+    Formato: 11 dígitos numéricos
     """
-    if not cbml or len(cbml) != 14:
+    if not cbml or len(cbml) != 11:
         return False
     if not cbml.isdigit():
         return False
     return True
 ```
+
+**Formato CBML**: Exactamente **11 dígitos** numéricos  
+**Ejemplo válido**: `05001000000`  
+**Ejemplo inválido**: `0500100000` (10 dígitos), `050010000001` (12 dígitos)
 
 ### Validación de Matrícula
 
@@ -493,125 +497,6 @@ def validate_matricula(matricula: str) -> bool:
 
 ## Integración con MapGIS
 
-### Configuración
-
-```python
-# settings.py
-MAPGIS_BASE_URL = 'https://www.medellin.gov.co'
-MAPGIS_TIMEOUT = 30
-MAPGIS_RETRY_ATTEMPTS = 3
-MAPGIS_FORCE_REAL = True  # Usar datos reales vs mock
-```
-
-### Uso
-
-```python
-from apps.lotes.services.mapgis import MapGISService
-
-# Buscar lote por CBML
-resultado = MapGISService.buscar_por_cbml('01010010010010')
-
-if resultado['success']:
-    datos_lote = resultado['data']
-    # Procesar datos
-```
-
-## Testing
-
-### Unit Tests
-
-```bash
-# Todos los tests de lotes
-python manage.py test apps.lotes
-
-# Tests específicos
-python manage.py test apps.lotes.tests.test_models
-python manage.py test apps.lotes.tests.test_views
-python manage.py test apps.lotes.tests.test_services
-```
-
-### Ejemplo de Test
-
-```python
-class LoteModelTest(TestCase):
-    def setUp(self):
-        self.user = User.objects.create_user(
-            email='owner@test.com',
-            password='test123',
-            role='owner'
-        )
-        self.lote = Lote.objects.create(
-            cbml='01010010010010',
-            owner=self.user,
-            area=500.00
-        )
-    
-    def test_calcular_potencial(self):
-        """Test cálculo de potencial constructivo"""
-        potencial = self.lote.calcular_potencial_constructivo()
-        self.assertIsNotNone(potencial)
-        self.assertIn('area_maxima_construccion', potencial)
-```
-
-## Best Practices
-
-### Performance
-
-1. Usar `select_related` para owner en queries
-2. Implementar cache para datos de MapGIS
-3. Paginar resultados de búsqueda
-4. Usar índices en campos de búsqueda frecuente
-
-```python
-# Buena práctica
-lotes = Lote.objects.select_related('owner').filter(status='active')
-
-# Mala práctica
-lotes = Lote.objects.filter(status='active')
-for lote in lotes:
-    owner = lote.owner  # Query adicional N+1
-```
-
-### Seguridad
-
-1. Validar siempre CBML y matrícula
-2. Verificar permisos antes de modificar
-3. Sanitizar inputs de búsqueda
-4. Loggear cambios importantes
-5. Validar archivos subidos
-
-### Mantenimiento
-
-1. Actualizar datos de MapGIS periódicamente
-2. Revisar análisis urbanísticos obsoletos
-3. Limpiar documentos huérfanos
-4. Archivar lotes vendidos
-
-## Troubleshooting
-
-### Error: "CBML no válido"
-
-**Causa:** Formato de CBML incorrecto.
-
-**Solución:** Verificar que el CBML tenga 14 dígitos y sea numérico.
-
-### Error: "MapGIS no responde"
-
-**Causa:** Servicio MapGIS no disponible o timeout.
-
-**Solución:**
-1. Verificar conectividad
-2. Aumentar timeout
-3. Usar datos en cache si disponibles
-
-### Error: "Lote no encontrado"
-
-**Causa:** CBML no existe en MapGIS.
-
-**Solución:** Verificar CBML en portal oficial de catastro.
-
-## Referencias
-
-- [Portal MapGIS Medellín](https://www.medellin.gov.co/mapgis)
-- [POT Medellín](https://www.medellin.gov.co/pot)
-- [Catastro Municipal](https://www.medellin.gov.co/catastro)
+El módulo se integra con MapGIS Medellín para obtener información catastral:
+- **CBML**: 11 dígitos numéricos (ej: `05001000000`)
+- **Fuente**: MapGIS Alcaldía de Medellín

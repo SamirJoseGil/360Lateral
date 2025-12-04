@@ -1,11 +1,14 @@
 import { json, redirect } from "@remix-run/node";
 import type { LoaderFunctionArgs, ActionFunctionArgs } from "@remix-run/node";
-import { Form, useLoaderData, useActionData, useNavigation } from "@remix-run/react";
-import { useState } from "react";
+import { Form, useLoaderData, useActionData, useNavigation, Link, useSearchParams } from "@remix-run/react";
+import { useState, useEffect } from "react";
 import { getUser } from "~/utils/auth.server";
 import { searchLotes, addLoteToFavorites, removeLoteFromFavorites, getAllLotes, getMisLotes, getAvailableLotes } from "~/services/lotes.server";
 import { getNormativaPorCBML } from "~/services/pot.server";
 import POTInfo from "~/components/POTInfo";
+import { API_URL } from "~/utils/env.server";
+import { fetchWithAuth } from "~/utils/auth.server";
+import { StaticMapPreview } from "~/components/MapView";
 
 export async function loader({ request }: LoaderFunctionArgs) {
     const user = await getUser(request);
@@ -13,97 +16,82 @@ export async function loader({ request }: LoaderFunctionArgs) {
         return redirect(user ? `/${user.role}` : "/login");
     }
 
+    // ✅ CORREGIDO: Obtener parámetros de búsqueda
     const url = new URL(request.url);
-    const searchParams = {
-        search: url.searchParams.get("q") || "",
-        area_min: url.searchParams.get("area_min") ? parseFloat(url.searchParams.get("area_min")!) : undefined,
-        area_max: url.searchParams.get("area_max") ? parseFloat(url.searchParams.get("area_max")!) : undefined,
-        estrato: url.searchParams.get("estrato") ? parseInt(url.searchParams.get("estrato")!) : undefined,
-        barrio: url.searchParams.get("zona") || "",
-        ordering: url.searchParams.get("ordering") || "-fecha_creacion",
-        limit: parseInt(url.searchParams.get("page_size") || "12"),
-        offset: (parseInt(url.searchParams.get("page") || "1") - 1) * parseInt(url.searchParams.get("page_size") || "12")
-    };
-
-    const hasFilters = searchParams.search ||
-        searchParams.area_min !== undefined ||
-        searchParams.area_max !== undefined ||
-        searchParams.estrato !== undefined ||
-        searchParams.barrio;
-
+    const ciudad = url.searchParams.get('ciudad');
+    const uso = url.searchParams.get('uso');
+    const areaMin = url.searchParams.get('area_min');
+    const areaMax = url.searchParams.get('area_max');
+    const matchProfile = url.searchParams.get('match_profile') === 'true';
+    
     try {
-        console.log("[Developer Search] Obteniendo lotes disponibles", { hasFilters });
-
-        // USAR ENDPOINT ESPECÍFICO PARA DEVELOPERS
-        const searchResponse = await getAvailableLotes(request, searchParams);
-
-        // Obtener información POT para cada lote
-        const lotesConPOT = await Promise.all(
-            (searchResponse.lotes || []).map(async (lote: any) => {
-                let potData = null;
-
-                if (lote.cbml) {
-                    try {
-                        const potResponse = await getNormativaPorCBML(request, lote.cbml);
-                        potData = potResponse.normativa;
-                    } catch (potError) {
-                        console.error(`Error obteniendo POT para lote ${lote.id}:`, potError);
-                    }
-                }
-
-                return {
-                    ...lote,
-                    potData
-                };
-            })
+        // ✅ CORREGIDO: Usar endpoint correcto con filtros
+        const searchUrl = new URL(`${API_URL}/api/lotes/available/`);
+        
+        // ✅ CRÍTICO: Agregar parámetros de filtro
+        if (ciudad) searchUrl.searchParams.set('ciudad', ciudad);
+        if (uso) searchUrl.searchParams.set('uso_suelo', uso);
+        if (areaMin) searchUrl.searchParams.set('area_min', areaMin);
+        if (areaMax) searchUrl.searchParams.set('area_max', areaMax);
+        if (matchProfile) searchUrl.searchParams.set('match_profile', 'true');
+        
+        // ✅ CRÍTICO: Forzar solo lotes activos y verificados
+        searchUrl.searchParams.set('status', 'active');
+        searchUrl.searchParams.set('is_verified', 'true');
+        
+        console.log('[developer.search] Fetching lotes from:', searchUrl.toString());
+        
+        const { res, setCookieHeaders } = await fetchWithAuth(
+            request,
+            searchUrl.toString()
         );
-
-        const currentPage = parseInt(url.searchParams.get("page") || "1");
-        const pageSize = parseInt(url.searchParams.get("page_size") || "12");
-        const totalCount = searchResponse.count || lotesConPOT.length;
-        const totalPages = Math.ceil(totalCount / pageSize);
-
+        
+        if (!res.ok) {
+            const errorText = await res.text();
+            console.error('[developer.search] Error fetching lotes:', res.status, errorText);
+            throw new Error(`Error fetching lotes: ${res.status}`);
+        }
+        
+        const data = await res.json();
+        console.log('[developer.search] Response data:', {
+            count: data.count,
+            lotesLength: data.results?.length || data.lotes?.length || 0
+        });
+        
+        // ✅ CORREGIDO: Manejar diferentes estructuras de respuesta
+        const lotes = data.results || data.lotes || [];
+        
+        // ✅ LOGGING: Ver qué lotes se obtuvieron
+        console.log('[developer.search] Lotes obtenidos:', lotes.length);
+        if (lotes.length > 0) {
+            console.log('[developer.search] Primer lote:', {
+                id: lotes[0].id,
+                nombre: lotes[0].nombre,
+                ciudad: lotes[0].ciudad,
+                status: lotes[0].status,
+                is_verified: lotes[0].is_verified
+            });
+        }
+        
+        // Obtener ciudades disponibles
+        const ciudadesRes = await fetch(`${API_URL}/api/users/ciudades/`);
+        const ciudadesData = ciudadesRes.ok ? await ciudadesRes.json() : { data: [] };
+        
         return json({
             user,
-            lotes: lotesConPOT,
-            totalCount: totalCount,
-            hasFilters,
-            isInitialLoad: !hasFilters && currentPage === 1,
-            pagination: {
-                page: currentPage,
-                totalPages,
-                next: searchResponse.next ?? null,
-                previous: searchResponse.previous ?? null
-            },
-            filters: {
-                q: url.searchParams.get("q") || "",
-                area_min: url.searchParams.get("area_min") || "",
-                area_max: url.searchParams.get("area_max") || "",
-                estrato: url.searchParams.get("estrato") || "",
-                zona: url.searchParams.get("zona") || "",
-                tratamiento_pot: url.searchParams.get("tratamiento_pot") || ""
-            }
-        }, {
-            headers: searchResponse.headers
-        });
+            lotes,
+            ciudades: ciudadesData.data || [],
+            filters: { ciudad, uso, areaMin, areaMax, matchProfile }
+        }, { headers: setCookieHeaders });
+        
     } catch (error) {
-        console.error("Error en búsqueda de lotes:", error);
+        console.error("[developer.search] Error loading search:", error);
         return json({
             user,
             lotes: [],
-            totalCount: 0,
-            hasFilters,
-            isInitialLoad: false,
-            pagination: { page: 1, totalPages: 0, next: null, previous: null },
-            filters: {
-                q: "",
-                area_min: "",
-                area_max: "",
-                estrato: "",
-                zona: "",
-                tratamiento_pot: ""
-            },
-            error: "Error al cargar los lotes disponibles. Por favor, intenta nuevamente."
+            ciudades: [],
+            filters: {},
+            error: error instanceof Error ? error.message : "Error cargando búsqueda"
         });
     }
 }
@@ -161,28 +149,39 @@ export async function action({ request }: ActionFunctionArgs) {
 }
 
 export default function DeveloperSearch() {
-    const loaderData = useLoaderData<typeof loader>();
+    const { user, lotes, ciudades, filters, error } = useLoaderData<typeof loader>();
     const actionData = useActionData<typeof action>();
     const navigation = useNavigation();
     const [selectedLote, setSelectedLote] = useState<any>(null);
     const [showPOTModal, setShowPOTModal] = useState(false);
+    const [searchParams, setSearchParams] = useSearchParams();
+    const [showAdvanced, setShowAdvanced] = useState(false);
 
     const isSearching = navigation.state === "loading";
-
-    // Extraer datos del loader con manejo de errores
-    const user = 'user' in loaderData ? loaderData.user : null;
-    const lotes = 'lotes' in loaderData ? loaderData.lotes : [];
-    const totalCount = 'totalCount' in loaderData ? loaderData.totalCount : 0;
-    const hasFilters = 'hasFilters' in loaderData ? loaderData.hasFilters : false;
-    const isInitialLoad = 'isInitialLoad' in loaderData ? loaderData.isInitialLoad : false;
-    const pagination = 'pagination' in loaderData ? loaderData.pagination : { page: 1, totalPages: 0 };
-    const filters = 'filters' in loaderData ? loaderData.filters : { q: "", area_min: "", area_max: "", estrato: "", zona: "", tratamiento_pot: "" };
-    const error = 'error' in loaderData ? loaderData.error : null;
 
     // Función para abrir modal de información POT
     const openPOTModal = (lote: any) => {
         setSelectedLote(lote);
         setShowPOTModal(true);
+    };
+
+    // Funciones para manejar filtros
+    const handleSearchParamsChange = (e: React.ChangeEvent<HTMLSelectElement | HTMLInputElement>) => {
+        const { name, value } = e.target;
+        setSearchParams((prev) => {
+            const params = new URLSearchParams(prev);
+            if (value) {
+                params.set(name, value);
+            } else {
+                params.delete(name);
+            }
+            return params;
+        });
+    };
+
+    const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
+        e.preventDefault();
+        // Aquí puedes manejar el envío del formulario si es necesario
     };
 
     // Función para formatear filtros activos
@@ -198,331 +197,371 @@ export default function DeveloperSearch() {
         return active;
     };
 
+    // Opciones de usos de suelo
+    const usosDisponibles = [
+        { value: 'residencial', label: 'Residencial', icon: '🏠' },
+        { value: 'comercial', label: 'Comercial', icon: '🏢' },
+        { value: 'industrial', label: 'Industrial', icon: '🏭' },
+        { value: 'logistico', label: 'Logístico', icon: '📦' },
+        { value: 'mixto', label: 'Mixto', icon: '🏘️' },
+    ];
+    
+    // ✅ NUEVO: Log para debugging en consola del navegador
+    useEffect(() => {
+        console.log('[developer.search] Component data:', {
+            lotesCount: lotes?.length || 0,
+            ciudadesCount: ciudades?.length || 0,
+            filters,
+            error
+        });
+    }, [lotes, ciudades, filters, error]);
+    
     return (
-        <div className="p-4">
-            {/* Header */}
-            <div className="mb-8">
-                <h1 className="text-3xl font-bold">Búsqueda de Lotes</h1>
-                <p className="text-gray-600 mt-2">
-                    {hasFilters
-                        ? "Encuentra lotes disponibles según tus criterios de desarrollo"
-                        : "Explora todos los lotes disponibles en el sistema"
-                    }
-                </p>
+        <div className="max-w-7xl mx-auto p-6">
+            {/* Header con botón de perfil */}
+            <div className="flex items-center justify-between mb-8">
+                <div>
+                    <h1 className="text-3xl font-bold text-gray-900">Buscar Lotes</h1>
+                    <p className="text-gray-600 mt-2">
+                        Encuentra el lote perfecto para tu próximo desarrollo
+                    </p>
+                </div>
+                <Link
+                    to="/developer/profile"
+                    className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors flex items-center gap-2"
+                >
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                    </svg>
+                    Mi Perfil
+                </Link>
             </div>
-
-            {/* Error message */}
-            {error && typeof error === "string" && (
-                <div className="mb-6 bg-red-50 border-l-4 border-red-400 p-4">
-                    <p className="text-red-700">{error}</p>
+            
+            {/* ✅ NUEVO: Mostrar error si existe */}
+            {error && (
+                <div className="mb-6 bg-red-50 border-l-4 border-red-500 p-4 rounded-r-lg">
+                    <div className="flex items-center">
+                        <svg className="w-5 h-5 text-red-500 mr-3" fill="currentColor" viewBox="0 0 20 20">
+                            <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+                        </svg>
+                        <p className="text-red-800 font-medium">{error}</p>
+                    </div>
                 </div>
             )}
-
-            {/* Action result message */}
-            {actionData?.message && (
-                <div className={`mb-6 p-4 rounded-md ${actionData.success
-                    ? "bg-green-50 border-l-4 border-green-400 text-green-700"
-                    : "bg-red-50 border-l-4 border-red-400 text-red-700"
-                    }`}>
-                    {actionData.message}
-                </div>
-            )}
-
-            {/* Basic Search Form */}
-            <div className="mb-8 bg-white rounded-lg shadow p-6">
-                <Form method="get" className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                    <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">
-                            Búsqueda general
-                        </label>
-                        <input
-                            type="text"
-                            name="q"
-                            defaultValue={filters.q}
-                            className="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-300 focus:ring focus:ring-blue-200"
-                            placeholder="Dirección, barrio, CBML..."
-                        />
+            
+            {/* Filtros */}
+            <div className="bg-white rounded-xl shadow-lg p-6 mb-8">
+                <Form method="get" className="space-y-6" onSubmit={handleSubmit}>                    
+                    {/* Filtros básicos */}
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        {/* Ciudad */}
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-2">
+                                Ciudad
+                            </label>
+                            <select
+                                name="ciudad"
+                                defaultValue={filters.ciudad || ''}
+                                onChange={handleSearchParamsChange}
+                                className="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200"
+                            >
+                                <option value="">Todas las ciudades</option>
+                                {ciudades.map((ciudad: any) => (
+                                    <option key={ciudad.id} value={ciudad.nombre}>
+                                        {ciudad.nombre}
+                                    </option>
+                                ))}
+                            </select>
+                        </div>
+                        
+                        {/* Uso de suelo */}
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-2">
+                                Uso de Suelo
+                            </label>
+                            <select
+                                name="uso"
+                                defaultValue={filters.uso || ''}
+                                onChange={handleSearchParamsChange}
+                                className="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200"
+                            >
+                                <option value="">Todos los usos</option>
+                                {usosDisponibles.map((uso) => (
+                                    <option key={uso.value} value={uso.value}>
+                                        {uso.icon} {uso.label}
+                                    </option>
+                                ))}
+                            </select>
+                        </div>
+                        
+                        {/* Botón de búsqueda */}
+                        <div className="flex items-end">
+                            <button
+                                type="submit"
+                                className="w-full px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors font-medium flex items-center justify-center gap-2"
+                            >
+                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                                </svg>
+                                Buscar
+                            </button>
+                        </div>
                     </div>
-
+                    
+                    {/* Filtros avanzados (colapsables) */}
                     <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">
-                            Área mínima (m²)
-                        </label>
-                        <input
-                            type="number"
-                            name="area_min"
-                            defaultValue={filters.area_min}
-                            className="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-300 focus:ring focus:ring-blue-200"
-                            placeholder="100"
-                        />
-                    </div>
-
-                    <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">
-                            Área máxima (m²)
-                        </label>
-                        <input
-                            type="number"
-                            name="area_max"
-                            defaultValue={filters.area_max}
-                            className="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-300 focus:ring focus:ring-blue-200"
-                            placeholder="1000"
-                        />
-                    </div>
-
-                    <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">
-                            Estrato
-                        </label>
-                        <select
-                            name="estrato"
-                            defaultValue={filters.estrato}
-                            className="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-300 focus:ring focus:ring-blue-200"
-                        >
-                            <option value="">Todos</option>
-                            <option value="1">1</option>
-                            <option value="2">2</option>
-                            <option value="3">3</option>
-                            <option value="4">4</option>
-                            <option value="5">5</option>
-                            <option value="6">6</option>
-                        </select>
-                    </div>
-
-                    <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">
-                            Zona/Barrio
-                        </label>
-                        <input
-                            type="text"
-                            name="zona"
-                            defaultValue={filters.zona}
-                            className="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-300 focus:ring focus:ring-blue-200"
-                            placeholder="Poblado, Laureles..."
-                        />
-                    </div>
-
-                    <div className="flex items-end">
                         <button
-                            type="submit"
-                            className="w-full bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700"
+                            type="button"
+                            onClick={() => setShowAdvanced(!showAdvanced)}
+                            className="text-sm text-indigo-600 hover:text-indigo-700 font-medium flex items-center gap-2"
                         >
-                            {hasFilters ? "Buscar" : "Filtrar"}
+                            {showAdvanced ? (
+                                <>
+                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
+                                    </svg>
+                                    Ocultar filtros avanzados
+                                </>
+                            ) : (
+                                <>
+                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                                    </svg>
+                                    Mostrar filtros avanzados
+                                </>
+                            )}
                         </button>
+                        
+                        {showAdvanced && (
+                            <div className="mt-4 pt-4 border-t grid grid-cols-1 md:grid-cols-2 gap-4">
+                                {/* Área mínima */}
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                                        Área Mínima (m²)
+                                    </label>
+                                    <input
+                                        type="number"
+                                        name="area_min"
+                                        defaultValue={filters.areaMin || ''}
+                                        placeholder="Ej: 500"
+                                        onChange={handleSearchParamsChange}
+                                        className="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200"
+                                    />
+                                </div>
+                                
+                                {/* Área máxima */}
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                                        Área Máxima (m²)
+                                    </label>
+                                    <input
+                                        type="number"
+                                        name="area_max"
+                                        defaultValue={filters.areaMax || ''}
+                                        placeholder="Ej: 2000"
+                                        onChange={handleSearchParamsChange}
+                                        className="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200"
+                                    />
+                                </div>
+                            </div>
+                        )}
                     </div>
                 </Form>
-
-                {/* Mostrar filtros activos */}
-                {hasFilters && getActiveFilters().length > 0 && (
-                    <div className="mt-4 pt-4 border-t">
-                        <div className="flex items-center justify-between">
-                            <div className="flex flex-wrap gap-2">
-                                <span className="text-sm text-gray-600 mr-2">Filtros activos:</span>
-                                {getActiveFilters().map((filter, index) => (
-                                    <span key={index} className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-                                        {filter}
-                                    </span>
-                                ))}
-                            </div>
-                            <a
-                                href="/developer/search"
-                                className="text-sm text-gray-500 hover:text-gray-700"
+            </div>
+            
+            {/* Resultados */}
+            <div>
+                <div className="flex items-center justify-between mb-6">
+                    <h2 className="text-xl font-semibold text-gray-900">
+                        Resultados ({lotes?.length || 0} lotes disponibles)
+                    </h2>
+                    
+                    {/* ✅ NUEVO: Botón para limpiar filtros */}
+                    {(filters.ciudad || filters.uso || filters.areaMin || filters.areaMax) && (
+                        <Link
+                            to="/developer/search"
+                            className="text-sm text-gray-600 hover:text-gray-800 flex items-center gap-2"
+                        >
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                            </svg>
+                            Limpiar filtros
+                        </Link>
+                    )}
+                </div>
+                
+                {/* ✅ MEJORADO: Mensaje cuando no hay lotes */}
+                {!lotes || lotes.length === 0 ? (
+                    <div className="bg-white rounded-lg shadow p-12 text-center">
+                        <svg className="mx-auto h-16 w-16 text-gray-400 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                        </svg>
+                        <h3 className="text-xl font-medium text-gray-900 mb-2">
+                            {filters.ciudad || filters.uso || filters.areaMin || filters.areaMax
+                                ? 'No se encontraron lotes con estos filtros'
+                                : 'No hay lotes disponibles en este momento'
+                            }
+                        </h3>
+                        <p className="text-gray-500 mb-6">
+                            {filters.ciudad || filters.uso || filters.areaMin || filters.areaMax
+                                ? 'Intenta ajustar los filtros de búsqueda'
+                                : 'Vuelve pronto para ver nuevas oportunidades'
+                            }
+                        </p>
+                        <div className="flex items-center justify-center gap-4">
+                            {(filters.ciudad || filters.uso || filters.areaMin || filters.areaMax) && (
+                                <Link
+                                    to="/developer/search"
+                                    className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors"
+                                >
+                                    Ver todos los lotes
+                                </Link>
+                            )}
+                            <Link
+                                to="/developer/profile"
+                                className="px-4 py-2 border-2 border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors"
                             >
-                                Limpiar filtros
-                            </a>
+                                Actualizar mi perfil
+                            </Link>
+                        </div>
+                    </div>
+                ) : (
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                        {lotes.map((lote: any) => (
+                            <Link
+                                key={lote.id}
+                                to={`/developer/lots/${lote.id}`}
+                                className="bg-white rounded-lg shadow hover:shadow-xl transition-all duration-200 overflow-hidden group"
+                            >
+                                {/* ✅ NUEVO: Preview de mapa */}
+                                <div className="relative h-48 bg-gray-100">
+                                    <StaticMapPreview
+                                        latitud={lote.latitud}
+                                        longitud={lote.longitud}
+                                        width={400}
+                                        height={192}
+                                        zoom={14}
+                                    />
+                                    {/* Overlay con nombre */}
+                                    <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/70 to-transparent p-4">
+                                        <h3 className="text-lg font-bold text-white">{lote.nombre}</h3>
+                                    </div>
+                                </div>
+
+                                <div className="p-6">
+                                    {/* Header con match score si aplica */}
+                                    <div className="flex items-start justify-between mb-4">
+                                        <h3 className="text-lg font-semibold text-gray-900 group-hover:text-indigo-600 transition-colors">
+                                            {lote.nombre || `Lote ${lote.cbml}`}
+                                        </h3>
+                                        {lote.match_score && (
+                                            <div className="flex items-center gap-1 px-2 py-1 bg-green-100 text-green-800 rounded-full text-xs font-medium">
+                                                <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
+                                                    <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                                                </svg>
+                                                <span>Uso: {lote.uso_suelo}</span>
+                                                <span>{lote.match_score}% match</span>
+                                            </div>
+                                        )}
+                                    </div>
+
+                                    {/* Información del lote */}
+                                    <div className="mt-4 pt-4 border-t flex items-center justify-between">
+                                        <div className="space-y-2 text-sm text-gray-600">
+                                            {/* Ciudad */}
+                                            {lote.ciudad && (
+                                                <div className="flex items-center gap-2">
+                                                    <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 21v-4m0 0V5a2 2 0 012-2h6.5l1 1H21l-3 6 3 6h-8.5l-1-1H5a2 2 0 00-2 2zm9-13.5V9" />
+                                                    </svg>
+                                                    <span className="font-medium">{lote.ciudad}</span>
+                                                </div>
+                                            )}
+                                            {/* Dirección */}
+                                            <div className="flex items-center gap-2">
+                                                <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+                                                </svg>
+                                                <span>{lote.direccion}</span>
+                                            </div>
+                                            {/* Valor */}
+                                            {lote.valor && (
+                                                <div className="flex items-center gap-2">
+                                                    <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                                    </svg>
+                                                    <span className="font-semibold text-green-600">
+                                                        {new Intl.NumberFormat('es-CO', {
+                                                            style: 'currency',
+                                                            currency: 'COP',
+                                                            notation: 'compact',
+                                                            minimumFractionDigits: 0,
+                                                        }).format(lote.valor)}
+                                                    </span>
+                                                </div>
+                                            )}
+                                            {/* Uso de suelo */}
+                                            {lote.uso_suelo && (
+                                                <div className="flex items-center gap-2">
+                                                    <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                                    </svg>
+                                                    <span className="font-medium">{lote.uso_suelo}</span>
+                                                </div>
+                                            )}
+                                        </div>
+
+                                        {/* Botón ver normativa POT */}
+                                        <button
+                                            type="button"
+                                            className="ml-4 px-3 py-2 bg-indigo-50 text-indigo-700 rounded hover:bg-indigo-100 transition-colors text-xs font-semibold"
+                                            onClick={e => {
+                                                e.preventDefault();
+                                                setSelectedLote(lote);
+                                                setShowPOTModal(true);
+                                            }}
+                                        >
+                                            Ver Normativa POT
+                                        </button>
+                                    </div>
+                                </div>
+                            </Link>
+                        ))}
+                    </div>
+                )}
+
+                {/* Modal POT Info */}
+                {showPOTModal && selectedLote && selectedLote.potData && (
+                    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80">
+                        <div className="bg-white rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
+                            <div className="px-6 py-4 border-b flex justify-between items-center">
+                                <div>
+                                    <h3 className="text-lg font-medium text-gray-900">
+                                        Normativa POT - {selectedLote.nombre}
+                                    </h3>
+                                    <p className="text-sm text-gray-500">{selectedLote.direccion}</p>
+                                </div>
+                                <button
+                                    onClick={() => setShowPOTModal(false)}
+                                    className="text-gray-400 hover:text-gray-600"
+                                >
+                                    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                    </svg>
+                                </button>
+                            </div>
+
+                            <div className="p-6">
+                                <POTInfo
+                                    potData={selectedLote.potData}
+                                    showMapGisData={true}
+                                />
+                            </div>
                         </div>
                     </div>
                 )}
             </div>
-
-            {/* Results summary */}
-            <div className="mb-6 flex justify-between items-center">
-                <div className="text-sm text-gray-500">
-                    {isSearching ? (
-                        <span className="flex items-center">
-                            <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-gray-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                            </svg>
-                            {hasFilters ? "Buscando..." : "Cargando lotes..."}
-                        </span>
-                    ) : (
-                        <span>
-                            {hasFilters
-                                ? `Se encontraron ${totalCount.toLocaleString()} lotes que coinciden con tu búsqueda`
-                                : isInitialLoad
-                                    ? `Mostrando ${totalCount.toLocaleString()} lotes disponibles`
-                                    : `${totalCount.toLocaleString()} lotes en total`
-                            }
-                        </span>
-                    )}
-                </div>
-
-                <div className="text-sm text-gray-500">
-                    {pagination.totalPages > 0 && `Página ${pagination.page} de ${pagination.totalPages}`}
-                </div>
-            </div>
-
-            {/* Results grid */}
-            {lotes.length > 0 ? (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
-                    {lotes.map((lote: any) => (
-                        <div key={lote.id} className="bg-white rounded-lg shadow-md overflow-hidden">
-                            {/* Basic lote info */}
-                            <div className="p-4">
-                                <h3 className="font-semibold text-lg text-gray-900 mb-2">{lote.nombre}</h3>
-                                <p className="text-gray-600 text-sm mb-2">{lote.direccion}</p>
-
-                                <div className="grid grid-cols-2 gap-2 text-sm text-gray-500 mb-3">
-                                    <div>Área: {lote.area ? `${lote.area.toLocaleString()} m²` : 'N/A'}</div>
-                                    <div>Estrato: {lote.estrato || 'N/A'}</div>
-                                    <div>CBML: {lote.cbml ? lote.cbml.substring(0, 10) + '...' : 'N/A'}</div>
-                                    <div>Barrio: {lote.barrio || 'N/A'}</div>
-                                </div>
-                            </div>
-
-                            {/* POT Info preview */}
-                            {lote.potData && lote.potData.codigo_tratamiento && (
-                                <div className="p-4 border-t bg-gray-50">
-                                    <POTInfo
-                                        potData={lote.potData}
-                                        compact={true}
-                                        showMapGisData={false}
-                                    />
-                                    <button
-                                        onClick={() => openPOTModal(lote)}
-                                        className="mt-2 text-xs text-blue-600 hover:text-blue-800"
-                                    >
-                                        Ver normativa completa →
-                                    </button>
-                                </div>
-                            )}
-
-                            {/* Actions */}
-                            <div className="p-4 border-t flex justify-between items-center">
-                                <Form method="post" className="inline">
-                                    <input type="hidden" name="loteId" value={lote.id} />
-                                    <input type="hidden" name="action" value="add_favorite" />
-                                    <button
-                                        type="submit"
-                                        className="text-sm text-gray-600 hover:text-red-600"
-                                    >
-                                        ♥ Favorito
-                                    </button>
-                                </Form>
-
-                                <a
-                                    href={`/developer/lots/${lote.id}`}
-                                    className="text-sm bg-blue-600 text-white px-3 py-1 rounded hover:bg-blue-700"
-                                >
-                                    Ver detalles
-                                </a>
-                            </div>
-                        </div>
-                    ))}
-                </div>
-            ) : (
-                !isSearching && (
-                    <div className="text-center py-12">
-                        <div className="max-w-md mx-auto">
-                            {hasFilters ? (
-                                // Mensaje cuando hay filtros pero no resultados
-                                <>
-                                    <svg className="mx-auto h-12 w-12 text-gray-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                                    </svg>
-                                    <h3 className="mt-2 text-sm font-medium text-gray-900">No se encontraron lotes</h3>
-                                    <p className="mt-1 text-sm text-gray-500">
-                                        No hay lotes que coincidan con los filtros aplicados.
-                                    </p>
-                                    <div className="mt-6">
-                                        <a
-                                            href="/developer/search"
-                                            className="inline-flex items-center px-4 py-2 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
-                                        >
-                                            Ver todos los lotes
-                                        </a>
-                                    </div>
-                                </>
-                            ) : (
-                                // Mensaje cuando no hay filtros y no hay lotes en el sistema
-                                <>
-                                    <svg className="mx-auto h-12 w-12 text-gray-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
-                                    </svg>
-                                    <h3 className="mt-2 text-sm font-medium text-gray-900">No hay lotes disponibles</h3>
-                                    <p className="mt-1 text-sm text-gray-500">
-                                        Actualmente no hay lotes registrados en el sistema.
-                                    </p>
-                                    <p className="mt-1 text-sm text-gray-500">
-                                        Los propietarios pueden registrar nuevos lotes que aparecerán aquí.
-                                    </p>
-                                </>
-                            )}
-                        </div>
-                    </div>
-                )
-            )}
-
-            {/* Pagination */}
-            {pagination.totalPages > 1 && (
-                <div className="flex justify-center">
-                    <nav className="relative z-0 inline-flex rounded-md shadow-sm -space-x-px">
-                        {pagination.page > 1 && (
-                            <a
-                                href={`?q=${filters.q}&area_min=${filters.area_min}&area_max=${filters.area_max}&estrato=${filters.estrato}&zona=${filters.zona}&page=${pagination.page - 1}`}
-                                className="relative inline-flex items-center px-2 py-2 rounded-l-md border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50"
-                            >
-                                Anterior
-                            </a>
-                        )}
-
-                        <span className="relative inline-flex items-center px-4 py-2 border border-gray-300 bg-white text-sm font-medium text-gray-700">
-                            {pagination.page} de {pagination.totalPages}
-                        </span>
-
-                        {pagination.page < pagination.totalPages && (
-                            <a
-                                href={`?q=${filters.q}&area_min=${filters.area_min}&area_max=${filters.area_max}&estrato=${filters.estrato}&zona=${filters.zona}&page=${pagination.page + 1}`}
-                                className="relative inline-flex items-center px-2 py-2 rounded-r-md border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50"
-                            >
-                                Siguiente
-                            </a>
-                        )}
-                    </nav>
-                </div>
-            )}
-
-            {/* POT Detail Modal */}
-            {showPOTModal && selectedLote && selectedLote.potData && (
-                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-                    <div className="bg-white rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
-                        <div className="px-6 py-4 border-b flex justify-between items-center">
-                            <div>
-                                <h3 className="text-lg font-medium text-gray-900">
-                                    Normativa POT - {selectedLote.nombre}
-                                </h3>
-                                <p className="text-sm text-gray-500">{selectedLote.direccion}</p>
-                            </div>
-                            <button
-                                onClick={() => setShowPOTModal(false)}
-                                className="text-gray-400 hover:text-gray-600"
-                            >
-                                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                                </svg>
-                            </button>
-                        </div>
-
-                        <div className="p-6">
-                            <POTInfo
-                                potData={selectedLote.potData}
-                                showMapGisData={true}
-                            />
-                        </div>
-                    </div>
-                </div>
-            )}
         </div>
     );
 }

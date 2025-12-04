@@ -44,12 +44,34 @@ class SolicitudViewSet(viewsets.ModelViewSet):
             'lote'
         ).order_by('-created_at')
         
+        # ✅ NUEVO: Logging detallado
+        logger.info("="*60)
+        logger.info(f"[SolicitudViewSet] User: {user.email}")
+        logger.info(f"[SolicitudViewSet] Role: {user.role}")
+        
         # Admin ve todas
         if user.is_staff:
+            total = queryset.count()
+            logger.info(f"[SolicitudViewSet] Admin viewing all: {total} solicitudes")
+            
+            # ✅ NUEVO: Mostrar primeras solicitudes para debug
+            if total > 0:
+                first = queryset.first()
+                logger.info(f"[SolicitudViewSet] First solicitud:")
+                logger.info(f"  - ID: {first.id}")
+                logger.info(f"  - Titulo: {first.titulo}")
+                logger.info(f"  - Usuario: {first.usuario.email}")
+                logger.info(f"  - Estado: {first.estado}")
+                logger.info(f"  - Notas: {first.notas_revision}")
+            
+            logger.info("="*60)
             return queryset
         
         # Usuario regular solo ve las suyas
-        return queryset.filter(usuario=user)
+        filtered = queryset.filter(usuario=user)
+        logger.info(f"[SolicitudViewSet] User viewing own: {filtered.count()} solicitudes")
+        logger.info("="*60)
+        return filtered
     
     def get_serializer_class(self):
         """Seleccionar serializer según acción"""

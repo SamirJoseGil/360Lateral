@@ -3,75 +3,81 @@ import { fetchWithAuth, getAccessTokenFromCookies } from "~/utils/auth.server";
 
 // Define interfaces for the backend models
 export interface Lote {
-  id?: number;
+  id: string;
   nombre: string;
-  cbml: string;
   direccion: string;
   area?: number;
-  descripcion?: string;
+  
+  // Identificación
+  cbml?: string;
   matricula?: string;
   codigo_catastral?: string;
+  
+  // Ubicación
+  ciudad?: string;  // ✅ NUEVO
   barrio?: string;
-  // ✅ ELIMINADO: comuna - campo que no existe en el backend
   estrato?: number;
   latitud?: number;
   longitud?: number;
-  tratamiento_pot?: string;
+  
+  // Características
   uso_suelo?: string;
   clasificacion_suelo?: string;
-  metadatos?: Record<string, any>;
-  status?: string;
-  estado?: string;  // Backend usa 'estado'
-  owner?: number | string;
-  usuario?: number;  // Backend usa 'usuario'
-  // Campos de timestamp - mapeo de nombres
-  created_at?: string;
-  updated_at?: string;
-  fecha_creacion?: string;  // Backend usa fecha_creacion
-  fecha_actualizacion?: string;  // Backend usa fecha_actualizacion
-  // Campos de verificación
-  is_verified?: boolean;
-  verified_by?: number | string;
-  verified_at?: string;
+  tratamiento_pot?: string;
+  descripcion?: string;
+  
+  // ✅ NUEVOS CAMPOS COMERCIALES
+  valor?: number;
+  forma_pago?: 'contado' | 'financiado' | 'permuta' | 'mixto';
+  es_comisionista?: boolean;
+  carta_autorizacion?: string;
+  
+  // Estado
+  status: 'pending' | 'active' | 'rejected' | 'archived';
+  is_verified: boolean;
   rejection_reason?: string;
-  // Campos de documentación
-  doc_ctl_subido?: boolean;
-  doc_planos_subido?: boolean;
-  doc_topografia_subido?: boolean;
-  limite_tiempo_docs?: string;
-  tiempo_restante?: number;
-  documentos_requeridos?: {
-    ctl: boolean;
-    planos: boolean;
-    topografia: boolean;
-  };
-  // Campos para favoritos
-  is_favorite?: boolean;
-  is_visible?: boolean;
+  
+  // Relaciones
+  owner?: string;
+  owner_name?: string;
+  
+  // Metadatos
+  metadatos?: Record<string, any>;
+  created_at: string;
+  updated_at: string;
+  verified_at?: string;
+  rejected_at?: string;
 }
 
-export type LoteStats = {
-  total: number;
-  area_total: number;
-  por_estado: {
-    active: number;
-    pending: number;
-    archived: number;
-  };
-  por_estrato: {
-    [estrato: string]: number;
-  };
-  documentacion_completa: number;
-};
+// ✅ NUEVO: Tipo para crear lote
+export interface CreateLoteData {
+  nombre: string;
+  direccion: string;
+  ciudad?: string;  // ✅ NUEVO
+  area?: number;
+  cbml?: string;
+  matricula?: string;
+  codigo_catastral?: string;
+  barrio?: string;
+  estrato?: number;
+  descripcion?: string;
+  uso_suelo?: string;
+  clasificacion_suelo?: string;
+  latitud?: number;
+  longitud?: number;
+  
+  // ✅ NUEVOS CAMPOS COMERCIALES
+  valor?: number;
+  forma_pago?: string;
+  es_comisionista?: boolean;
+  carta_autorizacion?: File | null;
+}
 
-export type LotesResponse = {
-  count: number;
-  user_id?: string;
-  user_name?: string;
-  results: Lote[];
-};
+// ...existing code...
 
-// Obtener los lotes del usuario autenticado usando el endpoint correcto
+/**
+ * Obtener los lotes del usuario autenticado usando el endpoint correcto
+ */
 export async function getMisLotes(request: Request, searchQuery?: string) {
   console.log(`Obteniendo lotes propios ${searchQuery ? `con búsqueda: ${searchQuery}` : ''}`);
   
@@ -589,46 +595,77 @@ export async function calcularAprovechamiento(request: Request, data: {
 }
 
 /**
- * Crea un nuevo lote en el sistema usando el endpoint correcto
+ * Crea un nuevo lote en el sistema usando FormData para archivos
  */
-export async function createLote(request: Request, loteData: any) {
+export async function createLote(request: Request, loteData: CreateLoteData) {
   try {
-    console.log("[Lotes] Creando lote con datos:", loteData);
+    console.log("[Lotes] Creating lote:", loteData.nombre);
     
-    // Usar el endpoint correcto según la documentación: POST /api/lotes/
-    const endpoint = `${API_URL}/api/lotes/`;
+    // ✅ NUEVO: Usar FormData para soporte de archivos
+    const formData = new FormData();
     
-    console.log(`[Lotes] Creando lote con endpoint: ${endpoint}`);
+    // Campos obligatorios
+    formData.append('nombre', loteData.nombre);
+    formData.append('direccion', loteData.direccion);
+    
+    // ✅ NUEVOS CAMPOS COMERCIALES
+    if (loteData.ciudad) formData.append('ciudad', loteData.ciudad);
+    if (loteData.valor) formData.append('valor', loteData.valor.toString());
+    if (loteData.forma_pago) formData.append('forma_pago', loteData.forma_pago);
+    if (loteData.es_comisionista !== undefined) {
+      formData.append('es_comisionista', loteData.es_comisionista.toString());
+    }
+    
+    // ✅ CRÍTICO: Archivo de carta de autorización
+    if (loteData.carta_autorizacion) {
+      formData.append('carta_autorizacion', loteData.carta_autorizacion);
+    }
+    
+    // Campos opcionales existentes
+    if (loteData.area) formData.append('area', loteData.area.toString());
+    if (loteData.cbml) formData.append('cbml', loteData.cbml);
+    if (loteData.matricula) formData.append('matricula', loteData.matricula);
+    if (loteData.codigo_catastral) formData.append('codigo_catastral', loteData.codigo_catastral);
+    if (loteData.barrio) formData.append('barrio', loteData.barrio);
+    if (loteData.estrato) formData.append('estrato', loteData.estrato.toString());
+    if (loteData.descripcion) formData.append('descripcion', loteData.descripcion);
+    if (loteData.uso_suelo) formData.append('uso_suelo', loteData.uso_suelo);
+    if (loteData.clasificacion_suelo) formData.append('clasificacion_suelo', loteData.clasificacion_suelo);
+    if (loteData.latitud) formData.append('latitud', loteData.latitud.toString());
+    if (loteData.longitud) formData.append('longitud', loteData.longitud.toString());
 
-    const { res, setCookieHeaders } = await fetchWithAuth(request, endpoint, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(loteData),
-    });
+    const { res, setCookieHeaders } = await fetchWithAuth(
+      request,
+      `${API_URL}/api/lotes/`,
+      {
+        method: 'POST',
+        body: formData,  // ✅ Enviar FormData (no JSON)
+        // ✅ No establecer Content-Type, el navegador lo hará automáticamente con boundary
+      }
+    );
 
     if (!res.ok) {
-      console.error(`[Lotes] Error creando lote: ${res.status} ${res.statusText}`);
+      const errorData = await res.json().catch(() => ({}));
+      console.error("[Lotes] Error creating lote:", errorData);
       
-      try {
-        const errorData = await res.json();
-        console.error("[Lotes] Detalles del error:", errorData);
-        
-        const errorMessage = errorData.error || errorData.message || errorData.detail || 
-                           JSON.stringify(errorData) || `Error en la solicitud: ${res.status} ${res.statusText}`;
-        
-        throw new Error(errorMessage);
-      } catch (jsonError) {
-        throw new Error(`Error en la solicitud: ${res.status} ${res.statusText}`);
-      }
+      const errorMessage = 
+        errorData.detail || 
+        errorData.message ||
+        (errorData.errors && JSON.stringify(errorData.errors)) ||
+        `Error creating lote: ${res.status}`;
+      
+      throw new Error(errorMessage);
     }
 
-    const result = await res.json();
-    console.log(`[Lotes] Lote creado exitosamente:`, result);
-    return { lote: result, headers: setCookieHeaders };
+    const lote = await res.json();
+    console.log("[Lotes] Lote created successfully:", lote.id);
+
+    return {
+      lote,
+      headers: setCookieHeaders
+    };
   } catch (error) {
-    console.error("[Lotes] Error en createLote:", error);
+    console.error("[Lotes] Error in createLote:", error);
     throw error;
   }
 }
@@ -1111,30 +1148,43 @@ export async function checkLoteIsFavorite(request: Request, loteId: string) {
 /**
  * Actualizar un lote existente
  */
-export async function updateLote(request: Request, loteId: string, data: Partial<Lote>) {
-  try {
-    console.log(`[Lotes] Actualizando lote ${loteId}`);
-    
-    const { res, setCookieHeaders } = await fetchWithAuth(
-      request, 
-      `${API_URL}/api/lotes/${loteId}/update/`,
-      {
-        method: 'PUT',
-        body: JSON.stringify(data)
-      }
-    );
-    
-    if (!res.ok) {
-      const errorText = await res.text();
-      throw new Error(`Error actualizando lote: ${res.status} ${errorText}`);
+export async function updateLote(
+    request: Request,
+    loteId: string,
+    data: Partial<CreateLoteData>
+): Promise<{ lote: any; headers: Headers }> {
+    try {
+        console.log(`[updateLote] Updating lote ${loteId} with data:`, data);
+        
+        const { res, setCookieHeaders } = await fetchWithAuth(
+            request,
+            `${API_URL}/api/lotes/${loteId}/`,
+            {
+                method: 'PATCH',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(data),
+            }
+        );
+
+        if (!res.ok) {
+            const errorData = await res.json().catch(() => ({}));
+            console.error(`[updateLote] Error: ${res.status}`, errorData);
+            throw new Error(errorData.error || errorData.detail || `Error ${res.status}`);
+        }
+
+        const responseData = await res.json();
+        console.log(`[updateLote] Success:`, responseData);
+        
+        return {
+            lote: responseData.lote || responseData,
+            headers: setCookieHeaders || new Headers()
+        };
+    } catch (error) {
+        console.error('[updateLote] Error:', error);
+        throw error;
     }
-    
-    const result = await res.json();
-    return { lote: result.lote || result, headers: setCookieHeaders };
-  } catch (error) {
-    console.error("[Lotes] Error en updateLote:", error);
-    throw error;
-  }
 }
 
 /**

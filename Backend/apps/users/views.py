@@ -2,7 +2,7 @@
 Vistas para la API de usuarios
 Maneja CRUD de usuarios, perfiles y solicitudes de usuario
 """
-from rest_framework import generics, status, permissions, viewsets, filters, serializers  # ✅ AGREGAR serializers
+from rest_framework import generics, status, permissions, viewsets, filters, serializers
 from rest_framework.decorators import api_view, permission_classes, action
 from rest_framework.permissions import AllowAny, IsAuthenticated, IsAdminUser
 from rest_framework.response import Response
@@ -13,28 +13,20 @@ import logging
 
 from .models import User, UserProfile, UserRequest
 from .serializers import (
-    UserSerializer, UserProfileSerializer, UserRequestSerializer, 
+    PerfilInversionSerializer, UserSerializer, UserProfileSerializer, UserRequestSerializer, 
     UserRequestDetailSerializer, UserRequestCreateSerializer, 
     UserRequestUpdateSerializer, RequestStatusSummarySerializer,
     UpdateProfileSerializer,
     PasswordResetRequestSerializer,
     PasswordResetConfirmSerializer,
     UserRegistrationSerializer,
+    PromoteToAdminSerializer,  
 )
 from .permissions import CanManageUsers, IsOwnerOrAdmin, IsRequestOwnerOrStaff
 from .services import RequestStatusService, PasswordResetService
 
 # Utilidades comunes
-try:
-    from apps.common.utils import audit_log, get_client_ip
-except ImportError:
-    def audit_log(action, user, details=None, ip_address=None):
-        """Stub para audit_log si no existe el módulo común"""
-        pass
-    
-    def get_client_ip(request):
-        """Stub para obtener IP del cliente"""
-        return request.META.get('REMOTE_ADDR', 'unknown')
+from apps.common.utils import audit_log, get_client_ip
 
 logger = logging.getLogger(__name__)
 
@@ -46,9 +38,7 @@ logger = logging.getLogger(__name__)
 class UserListCreateView(generics.ListCreateAPIView):
     """
     Lista todos los usuarios (filtrado según permisos) o crea uno nuevo.
-    
-    GET: Lista usuarios (admin ve todos, otros ven limitado)
-    POST: Crear usuario (solo admin)
+    ✅ OPTIMIZADO: select_related para profile
     """
     permission_classes = [IsAuthenticated, IsAdminUser]
     filter_backends = [filters.SearchFilter, filters.OrderingFilter]
@@ -56,27 +46,35 @@ class UserListCreateView(generics.ListCreateAPIView):
     ordering_fields = ['created_at', 'email', 'role']
     ordering = ['-created_at']
     
-    # ✅ CORREGIDO: Usar serializer diferente según acción
     def get_serializer_class(self):
-        """Seleccionar serializer según acción"""
         if self.request.method == 'POST':
-            return UserRegistrationSerializer  # ✅ Usar serializer con manejo de password
+            return UserRegistrationSerializer
         return UserSerializer
     
     def get_queryset(self):
-        """Filtrar usuarios según rol y permisos"""
+        """
+        ✅ OPTIMIZADO: Filtrar usuarios con select_related
+        """
         user = self.request.user
+        
+        # ✅ Base queryset optimizado
+        queryset = User.objects.select_related(
+            'profile'  # JOIN con UserProfile
+        ).only(
+            'id', 'email', 'username', 'first_name', 'last_name',
+            'role', 'is_active', 'is_verified', 'created_at', 'updated_at',
+            'phone', 'developer_type', 'person_type', 'legal_name'
+        )
         
         # Admin ve todos los usuarios
         if user.is_superuser or user.role == 'admin':
-            return User.objects.all()
-        
-        # Desarrollador ve usuarios relacionados con sus proyectos
+            return queryset
         elif user.role == 'developer':
-            return User.objects.filter(proyectos__developers=user).distinct()
+            # Developers ven otros developers y propietarios
+            return queryset.filter(role__in=['developer', 'owner'])
         
         # Propietarios solo se ven a sí mismos
-        return User.objects.filter(pk=user.pk)
+        return queryset.filter(pk=user.pk)
 
     def create(self, request, *args, **kwargs):
         """✅ CORREGIDO: Crear usuario con validación de email único"""
@@ -833,3 +831,682 @@ def check_phone_exists(request):
 # Vistas basadas en clases como funciones para URLs
 user_list_create = UserListCreateView.as_view()
 user_detail = UserDetailView.as_view()
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def request_verification_code(request):
+    """
+    ✅ NUEVO: Solicitar código de verificación
+    
+    POST /api/users/verification/request/
+    Body: { "code_type": "email" | "whatsapp" | "sms" }
+    """
+    from .serializers import VerificationCodeSerializer
+    from .services import VerificationService
+    
+    serializer = VerificationCodeSerializer(data=request.data)
+    
+    if not serializer.is_valid():
+        return Response({
+            'success': False,
+            'errors': serializer.errors
+        }, status=status.HTTP_400_BAD_REQUEST)
+    
+    code_type = serializer.validated_data['code_type']
+    user = request.user
+    
+    # Validar que el usuario tenga email/phone según tipo
+    if code_type == 'email' and not user.email:
+        return Response({
+            'success': False,
+            'error': 'No tienes email registrado'
+        }, status=status.HTTP_400_BAD_REQUEST)
+    
+    if code_type in ['whatsapp', 'sms'] and not user.phone:
+        return Response({
+            'success': False,
+            'error': 'No tienes teléfono registrado'
+        }, status=status.HTTP_400_BAD_REQUEST)
+    
+    try:
+        # Generar código
+        verification = VerificationService.generate_verification_code(user, code_type)
+        
+        # Audit log
+        audit_log(
+            action='VERIFICATION_CODE_REQUESTED',
+            user=user,
+            details={'code_type': code_type},
+            ip_address=get_client_ip(request)
+        )
+        
+        # ⚠️ TEMPORAL: Retornar código directamente (INSEGURO - solo para desarrollo)
+        return Response({
+            'success': True,
+            'message': f'Código de verificación enviado a tu {code_type}',
+            'data': {
+                'code': verification.code,  # ⚠️ INSEGURO - Solo para desarrollo
+                'expires_at': verification.expires_at.isoformat(),
+                'code_type': code_type
+            },
+            'warning': '⚠️ En producción, el código se enviará y NO se retornará en la respuesta'
+        })
+        
+    except Exception as e:
+        logger.error(f"❌ Error generating verification code: {str(e)}", exc_info=True)
+        return Response({
+            'success': False,
+            'error': 'Error interno del servidor'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def verify_code(request):
+    """
+    ✅ NUEVO: Verificar código de verificación
+    
+    POST /api/users/verification/verify/
+    Body: { "code": "123456", "code_type": "email" }
+    """
+    from .serializers import VerifyCodeSerializer
+    from .services import VerificationService
+    
+    serializer = VerifyCodeSerializer(data=request.data)
+    
+    if not serializer.is_valid():
+        return Response({
+            'success': False,
+            'errors': serializer.errors
+        }, status=status.HTTP_400_BAD_REQUEST)
+    
+    code = serializer.validated_data['code']
+    code_type = serializer.validated_data['code_type']
+    user = request.user
+    
+    try:
+        # Verificar código
+        success, message = VerificationService.verify_code(user, code, code_type)
+        
+        if success:
+            # Audit log
+            audit_log(
+                action='VERIFICATION_CODE_VERIFIED',
+                user=user,
+                details={'code_type': code_type},
+                ip_address=get_client_ip(request)
+            )
+            
+            return Response({
+                'success': True,
+                'message': message,
+                'data': {
+                    'is_verified': user.is_verified,
+                    'is_phone_verified': user.is_phone_verified
+                }
+            })
+        else:
+            return Response({
+                'success': False,
+                'error': message
+            }, status=status.HTTP_400_BAD_REQUEST)
+            
+    except Exception as e:
+        logger.error(f"❌ Error verifying code: {str(e)}", exc_info=True)
+        return Response({
+            'success': False,
+            'error': 'Error interno del servidor'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def resend_verification_code(request):
+    """
+    ✅ NUEVO: Reenviar código de verificación
+    
+    POST /api/users/verification/resend/
+    Body: { "code_type": "email" }
+    """
+    from .serializers import VerificationCodeSerializer
+    from .services import VerificationService
+    
+    serializer = VerificationCodeSerializer(data=request.data)
+    
+    if not serializer.is_valid():
+        return Response({
+            'success': False,
+            'errors': serializer.errors
+        }, status=status.HTTP_400_BAD_REQUEST)
+    
+    code_type = serializer.validated_data['code_type']
+    user = request.user
+    
+    try:
+        # Reenviar código
+        verification = VerificationService.resend_verification_code(user, code_type)
+        
+        # Audit log
+        audit_log(
+            action='VERIFICATION_CODE_RESENT',
+            user=user,
+            details={'code_type': code_type},
+            ip_address=get_client_ip(request)
+        )
+        
+        # ⚠️ TEMPORAL: Retornar código directamente
+        return Response({
+            'success': True,
+            'message': f'Código reenviado a tu {code_type}',
+            'data': {
+                'code': verification.code,  # ⚠️ INSEGURO - Solo para desarrollo
+                'expires_at': verification.expires_at.isoformat()
+            }
+        })
+        
+    except Exception as e:
+        logger.error(f"❌ Error resending verification code: {str(e)}", exc_info=True)
+        return Response({
+            'success': False,
+            'error': 'Error interno del servidor'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def promote_to_admin(request):
+    """
+    ✅ NUEVO: Ascender un usuario a administrador
+    Solo accesible para superusuarios
+    
+    POST /api/users/promote-to-admin/
+    Body: {
+        "user_id": "uuid",
+        "department": "ventas",
+        "permissions_scope": "full"
+    }
+    """
+    # ✅ CRÍTICO: Solo superusuarios pueden ascender
+    if not request.user.is_superuser:
+        return Response({
+            'success': False,
+            'error': 'Solo los superusuarios pueden ascender usuarios a administrador'
+        }, status=status.HTTP_403_FORBIDDEN)
+    
+    serializer = PromoteToAdminSerializer(data=request.data)
+    
+    if not serializer.is_valid():
+        return Response({
+            'success': False,
+            'errors': serializer.errors
+        }, status=status.HTTP_400_BAD_REQUEST)
+    
+    try:
+        user_id = serializer.validated_data['user_id']
+        user = User.objects.get(id=user_id)
+        
+        # Guardar rol anterior para logging
+        old_role = user.role
+        
+        # Ascender a admin
+        user.role = 'admin'
+        user.department = serializer.validated_data['department']
+        user.permissions_scope = serializer.validated_data.get('permissions_scope', 'limited')
+        user.save()
+        
+        # Audit log
+        audit_log(
+            action='USER_PROMOTED_TO_ADMIN',
+            user=request.user,
+            details={
+                'promoted_user_id': str(user.id),
+                'promoted_user_email': user.email,
+                'old_role': old_role,
+                'new_role': 'admin',
+                'department': user.department
+            },
+            ip_address=get_client_ip(request)
+        )
+        
+        logger.info(
+            f"✅ User {user.email} promoted to admin by {request.user.email} "
+            f"(old role: {old_role})"
+        )
+        
+        # Retornar usuario actualizado
+        response_serializer = UserSerializer(user)
+        
+        return Response({
+            'success': True,
+            'message': f'Usuario {user.email} ascendido a administrador exitosamente',
+            'user': response_serializer.data
+        })
+        
+    except User.DoesNotExist:
+        return Response({
+            'success': False,
+            'error': 'Usuario no encontrado'
+        }, status=status.HTTP_404_NOT_FOUND)
+    except Exception as e:
+        logger.error(f"❌ Error promoting user to admin: {str(e)}", exc_info=True)
+        return Response({
+            'success': False,
+            'error': 'Error interno del servidor'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def mark_first_login_completed(request):
+    """
+    Marcar que el usuario completó su primera sesión
+    
+    POST /api/users/first-login-completed/
+    """
+    try:
+        user = request.user
+        
+        logger.info(f"🔍 First login request for user: {user.email}")
+        logger.info(f"   Current first_login_completed: {user.first_login_completed}")
+        
+        if not user.first_login_completed:
+            user.first_login_completed = True
+            user.save(update_fields=['first_login_completed'])
+            logger.info(f"✅ First login completed marked for user: {user.email}")
+        else:
+            logger.info(f"ℹ️ First login already completed for user: {user.email}")
+        
+        return Response({
+            'success': True,
+            'message': 'Primera sesión completada',
+            'user': UserSerializer(user).data
+        })
+        
+    except Exception as e:
+        logger.error(f"❌ Error marking first login: {str(e)}", exc_info=True)
+        return Response({
+            'success': False,
+            'message': 'Error al marcar primera sesión'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+# =============================================================================
+# PERFIL DE INVERSIÓN
+# =============================================================================
+
+@api_view(['GET', 'PATCH', 'PUT'])
+@permission_classes([IsAuthenticated])
+def perfil_inversion(request):
+    """
+    Obtener o actualizar perfil de inversión del desarrollador.
+    """
+    if request.user.role != 'developer':
+        return Response({
+            'success': False,
+            'message': 'Solo desarrolladores pueden acceder a este endpoint'
+        }, status=status.HTTP_403_FORBIDDEN)
+    
+    if request.method == 'GET':
+        # ✅ MEJORADO: Retornar datos existentes con valores por defecto
+        perfil = {
+            'ciudades_interes': request.user.ciudades_interes or [],
+            'usos_preferidos': request.user.usos_preferidos or [],
+            'modelos_pago': request.user.modelos_pago or [],
+            'volumen_ventas_min': request.user.volumen_ventas_min or '',
+            'ticket_inversion_min': request.user.ticket_inversion_min or '',
+            'perfil_completo': request.user.perfil_completo or False,
+            'developer_type': request.user.developer_type or ''
+        }
+        
+        # ✅ NUEVO: Log detallado para debugging
+        logger.info(f"📊 Perfil de inversión obtenido - completo: {perfil['perfil_completo']}")
+        logger.debug(f"📊 Datos del perfil: {perfil}")
+        
+        return Response({
+            'success': True,
+            'perfil': perfil
+        })
+    
+    # PATCH o PUT - Actualizar
+    serializer = PerfilInversionSerializer(data=request.data, instance=request.user)
+    
+    if not serializer.is_valid():
+        logger.warning(f"❌ Validación fallida: {serializer.errors}")
+        return Response({
+            'success': False,
+            'message': 'Datos inválidos',
+            'errors': serializer.errors
+        }, status=status.HTTP_400_BAD_REQUEST)
+    
+    try:
+        # ✅ CRÍTICO: Guardar usando el serializer
+        updated_user = serializer.save()
+        
+        # Respuesta con datos actualizados
+        perfil = {
+            'ciudades_interes': updated_user.ciudades_interes,
+            'usos_preferidos': updated_user.usos_preferidos,
+            'modelos_pago': updated_user.modelos_pago,
+            'volumen_ventas_min': updated_user.volumen_ventas_min,
+            'ticket_inversion_min': updated_user.ticket_inversion_min,
+            'perfil_completo': updated_user.perfil_completo,
+            'developer_type': updated_user.developer_type
+        }
+        
+        logger.info(f"✅ Perfil actualizado - completo: {perfil['perfil_completo']}")
+        
+        return Response({
+            'success': True,
+            'message': 'Perfil de inversión actualizado correctamente',
+            'perfil': perfil
+        })
+        
+    except Exception as e:
+        logger.error(f"❌ Error actualizando perfil: {str(e)}")
+        return Response({
+            'success': False,
+            'message': f'Error actualizando perfil: {str(e)}'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+@api_view(['GET'])
+@permission_classes([AllowAny])  # ✅ Público para que funcione en formularios
+def ciudades_colombia(request):
+    """
+    Obtener lista de ciudades principales de Colombia.
+    Endpoint público para formularios de registro y perfil.
+    """
+    # Lista estática de ciudades principales de Colombia
+    ciudades = [
+        {'value': 'medellin', 'label': 'Medellín'},
+        {'value': 'bogota', 'label': 'Bogotá'},
+        {'value': 'cali', 'label': 'Cali'},
+        {'value': 'barranquilla', 'label': 'Barranquilla'},
+        {'value': 'cartagena', 'label': 'Cartagena'},
+        {'value': 'cucuta', 'label': 'Cúcuta'},
+        {'value': 'bucaramanga', 'label': 'Bucaramanga'},
+        {'value': 'pereira', 'label': 'Pereira'},
+        {'value': 'santa_marta', 'label': 'Santa Marta'},
+        {'value': 'ibague', 'label': 'Ibagué'},
+        {'value': 'pasto', 'label': 'Pasto'},
+        {'value': 'manizales', 'label': 'Manizales'},
+        {'value': 'neiva', 'label': 'Neiva'},
+        {'value': 'villavicencio', 'label': 'Villavicencio'},
+        {'value': 'armenia', 'label': 'Armenia'},
+        {'value': 'valledupar', 'label': 'Valledupar'},
+        {'value': 'monteria', 'label': 'Montería'},
+        {'value': 'sincelejo', 'label': 'Sincelejo'},
+        {'value': 'popayan', 'label': 'Popayán'},
+        {'value': 'tunja', 'label': 'Tunja'},
+    ]
+    
+    logger.info(f"📍 Ciudades disponibles solicitadas: {len(ciudades)} ciudades")
+    
+    return Response({
+        'success': True,
+        'ciudades': ciudades,
+        'count': len(ciudades)
+    })
+
+@api_view(['DELETE'])
+@permission_classes([IsAuthenticated, IsAdminUser])
+def soft_delete_user(request, user_id):
+    """
+    Soft delete de un usuario (solo admin).
+    Marca al usuario como inactivo en lugar de eliminarlo.
+    """
+    try:
+        user = get_object_or_404(User, id=user_id)
+        
+        # Prevenir auto-eliminación
+        if user.id == request.user.id:
+            return Response({
+                'success': False,
+                'message': 'No puedes eliminar tu propia cuenta'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Prevenir eliminación de superusuarios por no-superusuarios
+        if user.is_superuser and not request.user.is_superuser:
+            return Response({
+                'success': False,
+                'message': 'No tienes permisos para eliminar un superusuario'
+            }, status=status.HTTP_403_FORBIDDEN)
+        
+        # Obtener razón de eliminación
+        reason = request.data.get('reason', 'Eliminado por administrador')
+        
+        # Soft delete
+        from django.utils import timezone
+        user.is_active = False
+        user.deleted_at = timezone.now()
+        user.deletion_reason = reason
+        user.save()
+        
+        # Audit log
+        audit_log(
+            'USER_DELETED',
+            request.user,
+            {
+                'deleted_user_id': str(user.id),
+                'deleted_user_email': user.email,
+                'reason': reason
+            },
+            get_client_ip(request)
+        )
+        
+        logger.info(f"User soft deleted: {user.email} by {request.user.email}")
+        
+        return Response({
+            'success': True,
+            'message': 'Usuario eliminado exitosamente'
+        })
+        
+    except Exception as e:
+        logger.error(f"Error in soft_delete_user: {str(e)}")
+        return Response({
+            'success': False,
+            'message': 'Error al eliminar usuario'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated, IsAdminUser])
+def admin_statistics(request):
+    """
+    Obtener estadísticas generales del sistema (solo admin).
+    ✅ CORREGIDO: Campo uploaded_at → created_at
+    """
+    # Intentar obtener del cache
+    from apps.common.cache import CacheService
+    cache_key = 'admin_statistics'
+    cached_stats = CacheService.get(cache_key)
+    
+    if cached_stats:
+        logger.info("📦 Returning cached admin statistics")
+        return Response({
+            'success': True,
+            'data': cached_stats,
+            'cached': True
+        })
+    
+    try:
+        from apps.lotes.models import Lote
+        from apps.documents.models import Document
+        from apps.solicitudes.models import Solicitud
+        from django.db.models import Count, Q, Sum
+        from datetime import datetime, timedelta
+        from django.utils import timezone  # ✅ AGREGADO
+        
+        # ✅ CORREGIDO: Usar timezone.now() en lugar de datetime.now()
+        now = timezone.now()
+        today = now.date()
+        thirty_days_ago = now - timedelta(days=30)
+        seven_days_ago = now - timedelta(days=7)
+        
+        # Estadísticas de Usuarios
+        usuarios_stats = {
+            'total': User.objects.count(),
+            'activos': User.objects.filter(is_active=True).count(),
+            'inactivos': User.objects.filter(is_active=False).count(),
+            'por_rol': dict(
+                User.objects.values('role').annotate(count=Count('id'))
+                .values_list('role', 'count')
+            ),
+            'verificados': User.objects.filter(is_verified=True).count(),
+            'nuevos_mes': User.objects.filter(
+                created_at__gte=thirty_days_ago  # ✅ CORREGIDO: usar variable con timezone
+            ).count()
+        }
+        
+        # Estadísticas de Lotes
+        lotes_stats = {
+            'total': Lote.objects.count(),
+            'por_estado': dict(
+                Lote.objects.values('status').annotate(count=Count('id'))
+                .values_list('status', 'count')
+            ),
+            'area_total': Lote.objects.aggregate(Sum('area'))['area__sum'] or 0,
+            'verificados': Lote.objects.filter(is_verified=True).count(),
+            'nuevos_mes': Lote.objects.filter(
+                created_at__gte=thirty_days_ago  # ✅ CORREGIDO
+            ).count()
+        }
+        
+        # ✅ CORREGIDO: Estadísticas de Documentos - usar created_at en lugar de uploaded_at
+        documentos_stats = {
+            'total': Document.objects.count(),
+            'validados': Document.objects.filter(
+                metadata__status='validado'
+            ).count(),
+            'pendientes': Document.objects.filter(
+                Q(metadata__status='pendiente') | Q(metadata__status__isnull=True)
+            ).count(),
+            'rechazados': Document.objects.filter(
+                metadata__status='rechazado'
+            ).count(),
+            'nuevos_semana': Document.objects.filter(
+                created_at__gte=seven_days_ago  # ✅ CORREGIDO: uploaded_at → created_at
+            ).count()
+        }
+        
+        # Estadísticas de Solicitudes
+        solicitudes_stats = {
+            'total': Solicitud.objects.count(),
+            'por_estado': dict(
+                Solicitud.objects.values('estado').annotate(count=Count('id'))
+                .values_list('estado', 'count')
+            ),
+            'por_tipo': dict(
+                Solicitud.objects.values('tipo').annotate(count=Count('id'))
+                .values_list('tipo', 'count')
+            ),
+            'nuevas_semana': Solicitud.objects.filter(
+                created_at__gte=seven_days_ago  # ✅ CORREGIDO
+            ).count()
+        }
+        
+        # Actividad Reciente - ✅ CORREGIDO: usar created_at con timezone
+        actividad_reciente = {
+            'usuarios_registrados_hoy': User.objects.filter(
+                created_at__date=today  # ✅ CORREGIDO: usar today (date object)
+            ).count(),
+            'lotes_registrados_hoy': Lote.objects.filter(
+                created_at__date=today  # ✅ CORREGIDO
+            ).count(),
+            'documentos_subidos_hoy': Document.objects.filter(
+                created_at__date=today  # ✅ CORREGIDO: uploaded_at → created_at
+            ).count(),
+            'solicitudes_creadas_hoy': Solicitud.objects.filter(
+                created_at__date=today  # ✅ CORREGIDO
+            ).count(),
+        }
+        
+        # Top Usuarios por Lotes
+        top_usuarios = User.objects.filter(
+            role='owner',
+            is_active=True
+        ).annotate(
+            lotes_count=Count('lotes_owned')
+        ).order_by('-lotes_count')[:5].only(
+            'id', 'email', 'first_name', 'last_name'
+        ).values(
+            'id', 'email', 'first_name', 'last_name', 'lotes_count'
+        )
+        
+        statistics_data = {
+            'usuarios': usuarios_stats,
+            'lotes': lotes_stats,
+            'documentos': documentos_stats,
+            'solicitudes': solicitudes_stats,
+            'actividad_reciente': actividad_reciente,
+            'top_usuarios': list(top_usuarios),
+            'timestamp': now.isoformat()  # ✅ CORREGIDO: usar now con timezone
+        }
+        
+        # Guardar en cache por 1 minuto
+        CacheService.set(cache_key, statistics_data, timeout=60)
+        
+        logger.info(f"Admin statistics retrieved by {request.user.email}")
+        
+        return Response({
+            'success': True,
+            'data': statistics_data,
+            'cached': False
+        })
+        
+    except Exception as e:
+        logger.error(f"Error in admin_statistics: {str(e)}")
+        import traceback
+        logger.error(f"Traceback: {traceback.format_exc()}")  # ✅ AGREGADO: más info
+        return Response({
+            'success': False,
+            'message': 'Error al obtener estadísticas'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated, IsAdminUser])
+def listar_perfiles_inversion(request):
+    """
+    Listar todos los perfiles de inversión (solo admin).
+    Endpoint para dashboard de administrador.
+    """
+    try:
+        # Obtener todos los desarrolladores
+        desarrolladores = User.objects.filter(
+            role='developer'
+        ).select_related().order_by('-created_at')
+        
+        profiles = []
+        for dev in desarrolladores:
+            # Solo incluir si tiene al menos un campo de perfil configurado
+            if dev.ciudades_interes or dev.usos_preferidos or dev.modelos_pago:
+                profiles.append({
+                    'id': dev.id,
+                    'developer': {
+                        'id': str(dev.id),
+                        'email': dev.email,
+                        'name': dev.get_full_name() or dev.email,
+                    },
+                    'ciudades_interes': dev.ciudades_interes or [],
+                    'usos_preferidos': dev.usos_preferidos or [],
+                    'modelos_pago': dev.modelos_pago or [],
+                    'volumen_ventas_min': dev.volumen_ventas_min or '',
+                    'ticket_inversion_min': dev.ticket_inversion_min,
+                    'perfil_completo': dev.perfil_completo,
+                    'created_at': dev.created_at.isoformat(),
+                })
+        
+        logger.info(f"📋 Admin viewing {len(profiles)} investment profiles")
+        
+        return Response({
+            'success': True,
+            'profiles': profiles,
+            'total': len(profiles)
+        })
+        
+    except Exception as e:
+        logger.error(f"Error listing investment profiles: {str(e)}")
+        return Response({
+            'success': False,
+            'message': 'Error obteniendo perfiles de inversión'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)

@@ -49,7 +49,7 @@ apps/lotes/
 - **Búsqueda**: Por nombre, dirección, CBML, matrícula
 
 ### 🗺️ INTEGRACIÓN CON MAPGIS
-- **Consulta por CBML**: Búsqueda completa de predios
+- **Consulta por CBML (11 dígitos)**: Búsqueda completa de predios en MapGIS Medellín
 - **Consulta por matrícula**: Identificación por matrícula inmobiliaria  
 - **Consulta por dirección**: Búsqueda por ubicación
 - **Datos extraídos**:
@@ -59,6 +59,9 @@ apps/lotes/
   - Aprovechamiento urbano
   - Restricciones ambientales
   - Normativas aplicables
+
+**Formato CBML**: Código de 11 dígitos numéricos (ej: `05001000000`)  
+**Fuente**: MapGIS Alcaldía de Medellín
 
 ### 🏛️ TRATAMIENTOS URBANÍSTICOS (POT)
 - **Consulta de tratamientos**: Lista completa del POT

@@ -4,7 +4,7 @@ Define Lote, LoteDocument, LoteHistory, Favorite, Tratamiento
 """
 from django.db import models
 from django.contrib.auth import get_user_model
-from django.core.validators import MinValueValidator, MaxValueValidator
+from django.core.validators import MinValueValidator, MaxValueValidator, RegexValidator
 from django.core.exceptions import ValidationError
 import uuid
 import logging
@@ -47,10 +47,20 @@ class Lote(models.Model):
     
     # ✅ CAMPOS IMPORTANTES (opcionales)
     cbml = models.CharField(
-        max_length=50, 
-        blank=True, 
+        max_length=11,  # ✅ CORREGIDO: 11 caracteres (antes era 14)
+        unique=True,
         null=True,
-        help_text="Código CBML del lote"
+        blank=True,
+        db_index=True,
+        help_text="Código de identificación catastral (CBML) - 11 dígitos para MapGIS Medellín",
+        verbose_name="CBML",
+        validators=[
+            RegexValidator(
+                regex=r'^\d{11}$',
+                message='El CBML debe tener exactamente 11 dígitos numéricos',
+                code='invalid_cbml'
+            )
+        ]
     )
     matricula = models.CharField(
         max_length=50, 
@@ -188,16 +198,67 @@ class Lote(models.Model):
         help_text="Información adicional en formato JSON"
     )
 
+    # ✅ NUEVOS CAMPOS COMERCIALES
+    ciudad = models.CharField(
+        max_length=100,
+        blank=True,
+        null=True,
+        verbose_name="Ciudad",
+        help_text="Ciudad donde se ubica el lote"
+    )
+    
+    valor = models.DecimalField(
+        max_digits=15,
+        decimal_places=2,
+        blank=True,
+        null=True,
+        verbose_name="Valor del Lote",
+        help_text="Valor comercial del lote en COP"
+    )
+    
+    FORMA_PAGO_CHOICES = [
+        ('contado', 'De Contado'),
+        ('financiado', 'Financiado'),
+        ('permuta', 'Permuta'),
+        ('mixto', 'Mixto'),
+    ]
+    
+    forma_pago = models.CharField(
+        max_length=20,
+        choices=FORMA_PAGO_CHOICES,
+        blank=True,
+        null=True,
+        verbose_name="Forma de Pago",
+        help_text="Forma de pago preferida para la transacción"
+    )
+    
+    es_comisionista = models.BooleanField(
+        default=False,
+        verbose_name="Es Comisionista",
+        help_text="Indica si el registro lo hace un comisionista en representación del propietario"
+    )
+    
+    carta_autorizacion = models.FileField(
+        upload_to='lotes/autorizaciones/',
+        blank=True,
+        null=True,
+        verbose_name="Carta de Autorización",
+        help_text="Carta de autorización del propietario (requerida si es comisionista)"
+    )
+    
     class Meta:
         db_table = 'lotes'
-        verbose_name = 'Lote'
-        verbose_name_plural = 'Lotes'
+        verbose_name = "Lote"
+        verbose_name_plural = "Lotes"
         ordering = ['-created_at']
+        # ✅ NUEVO: Índices para mejorar performance
         indexes = [
-            models.Index(fields=['owner', '-created_at']),
-            models.Index(fields=['status', 'is_verified']),
-            models.Index(fields=['cbml']),
-            models.Index(fields=['matricula']),
+            models.Index(fields=['owner', 'status'], name='lote_owner_status_idx'),
+            models.Index(fields=['status', 'is_verified'], name='lote_status_verified_idx'),
+            models.Index(fields=['created_at'], name='lote_created_at_idx'),
+            models.Index(fields=['cbml'], name='lote_cbml_idx'),
+            models.Index(fields=['uso_suelo'], name='lote_uso_suelo_idx'),
+            models.Index(fields=['tratamiento_pot'], name='lote_tratamiento_idx'),
         ]
 
     def __str__(self):
@@ -222,6 +283,17 @@ class Lote(models.Model):
         # Validar estrato si se proporciona
         if self.estrato is not None and (self.estrato < 1 or self.estrato > 6):
             raise ValidationError({'estrato': 'El estrato debe estar entre 1 y 6'})
+        
+        # Validar CBML si está presente
+        if self.cbml:
+            if len(self.cbml) != 11:
+                raise ValidationError({
+                    'cbml': f'El CBML debe tener exactamente 11 dígitos (tiene {len(self.cbml)})'
+                })
+            if not self.cbml.isdigit():
+                raise ValidationError({
+                    'cbml': 'El CBML debe contener solo números'
+                })
 
     def save(self, *args, **kwargs):
         """Limpiar datos antes de guardar"""
@@ -392,7 +464,26 @@ class LoteHistory(models.Model):
         related_name='historial',
         verbose_name='Lote'
     )
-    campo_modificado = models.CharField(max_length=100, verbose_name='Campo Modificado')
+    # ✅ CORREGIDO: Agregar default para evitar prompts
+    campo_modificado = models.CharField(
+        max_length=100, 
+        verbose_name='Campo Modificado',
+        default='',  # ✅ Default vacío
+        blank=True
+    )
+    # ✅ NUEVO: Campo action con default
+    action = models.CharField(
+        max_length=20,
+        choices=[
+            ('created', 'Creado'),
+            ('updated', 'Actualizado'),
+            ('verified', 'Verificado'),
+            ('rejected', 'Rechazado'),
+            ('deleted', 'Eliminado'),
+        ],
+        default='updated',  # ✅ Default para evitar prompts
+        verbose_name='Acción'
+    )
     valor_anterior = models.TextField(blank=True, null=True, verbose_name='Valor Anterior')
     valor_nuevo = models.TextField(blank=True, null=True, verbose_name='Valor Nuevo')
     
@@ -413,7 +504,7 @@ class LoteHistory(models.Model):
         db_table = 'lotes_lotehistory'
     
     def __str__(self):
-        return f"{self.lote.cbml} - {self.campo_modificado} ({self.fecha_modificacion})"
+        return f"{self.lote.nombre if self.lote else 'Lote'} - {self.action} ({self.fecha_modificacion})"
 
 
 class Favorite(models.Model):

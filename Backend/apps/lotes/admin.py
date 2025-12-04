@@ -2,88 +2,107 @@
 Configuración del admin para el módulo de lotes
 """
 from django.contrib import admin
-from .models import Lote, Favorite
+from .models import Lote, LoteDocument, Tratamiento, Favorite, LoteHistory
 
 
 @admin.register(Lote)
 class LoteAdmin(admin.ModelAdmin):
     """
-    Configuración del admin para Lote - CORREGIDA sin campo comuna
+    Configuración del admin para Lote
     """
     list_display = [
         'nombre', 
+        'ciudad',
+        'cbml',  # ✅ Campo correcto (11 dígitos)
         'direccion', 
         'area', 
-        'barrio',  # ✅ Usar barrio en lugar de comuna
+        'valor',
+        'barrio', 
         'estrato',
-        'owner', 
         'status', 
-        'is_verified',
+        'es_comisionista',
+        'owner', 
         'created_at'
     ]
     
     list_filter = [
         'status', 
-        'is_verified', 
-        'estrato',  # ✅ CORREGIDO: usar 'estrato' en lugar de 'comuna'
-        'barrio',   # ✅ Agregar barrio como filtro
+        'is_verified',
+        'estrato', 
+        'ciudad',
+        'forma_pago', 
+        'es_comisionista',
         'created_at',
         'updated_at'
     ]
     
     search_fields = [
         'nombre', 
+        'cbml',  # ✅ 11 dígitos para búsqueda
         'direccion', 
-        'cbml', 
+        'barrio', 
         'matricula', 
-        'barrio',  # ✅ Usar barrio en lugar de comuna
-        'owner__email',
-        'owner__first_name',
-        'owner__last_name'
+        'codigo_catastral'
     ]
     
     readonly_fields = [
         'id',
         'created_at', 
-        'updated_at'  # ✅ CORREGIDO: solo campos que existen
+        'updated_at',  # ✅ CORREGIDO: solo campos que existen
+        'verified_at',  # ✅ NUEVO: campo existente
+        'rejected_at'  # ✅ NUEVO: campo existente
     ]
     
     fieldsets = (
         ('Información Básica', {
             'fields': (
+                'owner',
                 'nombre',
+                'descripcion',
                 'direccion',
-                'area',
-                'owner'
+                'ciudad',
+                'barrio'
             )
         }),
         ('Identificación Catastral', {
             'fields': (
-                'cbml',
+                'cbml',  # ✅ 11 dígitos
                 'matricula',
                 'codigo_catastral'
             )
         }),
-        ('Ubicación', {
+        ('Características', {
             'fields': (
-                'barrio',
+                'area',
                 'estrato',
-                'latitud',
-                'longitud'
-            )
-        }),
-        ('Normativa Urbanística', {
-            'fields': (
-                'clasificacion_suelo',
                 'uso_suelo',
+                'clasificacion_suelo',
                 'tratamiento_pot'
             )
         }),
-        ('Estado y Verificación', {
+        # ✅ NUEVO: Sección Comercial
+        ('Información Comercial', {
+            'fields': (
+                'valor',
+                'forma_pago',
+                'es_comisionista',
+                'carta_autorizacion'
+            )
+        }),
+        ('Geolocalización', {
+            'fields': (
+                'latitud',
+                'longitud'
+            ),
+            'classes': ('collapse',)
+        }),
+        ('Estado y Validación', {
             'fields': (
                 'status',
                 'is_verified',
-                'descripcion'
+                'rejection_reason',
+                'verified_at',
+                'rejected_at'
             )
         }),
         ('Metadatos', {
@@ -92,64 +111,48 @@ class LoteAdmin(admin.ModelAdmin):
             ),
             'classes': ('collapse',)
         }),
-        ('Sistema', {
+        ('Auditoría', {
             'fields': (
                 'id',
                 'created_at',
                 'updated_at'
             ),
             'classes': ('collapse',)
-        })
+        }),
     )
-    
-    ordering = ['-created_at']
     
     def get_queryset(self, request):
         """Optimizar queries con select_related"""
-        return super().get_queryset(request).select_related('owner')
-    
-    def save_model(self, request, obj, form, change):
-        """Guardar modelo con validaciones adicionales"""
-        if not change:  # Si es un objeto nuevo
-            if not obj.owner:
-                obj.owner = request.user
-        super().save_model(request, obj, form, change)
+        qs = super().get_queryset(request)
+        return qs.select_related('owner')
 
 
-# Si hay otros modelos relacionados, agregarlos aquí
-try:
-    from .models import Favorite
-    
-    @admin.register(Favorite)
-    class FavoriteAdmin(admin.ModelAdmin):
-        """Admin para favoritos"""
-        list_display = ['user', 'lote', 'created_at']
-        list_filter = ['created_at']
-        search_fields = [
-            'user__email', 
-            'lote__nombre', 
-            'lote__direccion'
-        ]
-        readonly_fields = ['created_at']
-        
-        def get_queryset(self, request):
-            return super().get_queryset(request).select_related('user', 'lote')
+@admin.register(LoteDocument)
+class LoteDocumentAdmin(admin.ModelAdmin):
+    list_display = ['titulo', 'lote', 'tipo', 'uploaded_at']
+    list_filter = ['tipo', 'uploaded_at']
+    search_fields = ['titulo', 'lote__nombre', 'lote__cbml']
+    readonly_fields = ['uploaded_at']
 
-except ImportError:
-    # El modelo Favorite no existe, continuar
-    pass
 
-try:
-    from .models import Tratamiento
-    
-    @admin.register(Tratamiento)
-    class TratamientoAdmin(admin.ModelAdmin):
-        """Admin para tratamientos"""
-        list_display = ['codigo', 'nombre', 'activo']
-        list_filter = ['activo']
-        search_fields = ['codigo', 'nombre']
-        readonly_fields = ['created_at', 'updated_at']
+@admin.register(Tratamiento)
+class TratamientoAdmin(admin.ModelAdmin):
+    list_display = ['codigo', 'nombre', 'activo']
+    list_filter = ['activo']
+    search_fields = ['codigo', 'nombre']
 
-except ImportError:
-    # El modelo Tratamiento no existe, continuar
-    pass
+
+@admin.register(Favorite)
+class FavoriteAdmin(admin.ModelAdmin):
+    list_display = ['user', 'lote', 'created_at']
+    list_filter = ['created_at']
+    search_fields = ['user__email', 'lote__nombre']
+    readonly_fields = ['created_at']
+
+
+@admin.register(LoteHistory)
+class LoteHistoryAdmin(admin.ModelAdmin):
+    list_display = ['lote', 'campo_modificado', 'fecha_modificacion']
+    list_filter = ['fecha_modificacion']
+    search_fields = ['lote__nombre', 'campo_modificado']
+    readonly_fields = ['fecha_modificacion']

@@ -1,493 +1,456 @@
 // filepath: d:\Accesos Directos\Escritorio\frontendx\app\routes\owner.lote.nuevo.tsx
 import { json, redirect } from "@remix-run/node";
-import { Form, useActionData, useNavigation, Link } from "@remix-run/react";
-import { useState } from "react";
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "@remix-run/node";
+import { Form, useActionData, useLoaderData, useNavigation } from "@remix-run/react";
+import { useState } from "react";
 import { getUser } from "~/utils/auth.server";
 import { createLote } from "~/services/lotes.server";
+import type { CreateLoteData } from "~/services/lotes.server";
+import { LocationPicker } from "~/components/LocationPicker";
 
-// Tipo para los datos de un nuevo lote
-type NuevoLoteData = {
-    nombre: string; // Obligatorio
-    cbml?: string;
-    descripcion?: string;
-    direccion?: string;
-    area?: number;
-    codigo_catastral?: string;
-    matricula?: string;
-    barrio?: string;
-    estrato?: number;
-    latitud?: number;
-    longitud?: number;
-    uso_suelo?: string;
-    clasificacion_suelo?: string;
-    metadatos?: Record<string, any>;
-    status?: string; // Por defecto 'active'
-    owner?: string | number; // ID del propietario
-};
-
-// Endpoint adicional para búsquedas de MapGIS
 export async function loader({ request }: LoaderFunctionArgs) {
-    // Verificar autenticación
-    const user = await getUser(request);
-
-    if (!user) {
-        return json({ error: "No autenticado" }, { status: 401 });
-    }
-
-    if (user.role !== "owner") {
-        return json({ error: "No autorizado" }, { status: 403 });
-    }
-
-    // No se necesita lógica de búsqueda
-    return json({ user });
+  const user = await getUser(request);
+  
+  if (!user || user.role !== "owner") {
+    return redirect("/login");
+  }
+  
+  return json({ user });
 }
 
 export async function action({ request }: ActionFunctionArgs) {
-    // Verificar que el usuario esté autenticado y sea propietario
-    const user = await getUser(request);
-    if (!user) {
-        return redirect("/login");
-    }
-
-    if (user.role !== "owner") {
-        return redirect(`/${user.role}`);
-    }
-
-    try {
-        // Procesar el formulario
-        const formData = await request.formData();
-
-        // Obtener los campos adicionales para crear la descripción detallada
-        const clasificacionSuelo = formData.get("clasificacion_suelo")?.toString();
-        const restriccionRiesgo = formData.get("restriccion_ambiental_riesgo")?.toString();
-        const restriccionRetiros = formData.get("restriccion_ambiental_retiros")?.toString();
-        const usoSuelo = formData.get("uso_suelo")?.toString();
-
-        // Descripción original
-        let descripcion = formData.get("descripcion")?.toString() || "";
-
-        // Si existe información normativa pero no hay descripción personalizada, 
-        // generar una descripción automática con la información normativa (sin campos POT)
-        if (!descripcion && (clasificacionSuelo || restriccionRiesgo || restriccionRetiros)) {
-            descripcion = `Información normativa del lote:\n\n`;
-            if (clasificacionSuelo) descripcion += `Clasificación de suelo: ${clasificacionSuelo}\n\n`;
-            if (restriccionRiesgo || restriccionRetiros) {
-                descripcion += `Restricciones ambientales:\n`;
-                if (restriccionRiesgo) descripcion += `- ${restriccionRiesgo}\n`;
-                if (restriccionRetiros) descripcion += `- ${restriccionRetiros}\n\n`;
-            }
-            if (usoSuelo) descripcion += `\nUso de suelo: ${usoSuelo}`;
-        }
-
-        const loteData: NuevoLoteData = {
-            nombre: formData.get("nombre")?.toString() || "",
-            descripcion: descripcion,
-            direccion: formData.get("direccion")?.toString() || "",
-            area: parseFloat(formData.get("area")?.toString() || "0"),
-            codigo_catastral: formData.get("codigo_catastral")?.toString(),
-            matricula: formData.get("matricula")?.toString(),
-            cbml: formData.get("cbml")?.toString(),
-            estrato: parseInt(formData.get("estrato")?.toString() || "0") || undefined,
-            uso_suelo: usoSuelo,
-            latitud: parseFloat(formData.get("latitud")?.toString() || "0") || undefined,
-            longitud: parseFloat(formData.get("longitud")?.toString() || "0") || undefined,
-        };
-
-        // Validaciones SIMPLIFICADAS - solo requerir nombre y dirección
-        const errors: {
-            nombre?: string;
-            direccion?: string;
-            form?: string;
-        } = {};
-
-        if (!loteData.nombre) errors.nombre = "El nombre es obligatorio";
-        if (!loteData.direccion) errors.direccion = "La dirección es obligatoria";
-        // ✅ TEMPORAL: CBML ya no es obligatorio
-        // if (!loteData.cbml) errors.cbml = "El código CBML es obligatorio";
-
-        // Si hay errores, retornarlos
-        if (Object.keys(errors).length > 0) {
-            return json({ errors, values: loteData });
-        }
-
-        console.log("Creando nuevo lote:", loteData.nombre);
-
-        // Crear el lote con los campos obligatorios y opcionales
-        // Definir metadatos como objeto vacío (puedes agregar lógica para poblarlo si lo necesitas)
-        const metadatos: Record<string, any> = {};
-
-        const lotePayload = {
-            nombre: loteData.nombre,
-            direccion: loteData.direccion || "",
-            descripcion: loteData.descripcion,
-            cbml: loteData.cbml || "", // ✅ Opcional temporalmente
-            matricula: loteData.matricula,
-            codigo_catastral: loteData.codigo_catastral,
-            estrato: loteData.estrato,
-            uso_suelo: loteData.uso_suelo,
-            clasificacion_suelo: loteData.clasificacion_suelo,
-            metadatos: Object.keys(metadatos).length > 0 ? metadatos : undefined,
-            status: "active", // Por defecto activo
-            owner: user.id // Agregar el owner requerido
-        };
-
-        // Añadir campos opcionales solo si tienen valor
-        if (loteData.area) {
-            (lotePayload as any).area = loteData.area;
-        }
-
-        if (loteData.latitud && loteData.longitud) {
-            (lotePayload as any).latitud = loteData.latitud;
-            (lotePayload as any).longitud = loteData.longitud;
-        }
-
-        if (formData.get("barrio")) {
-            (lotePayload as any).barrio = formData.get("barrio")?.toString();
-        }
-
-        try {
-            console.log("Enviando payload al servidor:", lotePayload);
-            const resultado = await createLote(request, lotePayload);
-            console.log("[Lotes] Lote creado con ID:", resultado.lote.id);
-
-            // Preparar los datos para la redirección y el modal
-            console.log(`[Lotes] Lote creado con ID: ${resultado.lote.id}`);
-
-            // Redirigir a la página del lote creado, pero incluir información para el modal
-            return redirect(`/owner/lote/${resultado.lote.id}`, {
-                headers: {
-                    ...resultado.headers,
-                    'X-Lote-Created': 'true',
-                    'X-Lote-Id': resultado.lote.id.toString()
-                }
-            });
-        } catch (error) {
-            console.error("[Lotes] Error en la creación:", error);
-            return json({
-                errors: {
-                    form: "Error al crear el lote en el servidor. Por favor intente nuevamente."
-                },
-                values: loteData
-            });
-        }
-    } catch (error) {
-        console.error("Error creando lote:", error);
-        return json({
-            errors: { form: "Error al crear el lote. Por favor intente nuevamente." },
-            values: Object.fromEntries(await request.formData())
-        });
-    }
+  const user = await getUser(request);
+  
+  if (!user || user.role !== "owner") {
+    return redirect("/login");
+  }
+  
+  const formData = await request.formData();
+  
+  // ✅ Obtener todos los campos del formulario
+  const nombre = formData.get("nombre")?.toString() || "";
+  const direccion = formData.get("direccion")?.toString() || "";
+  const ciudad = formData.get("ciudad")?.toString() || "";
+  const barrio = formData.get("barrio")?.toString() || "";
+  const area = parseFloat(formData.get("area")?.toString() || "0");
+  const cbml = formData.get("cbml")?.toString() || "";
+  const matricula = formData.get("matricula")?.toString() || "";
+  const codigo_catastral = formData.get("codigo_catastral")?.toString() || "";
+  const estrato = parseInt(formData.get("estrato")?.toString() || "0") || undefined;
+  const descripcion = formData.get("descripcion")?.toString() || "";
+  const uso_suelo = formData.get("uso_suelo")?.toString() || "";
+  const clasificacion_suelo = formData.get("clasificacion_suelo")?.toString() || "";
+  
+  // ✅ NUEVO: Campos comerciales
+  const valor = parseFloat(formData.get("valor")?.toString() || "0") || undefined;
+  const forma_pago = formData.get("forma_pago")?.toString() || "";
+  const es_comisionista = formData.get("es_comisionista") === "on";
+  
+  // ✅ CRÍTICO: Coordenadas del mapa
+  const latitud = parseFloat(formData.get("latitud")?.toString() || "0");
+  const longitud = parseFloat(formData.get("longitud")?.toString() || "0");
+  
+  // ✅ Archivo de carta de autorización
+  const cartaFile = formData.get("carta_autorizacion") as File | null;
+  
+  // Validaciones
+  const errors: Record<string, string> = {};
+  
+  if (!nombre) errors.nombre = "El nombre es obligatorio";
+  if (!direccion) errors.direccion = "La dirección es obligatoria";
+  if (!ciudad) errors.ciudad = "La ciudad es obligatoria";
+  if (!matricula) errors.matricula = "La matrícula inmobiliaria es obligatoria";
+  if (!area || area <= 0) errors.area = "El área debe ser mayor a 0";
+  if (!valor || valor <= 0) errors.valor = "El valor debe ser mayor a 0";
+  if (!forma_pago) errors.forma_pago = "La forma de pago es obligatoria";
+  
+  // ✅ NUEVO: Validar ubicación
+  if (!latitud || !longitud) {
+    errors.ubicacion = "Debes seleccionar la ubicación del lote en el mapa";
+  }
+  
+  // ✅ NUEVO: Validar carta para comisionistas
+  if (es_comisionista && (!cartaFile || cartaFile.size === 0)) {
+    errors.carta_autorizacion = "La carta de autorización es obligatoria para comisionistas";
+  }
+  
+  if (Object.keys(errors).length > 0) {
+    return json({ errors, values: Object.fromEntries(formData) });
+  }
+  
+  try {
+    const loteData: CreateLoteData = {
+      nombre,
+      direccion,
+      ciudad,
+      barrio,
+      area,
+      cbml,
+      matricula,
+      codigo_catastral,
+      estrato,
+      descripcion,
+      uso_suelo,
+      clasificacion_suelo,
+      latitud,
+      longitud,
+      valor,
+      forma_pago,
+      es_comisionista,
+      carta_autorizacion: cartaFile && cartaFile.size > 0 ? cartaFile : null,
+    };
+    
+    const resultado = await createLote(request, loteData);
+    
+    return redirect(`/owner/lote/${resultado.lote.id}`);
+  } catch (error) {
+    console.error("[Nuevo Lote] Error:", error);
+    return json({
+      errors: {
+        general: error instanceof Error ? error.message : "Error al crear el lote"
+      },
+      values: Object.fromEntries(formData)
+    });
+  }
 }
 
 export default function NuevoLote() {
-    const actionData = useActionData<typeof action>();
-    const navigation = useNavigation();
-
-    // ✅ FORMULARIO SIMPLIFICADO - Solo campos esenciales
-    const [formData, setFormData] = useState({
-        // Campos obligatorios
-        nombre: '',
-        direccion: '',
-
-        // Campos importantes (opcionales)
-        area: '',
-        cbml: '',
-        matricula: '',
-        descripcion: '',
-        barrio: '',
-        estrato: '',
-
-        // Campos automáticos (se llenan desde MapGIS) - TEMPORALMENTE MANUALES
-        latitud: '',
-        longitud: '',
-        clasificacion_suelo: '',
-        uso_suelo: '',
-        tratamiento_pot: '',
-    });
-
-    const isSubmitting = navigation.state === "submitting";
-
-    const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
-        const { name, value } = e.target;
-        setFormData(prev => ({
-            ...prev,
-            [name]: value
-        }));
-    };
-
-    return (
-        <div className="max-w-4xl mx-auto p-4 sm:px-6 lg:px-8">
-            {/* Header */}
-            <div className="mb-8">
-                <div className="flex items-center justify-between">
-                    <div>
-                        <h1 className="text-3xl font-bold text-gray-900">Registrar Nuevo Lote</h1>
-                        <p className="mt-2 text-sm text-gray-600">
-                            Complete los campos básicos para registrar un lote. Solo Nombre y Dirección son obligatorios.
-                        </p>
-                    </div>
-                    <Link
-                        to="/owner"
-                        className="inline-flex items-center px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
-                    >
-                        ← Volver
-                    </Link>
-                </div>
-            </div>
-
-            {/* Formulario principal */}
-            <div className="bg-white shadow-sm rounded-lg border border-gray-200">
-                <div className="px-6 py-4 border-b border-gray-200">
-                    <h2 className="text-lg font-medium text-gray-900">Información del Lote</h2>
-                    <p className="mt-1 text-sm text-gray-500">
-                        Los campos marcados con * son obligatorios. Los demás campos son opcionales.
-                    </p>
-                </div>
-
-                <Form method="post" className="p-6">
-                    {/* Mostrar errores generales */}
-                    {actionData?.errors && (
-                        <div className="mb-6 bg-red-50 border-l-4 border-red-400 p-4 rounded-md">
-                            <div className="flex">
-                                <div className="flex-shrink-0">
-                                    <svg className="h-5 w-5 text-red-400" viewBox="0 0 20 20" fill="currentColor">
-                                        <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
-                                    </svg>
-                                </div>
-                                <div className="ml-3">
-                                    <p className="text-sm text-red-700">
-                                        {typeof actionData.errors === "object"
-                                            ? actionData.errors.form
-                                            : actionData.errors}
-                                    </p>
-                                </div>
-                            </div>
-                        </div>
-                    )}
-
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                        {/* ✅ CAMPOS OBLIGATORIOS */}
-
-                        {/* Nombre del lote */}
-                        <div className="md:col-span-2">
-                            <label htmlFor="nombre" className="block text-sm font-medium text-gray-700 mb-2">
-                                Nombre del Lote *
-                            </label>
-                            <input
-                                type="text"
-                                id="nombre"
-                                name="nombre"
-                                value={formData.nombre}
-                                onChange={handleInputChange}
-                                required
-                                className="w-full px-4 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                                placeholder="Ej: Lote Central Poblado"
-                            />
-                            {actionData?.errors && "nombre" in actionData.errors && actionData.errors.nombre && (
-                                <p className="mt-1 text-sm text-red-600">{actionData.errors.nombre}</p>
-                            )}
-                        </div>
-
-                        {/* Dirección */}
-                        <div className="md:col-span-2">
-                            <label htmlFor="direccion" className="block text-sm font-medium text-gray-700 mb-2">
-                                Dirección *
-                            </label>
-                            <input
-                                type="text"
-                                id="direccion"
-                                name="direccion"
-                                value={formData.direccion}
-                                onChange={handleInputChange}
-                                required
-                                className="w-full px-4 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                                placeholder="Ej: Carrera 43A #16-25"
-                            />
-                            {actionData?.errors && typeof actionData.errors === "object" && "direccion" in actionData.errors && actionData.errors.direccion && (
-                                <p className="mt-1 text-sm text-red-600">{actionData.errors.direccion}</p>
-                            )}
-                        </div>
-
-                        {/* ✅ CAMPOS OPCIONALES (ahora todos editables) */}
-
-                        {/* Área */}
-                        <div>
-                            <label htmlFor="area" className="block text-sm font-medium text-gray-700 mb-2">
-                                Área (m²)
-                            </label>
-                            <input
-                                type="number"
-                                id="area"
-                                name="area"
-                                value={formData.area}
-                                onChange={handleInputChange}
-                                min="0"
-                                step="0.01"
-                                className="w-full px-4 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                                placeholder="Ej: 500"
-                            />
-                        </div>
-
-                        {/* Estrato */}
-                        <div>
-                            <label htmlFor="estrato" className="block text-sm font-medium text-gray-700 mb-2">
-                                Estrato
-                            </label>
-                            <select
-                                id="estrato"
-                                name="estrato"
-                                value={formData.estrato}
-                                onChange={handleInputChange}
-                                className="w-full px-4 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                            >
-                                <option value="">Seleccionar estrato</option>
-                                <option value="1">Estrato 1</option>
-                                <option value="2">Estrato 2</option>
-                                <option value="3">Estrato 3</option>
-                                <option value="4">Estrato 4</option>
-                                <option value="5">Estrato 5</option>
-                                <option value="6">Estrato 6</option>
-                            </select>
-                        </div>
-
-                        {/* CBML */}
-                        <div>
-                            <label htmlFor="cbml" className="block text-sm font-medium text-gray-700 mb-2">
-                                CBML
-                            </label>
-                            <input
-                                type="text"
-                                id="cbml"
-                                name="cbml"
-                                value={formData.cbml}
-                                onChange={handleInputChange}
-                                className="w-full px-4 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                                placeholder="Ej: 01005001234"
-                            />
-                        </div>
-
-                        {/* Matrícula */}
-                        <div>
-                            <label htmlFor="matricula" className="block text-sm font-medium text-gray-700 mb-2">
-                                Matrícula Inmobiliaria
-                            </label>
-                            <input
-                                type="text"
-                                id="matricula"
-                                name="matricula"
-                                value={formData.matricula}
-                                onChange={handleInputChange}
-                                className="w-full px-4 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                                placeholder="Ej: 174838"
-                            />
-                        </div>
-
-                        {/* Barrio */}
-                        <div>
-                            <label htmlFor="barrio" className="block text-sm font-medium text-gray-700 mb-2">
-                                Barrio
-                            </label>
-                            <input
-                                type="text"
-                                id="barrio"
-                                name="barrio"
-                                value={formData.barrio}
-                                onChange={handleInputChange}
-                                className="w-full px-4 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                                placeholder="Ej: El Poblado"
-                            />
-                        </div>
-
-                        {/* ✅ CAMPOS AUTOMÁTICOS (ahora editables temporalmente) */}
-
-                        {/* Clasificación del suelo */}
-                        <div>
-                            <label htmlFor="clasificacion_suelo" className="block text-sm font-medium text-gray-700 mb-2">
-                                Clasificación del Suelo
-                            </label>
-                            <input
-                                type="text"
-                                id="clasificacion_suelo"
-                                name="clasificacion_suelo"
-                                value={formData.clasificacion_suelo}
-                                onChange={handleInputChange}
-                                className="w-full px-4 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                                placeholder="Ej: Suelo de expansión urbana"
-                            />
-                        </div>
-
-                        {/* Uso del suelo */}
-                        <div>
-                            <label htmlFor="uso_suelo" className="block text-sm font-medium text-gray-700 mb-2">
-                                Uso del Suelo
-                            </label>
-                            <input
-                                type="text"
-                                id="uso_suelo"
-                                name="uso_suelo"
-                                value={formData.uso_suelo}
-                                onChange={handleInputChange}
-                                className="w-full px-4 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                                placeholder="Ej: Residencial"
-                            />
-                        </div>
-
-                        {/* Descripción */}
-                        <div className="md:col-span-2">
-                            <label htmlFor="descripcion" className="block text-sm font-medium text-gray-700 mb-2">
-                                Descripción
-                            </label>
-                            <textarea
-                                id="descripcion"
-                                name="descripcion"
-                                value={formData.descripcion}
-                                onChange={handleInputChange}
-                                rows={3}
-                                className="w-full px-4 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                                placeholder="Descripción opcional del lote..."
-                            />
-                        </div>
-                    </div>
-
-                    {/* Hidden fields para campos automáticos */}
-                    <input type="hidden" name="latitud" value={formData.latitud} />
-                    <input type="hidden" name="longitud" value={formData.longitud} />
-                    <input type="hidden" name="tratamiento_pot" value={formData.tratamiento_pot} />
-
-                    {/* Botones */}
-                    <div className="mt-8 flex justify-end space-x-4">
-                        <Link
-                            to="/owner"
-                            className="px-6 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
-                        >
-                            Cancelar
-                        </Link>
-                        <button
-                            type="submit"
-                            disabled={isSubmitting}
-                            className="px-6 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2"
-                        >
-                            {isSubmitting ? (
-                                <>
-                                    <svg className="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24">
-                                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                                    </svg>
-                                    <span>Registrando...</span>
-                                </>
-                            ) : (
-                                <>
-                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
-                                    </svg>
-                                    <span>Registrar Lote</span>
-                                </>
-                            )}
-                        </button>
-                    </div>
-                </Form>
-            </div>
+  
+  return (
+    <div className="max-w-4xl mx-auto p-6">
+      {/* Header */}
+      <div className="mb-8">
+        <h1 className="text-3xl font-bold text-gray-900">Registrar Nuevo Lote</h1>
+        <p className="text-gray-600 mt-2">
+          Completa la información de tu propiedad
+        </p>
+      </div>
+      
+      {/* Alertas de error general */}
+      {actionData?.errors?.general && (
+        <div className="mb-6 bg-red-50 border-l-4 border-red-500 p-4 rounded-r-lg">
+          <div className="flex items-center">
+            <svg className="w-5 h-5 text-red-500 mr-3" fill="currentColor" viewBox="0 0 20 20">
+              <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+            </svg>
+            <p className="text-red-800 font-medium">{actionData.errors.general}</p>
+          </div>
         </div>
-    );
+      )}
+      
+      <Form method="post" encType="multipart/form-data" className="space-y-8">
+        <div className="bg-white p-6 rounded-lg shadow-sm border-2 border-gray-200">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            {/* Nombre */}
+            <div className="md:col-span-2">
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Nombre del Lote <span className="text-red-500">*</span>
+              </label>
+              <input
+                type="text"
+                name="nombre"
+                defaultValue={actionData?.values?.nombre}
+                className="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
+                placeholder="Ej: Lote Comercial Centro"
+                required
+              />
+              {actionData?.errors?.nombre && (
+                <p className="mt-1 text-sm text-red-600">{actionData.errors.nombre}</p>
+              )}
+            </div>
+            
+            {/* Matrícula */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Matrícula Inmobiliaria <span className="text-red-500">*</span>
+              </label>
+              <input
+                type="text"
+                name="matricula"
+                defaultValue={actionData?.values?.matricula}
+                className="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
+                placeholder="Ej: 001-123456"
+                required
+              />
+              {actionData?.errors?.matricula && (
+                <p className="mt-1 text-sm text-red-600">{actionData.errors.matricula}</p>
+              )}
+            </div>
+            
+            {/* Ciudad */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Ciudad <span className="text-red-500">*</span>
+              </label>
+              <input
+                type="text"
+                name="ciudad"
+                defaultValue={actionData?.values?.ciudad || "Medellín"}
+                className="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
+                placeholder="Ej: Medellín"
+                required
+              />
+              {actionData?.errors?.ciudad && (
+                <p className="mt-1 text-sm text-red-600">{actionData.errors.ciudad}</p>
+              )}
+            </div>
+            
+            {/* Dirección */}
+            <div className="md:col-span-2">
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Dirección <span className="text-red-500">*</span>
+              </label>
+              <input
+                type="text"
+                name="direccion"
+                defaultValue={actionData?.values?.direccion}
+                className="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
+                placeholder="Ej: Carrera 43A #1-50"
+                required
+              />
+              {actionData?.errors?.direccion && (
+                <p className="mt-1 text-sm text-red-600">{actionData.errors.direccion}</p>
+              )}
+            </div>
+            
+            {/* Barrio y Estrato */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Barrio
+              </label>
+              <input
+                type="text"
+                name="barrio"
+                defaultValue={actionData?.values?.barrio}
+                className="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
+                placeholder="Ej: El Poblado"
+              />
+            </div>
+            
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Estrato
+              </label>
+              <select
+                name="estrato"
+                defaultValue={actionData?.values?.estrato}
+                className="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
+              >
+                <option value="">Seleccionar</option>
+                {[1, 2, 3, 4, 5, 6].map(num => (
+                  <option key={num} value={num}>Estrato {num}</option>
+                ))}
+              </select>
+            </div>
+            
+            {/* Área */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Área (m²) <span className="text-red-500">*</span>
+              </label>
+              <input
+                type="number"
+                name="area"
+                step="0.01"
+                defaultValue={actionData?.values?.area}
+                className="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
+                placeholder="Ej: 500.00"
+                required
+              />
+              {actionData?.errors?.area && (
+                <p className="mt-1 text-sm text-red-600">{actionData.errors.area}</p>
+              )}
+            </div>
+            
+            {/* CBML */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+              CBML (11 dígitos) {/* ✅ CORREGIDO: Indicar 11 dígitos */}
+              </label>
+              <input
+              type="text"
+              name="cbml"
+              maxLength={11} // ✅ CORREGIDO: 11 caracteres máximo (antes era 14)
+              defaultValue={actionData?.values?.cbml}
+              className="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
+              placeholder="Ej: 05001000000" // ✅ CORREGIDO: Ejemplo de 11 dígitos
+              />
+              {actionData?.errors?.cbml && (
+              <p className="mt-1 text-sm text-red-600">{actionData.errors.cbml}</p>
+              )}
+              <p className="mt-1 text-xs text-gray-500">
+              Código de identificación catastral de MapGIS Medellín (11 dígitos numéricos)
+              </p>
+            </div>
+            
+            {/* Descripción */}
+            <div className="md:col-span-2">
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Descripción
+              </label>
+              <textarea
+                name="descripcion"
+                rows={3}
+                defaultValue={actionData?.values?.descripcion}
+                className="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
+                placeholder="Describe las características del lote..."
+              />
+            </div>
+          </div>
+        </div>
+        
+        {/* ✅ SECCIÓN 2: Ubicación en el Mapa */}
+        <div className="bg-white p-6 rounded-lg shadow-sm border-2 border-gray-200">
+          <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
+            <svg className="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+            </svg>
+            Ubicación en el Mapa <span className="text-red-500">*</span>
+          </h3>
+          
+          <LocationPicker
+            initialLat={latitud}
+            initialLng={longitud}
+            onLocationSelect={handleLocationSelect}
+            height="400px"
+          />
+          
+          {/* Campos ocultos para enviar coordenadas */}
+          <input type="hidden" name="latitud" value={latitud} />
+          <input type="hidden" name="longitud" value={longitud} />
+          
+          {actionData?.errors?.ubicacion && (
+            <p className="mt-2 text-sm text-red-600">{actionData.errors.ubicacion}</p>
+          )}
+        </div>
+        
+        {/* ✅ SECCIÓN 3: Información Comercial */}
+        <div className="bg-white p-6 rounded-lg shadow-sm border-2 border-green-200">
+          <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
+            <svg className="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            Información Comercial
+          </h3>
+          
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            {/* Valor */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Valor del Lote (COP) <span className="text-red-500">*</span>
+              </label>
+              <input
+                type="number"
+                name="valor"
+                step="1000"
+                defaultValue={actionData?.values?.valor}
+                className="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:border-green-500 focus:ring-2 focus:ring-green-200"
+                placeholder="Ej: 500000000"
+                required
+              />
+              {actionData?.errors?.valor && (
+                <p className="mt-1 text-sm text-red-600">{actionData.errors.valor}</p>
+              )}
+            </div>
+            
+            {/* Forma de Pago */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Forma de Pago <span className="text-red-500">*</span>
+              </label>
+              <select
+                name="forma_pago"
+                defaultValue={actionData?.values?.forma_pago}
+                className="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:border-green-500 focus:ring-2 focus:ring-green-200"
+                required
+              >
+                <option value="">Seleccionar</option>
+                <option value="contado">De Contado</option>
+                <option value="financiado">Financiado</option>
+                <option value="permuta">Permuta</option>
+                <option value="mixto">Mixto</option>
+              </select>
+              {actionData?.errors?.forma_pago && (
+                <p className="mt-1 text-sm text-red-600">{actionData.errors.forma_pago}</p>
+              )}
+            </div>
+            
+            {/* Comisionista */}
+            <div className="md:col-span-2 bg-yellow-50 border-2 border-yellow-200 rounded-lg p-4">
+              <label className="flex items-start gap-3">
+                <input
+                  type="checkbox"
+                  name="es_comisionista"
+                  defaultChecked={actionData?.values?.es_comisionista === "on"}
+                  className="mt-1 h-5 w-5 rounded border-gray-300 text-yellow-600 focus:ring-yellow-500"
+                />
+                <div className="flex-1">
+                  <span className="text-sm font-semibold text-gray-900">
+                    Registro por comisionista
+                  </span>
+                  <p className="text-xs text-gray-600 mt-1">
+                    Marca esta opción si registras el lote en representación del propietario
+                  </p>
+                </div>
+              </label>
+              
+              {/* Carta de Autorización */}
+              <div className="mt-4 pt-4 border-t border-yellow-200">
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Carta de Autorización
+                </label>
+                <input
+                  type="file"
+                  name="carta_autorizacion"
+                  accept=".pdf,.jpg,.jpeg,.png"
+                  className="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:border-yellow-500 focus:ring-2 focus:ring-yellow-200"
+                />
+                {actionData?.errors?.carta_autorizacion && (
+                  <p className="mt-1 text-sm text-red-600">{actionData.errors.carta_autorizacion}</p>
+                )}
+                <p className="text-xs text-gray-500 mt-1">
+                  Requerida si eres comisionista. Formatos: PDF, JPG, PNG (máx. 10MB)
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+        
+        {/* Botones */}
+        <div className="flex justify-end gap-4">
+          <button
+            type="button"
+            onClick={() => window.history.back()}
+            className="px-6 py-2 border-2 border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 font-medium"
+            disabled={isSubmitting}
+          >
+            Cancelar
+          </button>
+          <button
+            type="submit"
+            disabled={isSubmitting}
+            className="px-6 py-2 bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-lg hover:from-blue-700 hover:to-blue-800 font-semibold shadow-lg hover:shadow-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+          >
+            {isSubmitting ? (
+              <>
+                <svg className="animate-spin h-5 w-5" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                </svg>
+                Guardando...
+              </>
+            ) : (
+              <>
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                </svg>
+                Registrar Lote
+              </>
+            )}
+          </button>
+        </div>
+      </Form>
+    </div>
+  );
 }

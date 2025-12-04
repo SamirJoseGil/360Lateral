@@ -61,3 +61,7 @@ export const getEnvDebugInfo = () => {
     isProduction: isProd,
   };
 };
+
+export const GOOGLE_MAPS_API_KEY = process.env.GOOGLE_MAPS_API_KEY || '';
+
+console.log(`🗺️ Google Maps API Key: ${GOOGLE_MAPS_API_KEY ? 'Configured' : 'Not configured'}`);

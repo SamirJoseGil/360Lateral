@@ -188,11 +188,12 @@ Endpoints para la gestión de usuarios y perfiles.
   - **Códigos**: `200 OK`, `401 Unauthorized`, `403 Forbidden`, `404 Not Found`
 
 ### MapGIS
-- **`POST /api/lotes/scrap/cbml/`** - Consultar lote por CBML
+- **`POST /api/lotes/scrap/cbml/`** - Consultar lote por CBML (11 dígitos)
   - **Requiere**: Autenticación
-  - **Datos**: `comuna`, `barrio`, `manzana`, `lote` (formato CBML)
-  - **Devuelve**: Datos del lote obtenidos de MapGIS
+  - **Datos**: `cbml` (11 dígitos numéricos)
+  - **Devuelve**: Datos del lote obtenidos de MapGIS Medellín
   - **Códigos**: `200 OK`, `400 Bad Request`, `401 Unauthorized`, `404 Not Found`
+  - **Ejemplo**: `{ "cbml": "05001000000" }`
 
 - **`POST /api/lotes/scrap/matricula/`** - Consultar lote por matrícula
   - **Requiere**: Autenticación

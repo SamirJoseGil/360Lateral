@@ -44,3 +44,21 @@ export async function getUserFromSession(request: Request) {
     return null;
   }
 }
+
+// ✅ NUEVO: Marcar modal de bienvenida como mostrado en sesión
+export async function markWelcomeModalShown(request: Request) {
+  const session = await getSession(request);
+  session.set("welcome_modal_shown", true);
+  
+  return {
+    headers: new Headers({
+      "Set-Cookie": await commitSession(session)
+    })
+  };
+}
+
+// ✅ NUEVO: Verificar si el modal ya fue mostrado en esta sesión
+export async function hasWelcomeModalBeenShown(request: Request): Promise<boolean> {
+  const session = await getSession(request);
+  return session.get("welcome_modal_shown") === true;
+}

@@ -1,9 +1,13 @@
 import { json, redirect } from "@remix-run/node";
-import { Link, useLoaderData } from "@remix-run/react";
-import type { LoaderFunctionArgs } from "@remix-run/node";
+import { Link, useFetcher, useLoaderData, useRevalidator } from "@remix-run/react";
+import type { ActionFunctionArgs, LoaderFunctionArgs } from "@remix-run/node";
 import { getUser } from "~/utils/auth.server";
 import { fetchWithAuth } from "~/utils/auth.server";
 import { getFavoriteLotes } from "~/services/lotes.server";
+import { WelcomeModal } from "~/components/WelcomeModal";
+import { markFirstLoginCompleted } from "~/services/users.server";
+import { markWelcomeModalShown, hasWelcomeModalBeenShown } from "~/utils/session.server";
+import { useEffect } from "react";
 
 // Constante para la URL base de la API
 const API_URL = process.env.API_URL || "http://localhost:8000";
@@ -29,8 +33,10 @@ type FavoriteLot = {
 };
 
 export async function loader({ request }: LoaderFunctionArgs) {
-    // El usuario ya ha sido verificado en el layout padre
     const user = await getUser(request);
+
+    // ✅ NUEVO: Verificar si el modal ya fue mostrado en esta sesión
+    const welcomeModalShown = await hasWelcomeModalBeenShown(request);
 
     try {
         // Obtener la actividad del usuario de forma paralela
@@ -80,6 +86,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
             user,
             searchCriteria,
             favoriteLots,
+            welcomeModalShown,  // ✅ NUEVO: Pasar flag a componente
         }, {
             headers: favoritesResponse.status === 'fulfilled' ? favoritesResponse.value.headers : new Headers()
         });
@@ -103,7 +110,8 @@ export async function loader({ request }: LoaderFunctionArgs) {
             searchCriteria: [],
             favoriteLots: [],
             stats,
-            activity: null
+            activity: null,
+            welcomeModalShown  // ✅ NUEVO: Incluir en error
         });
     }
 }
@@ -117,12 +125,71 @@ const formatCurrency = (value: number): string => {
     }).format(value);
 };
 
+// ✅ MEJORADO: Action con marcado de sesión
+export async function action({ request }: ActionFunctionArgs) {
+    const formData = await request.formData();
+    const intent = formData.get("intent");
+
+    if (intent === "complete-first-login") {
+        try {
+            // 1. Marcar en backend
+            const { headers: backendHeaders } = await markFirstLoginCompleted(request);
+            
+            // 2. Marcar en sesión
+            const { headers: sessionHeaders } = await markWelcomeModalShown(request);
+            
+            // ✅ CRÍTICO: Combinar ambos headers
+            const combinedHeaders = new Headers(backendHeaders);
+            for (const [key, value] of sessionHeaders.entries()) {
+                combinedHeaders.append(key, value);
+            }
+            
+            return json({ success: true }, { headers: combinedHeaders });
+        } catch (error) {
+            console.error("Error marking first login:", error);
+            return json({ success: false, error: "Failed to mark first login" }, { status: 500 });
+        }
+    }
+
+    return json({ success: false, error: "Invalid intent" }, { status: 400 });
+}
+
 export default function DeveloperDashboard() {
-    const { user, searchCriteria, favoriteLots } =
-        useLoaderData<typeof loader>();
+    const { user, searchCriteria, favoriteLots, welcomeModalShown } = useLoaderData<typeof loader>();
+    const fetcher = useFetcher();
+    const revalidator = useRevalidator();
+
+    const handleCloseWelcome = () => {
+        // Enviar acción para marcar como completada
+        fetcher.submit(
+            { intent: "complete-first-login" },
+            { method: "post" }
+        );
+    };
+
+    // ✅ NUEVO: Recargar datos cuando la acción se complete
+    useEffect(() => {
+        if (fetcher.data?.success && fetcher.state === 'idle') {
+            // Recargar el loader para obtener datos actualizados
+            revalidator.revalidate();
+        }
+    }, [fetcher.data, fetcher.state, revalidator]);
+
+    // ✅ MEJORADO: Verificación doble (backend + sesión)
+    const shouldShowModal = !user?.first_login_completed && !welcomeModalShown && fetcher.state === 'idle';
 
     return (
         <div className="p-4">
+            {/* ✅ MEJORADO: Verificación doble */}
+            {shouldShowModal && (
+                <WelcomeModal
+                    role="developer"
+                    userName={user?.first_name || user?.name || ""}
+                    isFirstLogin={true}
+                    onClose={handleCloseWelcome}
+                />
+            )}
+
             <header className="mb-8">
                 <h1 className="text-3xl font-bold">Panel de Desarrollador</h1>
                 <p className="text-gray-600 mt-2">

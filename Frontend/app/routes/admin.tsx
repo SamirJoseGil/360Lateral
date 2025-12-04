@@ -51,10 +51,9 @@ export default function AdminLayout() {
         { to: "/admin/usuarios", label: "Gestión de Usuarios", icon: "users" },
         { to: "/admin/lotes", label: "Gestión de Lotes", icon: "map" },
         { to: "/admin/validacion", label: "Gestión de Documentos", icon: "check-circle" },
-        { to: "/admin/solicitudes", label: "Gestión de Solicitudes", icon: "clipboard-list" }, // ✅ AGREGADO
-        { to: "/admin/investments", label: "Gestión de Análisis Urbanístico", icon: "chart-bar" },
-        // { to: "/admin/pot", label: "Gestión POT", icon: "document-text" },
-        // { to: "/admin/system", label: "Monitoreo del Sistema", icon: "chart-bar" },
+        { to: "/admin/solicitudes", label: "Gestión de Solicitudes", icon: "clipboard-list" },
+        { to: "/admin/investments", label: "Gestión de Investigaciónes", icon: "chart-bar" },
+        { to: "/admin/analisis", label: "Gestión de Análisis Urbanístico", icon: "bell" },
     ];
 
     // Registrar vista de página cuando el componente se monta

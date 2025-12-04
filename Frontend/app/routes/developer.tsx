@@ -31,7 +31,7 @@ export default function DeveloperLayout() {
         { to: "/developer", label: "Menú Principal", icon: "dashboard" },
         { to: "/developer/search", label: "Buscar Lotes", icon: "search" },
         { to: "/developer/favorites", label: "Favoritos", icon: "heart" },
-        // { to: "/developer/analysis", label: "Análisis Urbanístico", icon: "chart-bar" }, // commented out option
+        { to: "/developer/analisis", label: "Análisis MapGIS", icon: "chart-bar" }, // ✅ NUEVO
         { to: "/developer/investment", label: "Criterios de Inversión", icon: "document-text" },
     ];
 

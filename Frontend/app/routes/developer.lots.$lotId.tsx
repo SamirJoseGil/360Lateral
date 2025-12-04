@@ -6,6 +6,7 @@ import { useState } from "react";
 import { getLoteById, checkLoteIsFavorite, toggleLoteFavorite } from "~/services/lotes.server";
 import { getNormativaPorCBML } from "~/services/pot.server";
 import { useNavigate } from "@remix-run/react";
+import { MapView } from "~/components/MapView";
 
 type LoaderData = {
     lote: any;
@@ -261,6 +262,13 @@ export default function LotDetail() {
                             )}
 
                             <div className="grid grid-cols-2 gap-4">
+                                {/* ✅ NUEVO: Ciudad */}
+                                {lote.ciudad && (
+                                    <div>
+                                        <h3 className="text-sm text-gray-500">Ciudad</h3>
+                                        <p className="font-medium">{lote.ciudad}</p>
+                                    </div>
+                                )}
                                 <div>
                                     <h3 className="text-sm text-gray-500">Área</h3>
                                     <p className="font-medium">{lote.area ? `${lote.area.toLocaleString()} m²` : 'N/A'}</p>
@@ -293,34 +301,38 @@ export default function LotDetail() {
                         </div>
                     </div>
 
-                    {/* Información POT */}
-                    {potData && (
+                    {/* ✅ NUEVA SECCIÓN: Información Comercial */}
+                    {(lote.valor || lote.forma_pago) && (
                         <div className="bg-white rounded-lg shadow mb-8">
                             <div className="p-6">
-                                <h2 className="text-xl font-bold mb-4">Información POT</h2>
+                                <h2 className="text-xl font-bold mb-4 flex items-center gap-2">
+                                    <svg className="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                    </svg>
+                                    Información Comercial
+                                </h2>
                                 <div className="grid grid-cols-2 gap-4">
-                                    {potData.codigo_tratamiento && (
+                                    {lote.valor && (
                                         <div>
-                                            <h3 className="text-sm text-gray-500">Tratamiento</h3>
-                                            <p className="font-medium">{potData.codigo_tratamiento}</p>
+                                            <h3 className="text-sm text-gray-500">Valor del Lote</h3>
+                                            <p className="text-lg font-semibold text-green-600">
+                                                {new Intl.NumberFormat('es-CO', {
+                                                    style: 'currency',
+                                                    currency: 'COP',
+                                                    minimumFractionDigits: 0
+                                                }).format(lote.valor)}
+                                            </p>
                                         </div>
                                     )}
-                                    {potData.nombre_tratamiento && (
+                                    {lote.forma_pago && (
                                         <div>
-                                            <h3 className="text-sm text-gray-500">Nombre Tratamiento</h3>
-                                            <p className="font-medium">{potData.nombre_tratamiento}</p>
-                                        </div>
-                                    )}
-                                    {potData.indice_ocupacion && (
-                                        <div>
-                                            <h3 className="text-sm text-gray-500">Índice Ocupación</h3>
-                                            <p className="font-medium">{potData.indice_ocupacion}</p>
-                                        </div>
-                                    )}
-                                    {potData.indice_construccion && (
-                                        <div>
-                                            <h3 className="text-sm text-gray-500">Índice Construcción</h3>
-                                            <p className="font-medium">{potData.indice_construccion}</p>
+                                            <h3 className="text-sm text-gray-500">Forma de Pago</h3>
+                                            <p className="font-medium">
+                                                {lote.forma_pago === 'contado' ? 'De Contado' :
+                                                 lote.forma_pago === 'financiado' ? 'Financiado' :
+                                                 lote.forma_pago === 'permuta' ? 'Permuta' :
+                                                 lote.forma_pago === 'mixto' ? 'Mixto' : lote.forma_pago}
+                                            </p>
                                         </div>
                                     )}
                                 </div>
@@ -328,28 +340,49 @@ export default function LotDetail() {
                         </div>
                     )}
 
-                    {/* Coordenadas si están disponibles */}
-                    {(lote.latitud || lote.longitud) && (
-                        <div className="bg-white rounded-lg shadow">
-                            <div className="p-6">
-                                <h2 className="text-xl font-bold mb-4">Ubicación</h2>
-                                <div className="grid grid-cols-2 gap-4">
-                                    {lote.latitud && (
-                                        <div>
-                                            <h3 className="text-sm text-gray-500">Latitud</h3>
-                                            <p className="font-medium">{lote.latitud}</p>
-                                        </div>
-                                    )}
-                                    {lote.longitud && (
-                                        <div>
-                                            <h3 className="text-sm text-gray-500">Longitud</h3>
-                                            <p className="font-medium">{lote.longitud}</p>
-                                        </div>
-                                    )}
+                    {/* ✅ SECCIÓN: Ubicación con Mapa - CORREGIDA */}
+                    <div className="bg-white rounded-lg shadow mb-8">
+                        <div className="p-6">
+                            <h2 className="text-xl font-bold mb-4 flex items-center gap-2">
+                                <svg className="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+                                </svg>
+                                Ubicación del Lote
+                            </h2>
+                            
+                            <MapView
+                                latitud={lote.latitud}
+                                longitud={lote.longitud}
+                                direccion={lote.direccion}
+                                nombre={lote.nombre}
+                                height="400px"
+                            />
+                            
+                            {/* ✅ CORREGIDO: Validar que sean números antes de usar toFixed */}
+                            {(typeof lote.latitud === 'number' && typeof lote.longitud === 'number') && (
+                                <div className="mt-4 flex items-center justify-between">
+                                    <div className="text-sm text-gray-600">
+                                        <p className="font-medium">Coordenadas:</p>
+                                        <p className="font-mono">
+                                            {lote.latitud.toFixed(6)}, {lote.longitud.toFixed(6)}
+                                        </p>
+                                    </div>
+                                    <a
+                                        href={`https://www.google.com/maps/search/?api=1&query=${lote.latitud},${lote.longitud}`}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                                    >
+                                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                                        </svg>
+                                        Abrir en Google Maps
+                                    </a>
                                 </div>
-                            </div>
+                            )}
                         </div>
-                    )}
+                    </div>
                 </div>
 
                 {/* Sidebar con información resumida */}
@@ -358,6 +391,13 @@ export default function LotDetail() {
                     <div className="bg-white rounded-lg shadow p-6">
                         <h2 className="text-xl font-bold mb-4">Resumen</h2>
                         <div className="space-y-3">
+                            {/* ✅ NUEVO: Ciudad en resumen */}
+                            {lote.ciudad && (
+                                <div className="flex justify-between">
+                                    <span className="text-gray-500">Ciudad</span>
+                                    <span className="font-medium">{lote.ciudad}</span>
+                                </div>
+                            )}
                             <div className="flex justify-between">
                                 <span className="text-gray-500">CBML</span>
                                 <span className="font-medium text-xs">{lote.cbml || 'N/A'}</span>
@@ -381,6 +421,20 @@ export default function LotDetail() {
                                     <span className="font-medium">{lote.tratamiento_pot}</span>
                                 </div>
                             )}
+                            {/* ✅ NUEVO: Valor en resumen */}
+                            {lote.valor && (
+                                <div className="flex justify-between">
+                                    <span className="text-gray-500">Valor</span>
+                                    <span className="font-semibold text-green-600">
+                                        {new Intl.NumberFormat('es-CO', {
+                                            style: 'currency',
+                                            currency: 'COP',
+                                            minimumFractionDigits: 0,
+                                            notation: 'compact'
+                                        }).format(lote.valor)}
+                                    </span>
+                                </div>
+                            )}
                         </div>
                     </div>
 
@@ -388,10 +442,6 @@ export default function LotDetail() {
                     <div className="bg-white rounded-lg shadow p-6">
                         <h2 className="text-xl font-bold mb-4">Información del Sistema</h2>
                         <div className="space-y-2">
-                            <div>
-                                <span className="text-gray-500 text-sm">ID</span>
-                                <div className="font-medium">{lote.id}</div>
-                            </div>
                             {lote.created_at && (
                                 <div>
                                     <span className="text-gray-500 text-sm">Fecha de Registro</span>

@@ -559,3 +559,133 @@ class SessionService:
             'last_activity': session.last_activity.isoformat(),
             'is_current': True
         }
+
+
+class VerificationService:
+    """
+    ✅ NUEVO: Servicio para gestionar códigos de verificación
+    ⚠️ PREPARADO para futura integración con SMTP/WhatsApp
+    """
+    
+    @staticmethod
+    def generate_verification_code(user, code_type='email'):
+        """
+        Genera un código de verificación para un usuario
+        
+        Args:
+            user: Usuario
+            code_type: 'email', 'whatsapp' o 'sms'
+            
+        Returns:
+            VerificationCode: Código generado
+        """
+        from .models import VerificationCode
+        from datetime import timedelta
+        
+        # Invalidar códigos anteriores del mismo tipo
+        VerificationCode.objects.filter(
+            user=user,
+            code_type=code_type,
+            is_used=False
+        ).update(is_used=True)
+        
+        # Generar nuevo código
+        code = VerificationCode.generate_code()
+        expires_at = timezone.now() + timedelta(minutes=10)  # Expira en 10 minutos
+        
+        verification = VerificationCode.objects.create(
+            user=user,
+            code=code,
+            code_type=code_type,
+            expires_at=expires_at
+        )
+        
+        logger.info(f"✅ Verification code generated for {user.email}: {code} (type: {code_type})")
+        
+        # ⚠️ TEMPORAL: Imprimir código en consola (eliminar en producción)
+        print("\n" + "="*80)
+        print("🔐 CÓDIGO DE VERIFICACIÓN GENERADO")
+        print("="*80)
+        print(f"Usuario: {user.email}")
+        print(f"Código: {code}")
+        print(f"Tipo: {code_type}")
+        print(f"Expira: {expires_at}")
+        print("="*80 + "\n")
+        
+        # ⚠️ TODO: Implementar envío real
+        # if code_type == 'email':
+        #     send_verification_email(user.email, code)
+        # elif code_type == 'whatsapp':
+        #     send_whatsapp_message(user.phone, code)
+        # elif code_type == 'sms':
+        #     send_sms(user.phone, code)
+        
+        return verification
+    
+    @staticmethod
+    def verify_code(user, code, code_type):
+        """
+        Verifica un código de verificación
+        
+        Args:
+            user: Usuario
+            code: Código a verificar
+            code_type: Tipo de código
+            
+        Returns:
+            tuple: (success: bool, message: str)
+        """
+        from .models import VerificationCode
+        
+        try:
+            verification = VerificationCode.objects.get(
+                user=user,
+                code=code,
+                code_type=code_type,
+                is_used=False
+            )
+            
+            if not verification.is_valid():
+                if verification.is_used:
+                    return (False, "Este código ya ha sido utilizado")
+                else:
+                    return (False, "Este código ha expirado")
+            
+            # Marcar código como usado
+            verification.mark_as_used()
+            
+            # Actualizar usuario como verificado
+            if code_type == 'email':
+                user.is_verified = True
+                user.email_verified_at = timezone.now()
+            elif code_type in ['whatsapp', 'sms']:
+                user.is_phone_verified = True
+                user.phone_verified_at = timezone.now()
+            
+            user.save()
+            
+            logger.info(f"✅ Code verified for {user.email} (type: {code_type})")
+            
+            return (True, "Código verificado exitosamente")
+            
+        except VerificationCode.DoesNotExist:
+            logger.warning(f"❌ Invalid verification code attempted: {code} for {user.email}")
+            return (False, "Código inválido")
+        except Exception as e:
+            logger.error(f"❌ Error verifying code: {str(e)}", exc_info=True)
+            return (False, f"Error al verificar código: {str(e)}")
+    
+    @staticmethod
+    def resend_verification_code(user, code_type='email'):
+        """
+        Reenvía un código de verificación
+        
+        Args:
+            user: Usuario
+            code_type: Tipo de código
+            
+        Returns:
+            VerificationCode: Nuevo código generado
+        """
+        logger.info(f"📨 Resending verification code for {user.email} (type: {code_type})")
+        return VerificationService.generate_verification_code(user, code_type)

@@ -199,6 +199,38 @@ class AvailableLotesView(generics.ListAPIView):
         if barrio:
             queryset = queryset.filter(barrio__icontains=barrio)
         
+        # ✅ MEJORADO: Match profile con lógica más permisiva
+        match_profile = request.user.match_profile
+        
+        if match_profile:
+            perfil = request.user
+            
+            # Construir filtros con OR (al menos 1 coincidencia)
+            from django.db.models import Q
+            
+            match_conditions = Q()  # Inicializar Q object vacío
+            
+            # Si tiene ciudades de interés, agregar condición
+            if perfil.ciudades_interes:
+                # Buscar lotes que estén en alguna de las ciudades
+                for ciudad in perfil.ciudades_interes:
+                    match_conditions |= Q(barrio__icontains=ciudad) | Q(direccion__icontains=ciudad)
+            
+            # Si tiene usos preferidos, agregar condición
+            if perfil.usos_preferidos:
+                for uso in perfil.usos_preferidos:
+                    match_conditions |= Q(uso_suelo__icontains=uso)
+            
+            # Si tiene modelos de pago (esto puede estar en metadatos)
+            if perfil.modelos_pago:
+                for modelo in perfil.modelos_pago:
+                    match_conditions |= Q(metadatos__modelo_pago__icontains=modelo)
+            
+            # ✅ Aplicar filtro con OR (al menos 1 debe cumplirse)
+            if match_conditions:
+                queryset = queryset.filter(match_conditions)
+                logger.info(f"🎯 Filtro de match aplicado para {request.user.email}")
+        
         page = self.paginate_queryset(queryset)
         if page is not None:
             serializer = self.get_serializer(page, many=True)

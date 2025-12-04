@@ -48,15 +48,16 @@ def main():
     print("=" * 50)
     
     # Apps que necesitan reset
-    apps_to_reset = ['lotes', 'documents', 'stats', 'pot']
+    apps_to_reset = ['lotes', 'documents', 'stats', 'pot', 'mapgis']  # ✅ Agregado mapgis
     
     for app in apps_to_reset:
         reset_app_migrations(app)
     
     print("\n✅ Migration reset complete!")
     print("🔄 Now run the following commands:")
-    print("   docker-compose exec backend python manage.py makemigrations")
-    print("   docker-compose exec backend python manage.py migrate")
+    print("   python manage.py makemigrations")
+    print("   python manage.py migrate")
+    print("\n📝 Nota: CBML debe tener 11 dígitos para MapGIS Medellín")
 
 if __name__ == "__main__":
     main()

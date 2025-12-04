@@ -171,10 +171,10 @@ Valida formato de CBML (Código Base Municipal de Lote).
 ```python
 def validate_cbml(value: str) -> bool:
     """
-    Valida formato de CBML de Medellín.
+    Valida formato de CBML de MapGIS Medellín.
     
     Args:
-        value: CBML a validar (14 dígitos)
+        value: CBML a validar (11 dígitos)
         
     Returns:
         bool: True si es válido
@@ -182,14 +182,17 @@ def validate_cbml(value: str) -> bool:
     Raises:
         ValidationError: Si el formato es inválido
     """
-    if not value or len(value) != 14:
-        raise ValidationError('CBML debe tener 14 dígitos')
+    if not value or len(value) != 11:
+        raise ValidationError('CBML debe tener 11 dígitos')
     
     if not value.isdigit():
         raise ValidationError('CBML debe ser numérico')
     
     return True
 ```
+
+**Formato**: Exactamente **11 dígitos** numéricos  
+**Ejemplo**: `05001000000`
 
 ### 4. Health Checks (views.py)
 

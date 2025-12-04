@@ -31,7 +31,7 @@ export default function OwnerLayout() {
         { to: "/owner/lotes", label: "Mis Lotes", icon: "map" },
         { to: "/owner/documentos", label: "Documentos", icon: "check-circle" },
         { to: "/owner/solicitudes", label: "Mis Solicitudes", icon: "clipboard-list" }, // ✅ AGREGADO
-        // { to: "/owner/analisis/solicitar", label: "Análisis Urbanístico", icon: "chart-bar" },
+        { to: "/owner/analisis", label: "Análisis Urbanístico", icon: "chart-bar" },
     ];
 
     return (

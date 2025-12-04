@@ -20,145 +20,141 @@ class LoteSimpleSerializer(serializers.ModelSerializer):
 
 
 class LoteSerializer(serializers.ModelSerializer):
-    """
-    ✅ MEJORADO: Incluir campos calculados de estado
-    """
-    owner_info = UserSimpleSerializer(source='owner', read_only=True)
-    status_display = serializers.CharField(source='get_status_display', read_only=True)
-    
-    # ✅ Campos calculados
-    can_be_shown = serializers.BooleanField(read_only=True)
-    can_be_edited = serializers.BooleanField(read_only=True)
-    is_rejected = serializers.BooleanField(read_only=True)
-    is_archived = serializers.BooleanField(read_only=True)
-    is_pending = serializers.BooleanField(read_only=True)
-    is_active = serializers.BooleanField(read_only=True)
+    """Serializer completo para lotes"""
+    owner_name = serializers.SerializerMethodField()
     
     class Meta:
         model = Lote
         fields = [
-            'id', 'nombre', 'cbml', 'matricula', 'codigo_catastral',
-            'direccion', 'area', 'descripcion', 'barrio', 'estrato',
-            'latitud', 'longitud', 'clasificacion_suelo', 'uso_suelo', 
-            'tratamiento_pot', 
-            'owner', 'owner_info', 
-            'status', 'status_display',
-            'is_verified', 'verified_at', 'verified_by',
-            'rejection_reason', 'rejected_at', 'rejected_by',
-            'created_at', 'updated_at', 'metadatos',
-            # ✅ Campos calculados
-            'can_be_shown', 'can_be_edited', 'is_rejected', 'is_archived', 
-            'is_pending', 'is_active'
-        ]
-        read_only_fields = [
-            'id', 'created_at', 'updated_at', 'owner',
-            'verified_at', 'verified_by', 'rejected_at', 'rejected_by',
-            'status_display', 'can_be_shown', 'can_be_edited', 
-            'is_rejected', 'is_archived', 'is_pending', 'is_active'
-        ]
-    
-    def get_potencial_constructivo(self, obj):
-        """Calcula potencial constructivo"""
-        return obj.calcular_potencial_constructivo()
-    
-    def get_documentos_count(self, obj):
-        """Cuenta documentos asociados"""
-        return obj.documentos.count()
-    
-    def validate_cbml(self, value):
-        """Validar formato de CBML"""
-        if len(value) != 14:
-            raise serializers.ValidationError("El CBML debe tener 14 dígitos")
-        if not value.isdigit():
-            raise serializers.ValidationError("El CBML debe ser numérico")
-        return value
-    
-    def validate(self, attrs):
-        """Validaciones cruzadas"""
-        # Validar área construida vs área del lote
-        if 'area_construida' in attrs and 'area' in attrs:
-            if attrs['area_construida'] > attrs['area'] * 10:
-                raise serializers.ValidationError({
-                    'area_construida': 'El área construida es demasiado grande'
-                })
-        
-        return attrs
-
-
-class LoteCreateSerializer(serializers.ModelSerializer):
-    """
-    Serializer SIMPLIFICADO para crear lotes - Solo campos esenciales
-    """
-    class Meta:
-        model = Lote
-        fields = [
-            # ✅ CAMPOS ESENCIALES (requeridos)
+            'id',
+            'owner',
+            'owner_name',
             'nombre',
-            'direccion',
-            'area',
-            
-            # ✅ CAMPOS IMPORTANTES (opcionales pero útiles)
             'cbml',
-            'matricula', 
-            'codigo_catastral',
-            'descripcion',
+            'direccion',
+            'ciudad',
             'barrio',
             'estrato',
-            # ✅ ELIMINADO: 'comuna' - campo que no existe
-            
-            # ✅ CAMPOS AUTOMÁTICOS (se pueden llenar después)
+            'area',
+            'matricula',
+            'codigo_catastral',
             'latitud',
             'longitud',
-            'clasificacion_suelo',
-            'uso_suelo',
             'tratamiento_pot',
+            'uso_suelo',
+            'clasificacion_suelo',
+            'descripcion',
+            'valor',
+            'forma_pago',
+            'es_comisionista',
+            'status',
+            'is_verified',
+            'created_at',
+            'updated_at',
         ]
-        
-    def validate_nombre(self, value):
-        """Validar que el nombre no esté vacío"""
-        if not value or not value.strip():
-            raise serializers.ValidationError("El nombre del lote es requerido")
-        return value.strip()
     
-    def validate_direccion(self, value):
-        """Validar que la dirección no esté vacía"""
-        if not value or not value.strip():
-            raise serializers.ValidationError("La dirección es requerida")
-        return value.strip()
+    def get_owner_name(self, obj):
+        """Obtener nombre del propietario"""
+        if obj.owner:
+            return obj.owner.get_full_name() or obj.owner.email
+        return None
+    
+    def get_owner_email(self, obj):
+        """Obtener email del propietario"""
+        if obj.owner:
+            return obj.owner.email
+        return None
+    
+    def validate_cbml(self, value):
+        """Validar formato de CBML - MapGIS Medellín usa 11 dígitos"""
+        if value and len(value) != 11:  # ✅ CORREGIDO: 11 dígitos (antes era 14)
+            raise serializers.ValidationError(
+                "El CBML debe tener exactamente 11 dígitos para MapGIS Medellín"
+            )
+        if value and not value.isdigit():
+            raise serializers.ValidationError(
+                "El CBML debe contener solo números"
+            )
+        return value
     
     def validate_area(self, value):
         """Validar que el área sea positiva"""
         if value is not None and value <= 0:
-            raise serializers.ValidationError("El área debe ser mayor a 0")
+            raise serializers.ValidationError(
+                "El área debe ser un número positivo"
+            )
         return value
     
-    def validate_cbml(self, value):
-        """Validar formato CBML si se proporciona"""
-        if value and len(value.strip()) > 0:
-            # Remover espacios y validar que solo contenga números
-            cbml_clean = value.strip().replace(' ', '')
-            if not cbml_clean.isdigit():
-                raise serializers.ValidationError("El CBML debe contener solo números")
-            if len(cbml_clean) < 10:
-                raise serializers.ValidationError("El CBML debe tener al menos 10 dígitos")
-            return cbml_clean
+    def validate_estrato(self, value):
+        """Validar que el estrato esté en el rango correcto"""
+        if value is not None and (value < 1 or value > 6):
+            raise serializers.ValidationError(
+                "El estrato debe estar entre 1 y 6"
+            )
         return value
+    
+    # ✅ NUEVA VALIDACIÓN: Carta de autorización obligatoria para comisionistas
+    def validate(self, data):
+        """Validaciones cruzadas"""
+        es_comisionista = data.get('es_comisionista', False)
+        carta_autorizacion = data.get('carta_autorizacion')
+        
+        # Si es comisionista, la carta es obligatoria
+        if es_comisionista and not carta_autorizacion:
+            raise serializers.ValidationError({
+                'carta_autorizacion': 'La carta de autorización es obligatoria para comisionistas'
+            })
+        
+        return data
+
+
+class LoteCreateSerializer(serializers.ModelSerializer):
+    """
+    Serializer para crear lotes (formulario de creación)
+    """
+    class Meta:
+        model = Lote
+        fields = [
+            'nombre',
+            'cbml',
+            'direccion',
+            'ciudad',  # ✅ NUEVO
+            'barrio',
+            'estrato',
+            'area',
+            'matricula',
+            'codigo_catastral',
+            'latitud',
+            'longitud',
+            'tratamiento_pot',
+            'uso_suelo',
+            'clasificacion_suelo',
+            'descripcion',
+            'valor',  # ✅ NUEVO
+            'forma_pago',  # ✅ NUEVO
+            'es_comisionista',  # ✅ NUEVO
+            'carta_autorizacion',  # ✅ NUEVO
+            'metadatos',
+        ]
+    
+    def validate(self, data):
+        """Validaciones para creación"""
+        # ✅ VALIDACIÓN: Carta obligatoria para comisionistas
+        if data.get('es_comisionista') and not data.get('carta_autorizacion'):
+            raise serializers.ValidationError({
+                'carta_autorizacion': 'La carta de autorización es obligatoria para comisionistas'
+            })
+        
+        return data
     
     def create(self, validated_data):
-        """Crear lote con valores por defecto para campos opcionales"""
-        # Establecer owner automáticamente
-        if 'owner' not in validated_data:
-            validated_data['owner'] = self.context['request'].user
-            
-        # Valores por defecto
-        validated_data.setdefault('status', 'pending')
-        validated_data.setdefault('is_verified', False)
-        
-        # Si no hay descripción, generar una básica
-        if not validated_data.get('descripcion'):
-            validated_data['descripcion'] = f"Lote en {validated_data.get('direccion', 'dirección no especificada')}"
-            if validated_data.get('area'):
-                validated_data['descripcion'] += f" con área de {validated_data['area']} m²"
+        """
+        Crear lote asignando automáticamente el usuario autenticado
+        """
+        # ✅ CORREGIDO: Usar 'owner' en lugar de 'usuario'
+        request = self.context.get('request')
+        if request and hasattr(request, 'user'):
+            validated_data['owner'] = request.user
         
         return super().create(validated_data)
 

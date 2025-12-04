@@ -34,7 +34,7 @@ export default defineConfig(({ mode }) => {
         interval: 1000,
       },
       // To allow this host, add "lateral360.loca.lt" to allowedHosts
-      allowedHosts: ["bc750a510180.ngrok-free.app"],
+      allowedHosts: ["a457518f565a.ngrok-free.app"],
     },
     // ✅ CRÍTICO: Exponer variables de entorno al servidor
     define: {

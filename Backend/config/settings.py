@@ -4,6 +4,7 @@ Simplified single-file configuration with environment-based overrides.
 """
 
 import os
+import logging  # ✅ AGREGADO: Import de logging
 from pathlib import Path
 from datetime import timedelta
 from dotenv import load_dotenv
@@ -71,6 +72,8 @@ INSTALLED_APPS = [
     'apps.solicitudes',        # ✅ AGREGAR - Nueva app para solicitudes
     'apps.investment_criteria',  # ✅ AGREGAR
     'apps.notifications',        # ✅ NUEVO: App de notificaciones
+    'apps.analisis',  # ✅ Debe estar presente
+    'apps.mapgis',  # ✅ NUEVO
 ]
 
 # =============================================================================
@@ -269,26 +272,79 @@ REDIS_HOST = os.getenv('REDIS_HOST', 'localhost')
 REDIS_PORT = int(os.getenv('REDIS_PORT', 6379))
 REDIS_PASSWORD = os.getenv('REDIS_PASSWORD', '')
 
+# =============================================================================
+# CACHE CONFIGURATION (UPDATED)
+# =============================================================================
+
+REDIS_HOST = os.getenv('REDIS_HOST', 'localhost')
+REDIS_PORT = int(os.getenv('REDIS_PORT', 6379))
+REDIS_PASSWORD = os.getenv('REDIS_PASSWORD', '')
+
+# ✅ NUEVO: Configuración detallada de Redis Cache
 if DJANGO_ENV == 'production' and REDIS_HOST != 'localhost':
     CACHES = {
         'default': {
             'BACKEND': 'django_redis.cache.RedisCache',
-            'LOCATION': f'redis://{REDIS_HOST}:{REDIS_PORT}/1',
+            'LOCATION': f'redis://:{REDIS_PASSWORD}@{REDIS_HOST}:{REDIS_PORT}/1',
             'OPTIONS': {
                 'CLIENT_CLASS': 'django_redis.client.DefaultClient',
-                'PASSWORD': REDIS_PASSWORD,
+                'CONNECTION_POOL_KWARGS': {
+                    'max_connections': 50,
+                    'retry_on_timeout': True,
+                },
+                'SOCKET_CONNECT_TIMEOUT': 5,
+                'SOCKET_TIMEOUT': 5,
+                'COMPRESSOR': 'django_redis.compressors.zlib.ZlibCompressor',
+                'IGNORE_EXCEPTIONS': True,
             },
             'KEY_PREFIX': 'lateral360',
             'TIMEOUT': 300,
-        }
+        },
+        'session': {
+            'BACKEND': 'django_redis.cache.RedisCache',
+            'LOCATION': f'redis://:{REDIS_PASSWORD}@{REDIS_HOST}:{REDIS_PORT}/2',
+            'OPTIONS': {
+                'CLIENT_CLASS': 'django_redis.client.DefaultClient',
+            },
+            'KEY_PREFIX': 'session',
+            'TIMEOUT': 3600,
+        },
+        'search': {
+            'BACKEND': 'django_redis.cache.RedisCache',
+            'LOCATION': f'redis://:{REDIS_PASSWORD}@{REDIS_HOST}:{REDIS_PORT}/3',
+            'OPTIONS': {
+                'CLIENT_CLASS': 'django_redis.client.DefaultClient',
+            },
+            'KEY_PREFIX': 'search',
+            'TIMEOUT': 60,
+        },
     }
+    
+    SESSION_ENGINE = 'django.contrib.sessions.backends.cache'
+    SESSION_CACHE_ALIAS = 'session'
 else:
     CACHES = {
         'default': {
             'BACKEND': 'django.core.cache.backends.locmem.LocMemCache',
             'LOCATION': 'lateral360-cache',
-        }
+            'TIMEOUT': 300,
+        },
+        'session': {
+            'BACKEND': 'django.core.cache.backends.locmem.LocMemCache',
+            'LOCATION': 'session-cache',
+            'TIMEOUT': 3600,
+        },
+        'search': {
+            'BACKEND': 'django.core.cache.backends.locmem.LocMemCache',
+            'LOCATION': 'search-cache',
+            'TIMEOUT': 60,
+        },
     }
+
+# ✅ CORREGIDO: Logging de cache (ahora logging está importado)
+logger = logging.getLogger(__name__)
+logger.info(f"📦 Cache backend: {CACHES['default']['BACKEND']}")
+logger.info(f"📦 Redis host: {REDIS_HOST}:{REDIS_PORT}")
 
 # =============================================================================
 # LOGGING
@@ -515,3 +571,20 @@ if DEBUG:
     logger.info(f"   CORS_ALLOW_ALL: {CORS_ALLOW_ALL_ORIGINS}")
     logger.info(f"   DATABASE: {DATABASES['default']['NAME']}@{DATABASES['default']['HOST']}")
     logger.info("=" * 60)
+
+# =============================================================================
+# GEMINI AI CONFIGURATION
+# =============================================================================
+
+# ✅ NUEVO: Configuración de Gemini AI
+GEMINI_API_KEY = os.getenv('GEMINI_API_KEY', None)
+
+# =============================================================================
+# GOOGLE MAPS CONFIGURATION
+# =============================================================================
+
+GOOGLE_MAPS_API_KEY = os.getenv('GOOGLE_MAPS_API_KEY', '')
+
+# ✅ NUEVO: Logging de configuración de Maps
+if DEBUG:
+    logger.info(f"🗺️ Google Maps API Key configured: {bool(GOOGLE_MAPS_API_KEY)}")

@@ -41,6 +41,10 @@ export async function action({ request }: ActionFunctionArgs) {
     console.log("=== REGISTER ACTION START ===");
     const formData = await request.formData();
 
+    // ✅ CRÍTICO: Log de TODOS los campos recibidos
+    console.log("📋 Form data keys:", Array.from(formData.keys()));
+    console.log("📋 Form data values:", Object.fromEntries(formData.entries()));
+
     const email = (formData.get("email") as string)?.trim().toLowerCase();
     const username = (formData.get("username") as string)?.trim() || "";
     const password = formData.get("password") as string;
@@ -48,13 +52,37 @@ export async function action({ request }: ActionFunctionArgs) {
     const first_name = (formData.get("first_name") as string)?.trim();
     const last_name = (formData.get("last_name") as string)?.trim();
     const phone = (formData.get("phone") as string)?.trim();
-    const company = (formData.get("company") as string)?.trim() || "";
     const role = (formData.get("role") as string)?.trim();
+    
+    // ✅ CRÍTICO: Obtener campos de desarrollador DIRECTAMENTE del formData
+    const developer_type = formData.get("developer_type") as string;
+    const person_type = formData.get("person_type") as string;
+    const legal_name = formData.get("legal_name") as string;
+    const document_type = formData.get("document_type") as string;
+    const document_number = formData.get("document_number") as string;
 
-    console.log(`Registration attempt for: ${email}`);
+    // ✅ CRÍTICO: Log detallado de campos de desarrollador
+    console.log("👨‍💻 Developer fields received:");
+    console.log("  - developer_type:", developer_type);
+    console.log("  - person_type:", person_type);
+    console.log("  - legal_name:", legal_name);
+    console.log("  - document_type:", document_type);
+    console.log("  - document_number:", document_number);
 
     // Validaciones del lado del cliente
     const errors: Record<string, string> = {};
+
+    // ✅ NUEVO: Validar que el rol no sea admin
+    if (role === 'admin') {
+        console.log("❌ Attempt to register as admin blocked");
+        return json({
+            success: false,
+            errors: { 
+                role: 'No puedes registrarte como administrador. Contacta a un superusuario.' 
+            },
+            values: { email, username, first_name, last_name, phone, role }
+        }, { status: 400 });
+    }
 
     if (!email) {
         errors.email = "El email es obligatorio";
@@ -65,7 +93,11 @@ export async function action({ request }: ActionFunctionArgs) {
     if (!first_name) errors.first_name = "El nombre es obligatorio";
     if (!last_name) errors.last_name = "El apellido es obligatorio";
     if (!password) errors.password = "La contraseña es obligatoria";
-    if (!role) errors.role = "El rol es obligatorio";
+    if (!role) {
+        errors.role = "El rol es obligatorio";
+    } else if (!['owner', 'developer'].includes(role)) {
+        errors.role = "Rol inválido. Solo puedes registrarte como Propietario o Desarrollador";
+    }
     if (!phone) {
         errors.phone = "El teléfono es obligatorio";
     } else if (!/^[+]?[\d\s\-\(\)]{10,}$/.test(phone)) {
@@ -80,17 +112,50 @@ export async function action({ request }: ActionFunctionArgs) {
         errors.password = "La contraseña debe tener al menos 8 caracteres";
     }
 
+    // ✅ NUEVO: Validar campos de desarrollador si el rol es developer
+    if (role === 'developer') {
+        if (!developer_type) {
+            errors.developer_type = "El tipo de desarrollador es obligatorio";
+        }
+        if (!person_type) {
+            errors.person_type = "El tipo de persona es obligatorio";
+        }
+        if (person_type === 'juridica' && !legal_name) {
+            errors.legal_name = "El nombre de la empresa es obligatorio";
+        }
+        if (!document_type) {
+            errors.document_type = "El tipo de documento es obligatorio";
+        }
+        if (!document_number) {
+            errors.document_number = "El número de documento es obligatorio";
+        } else if (!/^\d+$/.test(document_number)) {
+            errors.document_number = "El documento debe contener solo números";
+        }
+        
+        // Validar documento según tipo de persona
+        if (person_type === 'juridica' && document_type !== 'NIT') {
+            errors.document_type = "Personas jurídicas deben usar NIT";
+        }
+        if (person_type === 'natural' && document_type === 'NIT') {
+            errors.document_type = "Personas naturales no pueden usar NIT";
+        }
+    }
+
     if (Object.keys(errors).length > 0) {
-        console.log("Validation errors:", errors);
+        console.log("❌ Validation errors:", errors);
         return json({
             success: false,
             errors,
-            values: { email, username, first_name, last_name, phone, company, role }
+            values: { 
+                email, username, first_name, last_name, phone, role,
+                developer_type, person_type, legal_name, document_type, document_number
+            }
         }, { status: 400 });
     }
 
     try {
-        const registerPayload = {
+        // ✅ CORREGIDO: Preparar payload
+        const registerPayload: any = {
             email,
             password,
             password_confirm: passwordConfirm,
@@ -98,11 +163,49 @@ export async function action({ request }: ActionFunctionArgs) {
             last_name,
             phone,
             role,
-            ...(username && { username }),
-            ...(company && { company })
         };
+        
+        if (username) {
+            registerPayload.username = username;
+        }
+        
+        // ✅ CRÍTICO: Agregar campos de desarrollador SOLO si existen Y no están vacíos
+        if (role === 'developer') {
+            if (developer_type && developer_type !== '') {
+                registerPayload.developer_type = developer_type;
+                console.log("✅ Added developer_type to payload:", developer_type);
+            } else {
+                console.error("❌ developer_type is missing or empty!");
+            }
+            
+            if (person_type && person_type !== '') {
+                registerPayload.person_type = person_type;
+                console.log("✅ Added person_type to payload:", person_type);
+            } else {
+                console.error("❌ person_type is missing or empty!");
+            }
+            
+            if (person_type === 'juridica' && legal_name && legal_name !== '') {
+                registerPayload.legal_name = legal_name;
+                console.log("✅ Added legal_name to payload:", legal_name);
+            }
+            
+            if (document_type && document_type !== '') {
+                registerPayload.document_type = document_type;
+                console.log("✅ Added document_type to payload:", document_type);
+            } else {
+                console.error("❌ document_type is missing or empty!");
+            }
+            
+            if (document_number && document_number !== '') {
+                registerPayload.document_number = document_number;
+                console.log("✅ Added document_number to payload:", document_number);
+            } else {
+                console.error("❌ document_number is missing or empty!");
+            }
+        }
 
-        console.log("Sending registration to:", `${API_URL}/api/auth/register/`);
+        console.log("📤 Final payload:", JSON.stringify(registerPayload, null, 2));
 
         const registerResponse = await fetch(`${API_URL}/api/auth/register/`, {
             method: "POST",
@@ -113,25 +216,25 @@ export async function action({ request }: ActionFunctionArgs) {
             body: JSON.stringify(registerPayload),
         });
 
-        console.log(`API response status: ${registerResponse.status}`);
+        console.log(`📥 API response status: ${registerResponse.status}`);
 
         const responseText = await registerResponse.text();
-        console.log("API raw response:", responseText);
+        console.log("📥 API raw response:", responseText);
 
         let registerData;
         try {
             registerData = responseText ? JSON.parse(responseText) : {};
         } catch (parseError) {
-            console.error("JSON parse error:", parseError);
+            console.error("❌ JSON parse error:", parseError);
             return json({
                 success: false,
                 errors: { general: "Error en la respuesta del servidor" },
-                values: { email, username, first_name, last_name, phone, company, role }
+                values: { email, username, first_name, last_name, phone, role, developer_type, person_type }
             }, { status: 500 });
         }
 
         if (!registerResponse.ok) {
-            console.error("Registration failed:", registerData);
+            console.error("❌ Registration failed:", registerData);
 
             const backendErrors: Record<string, string> = {};
 
@@ -156,7 +259,10 @@ export async function action({ request }: ActionFunctionArgs) {
             return json({
                 success: false,
                 errors: backendErrors,
-                values: { email, username, first_name, last_name, phone, company, role }
+                values: { 
+                    email, username, first_name, last_name, phone, role,
+                    developer_type, person_type, legal_name, document_type, document_number
+                }
             }, { status: registerResponse.status });
         }
 
@@ -168,7 +274,7 @@ export async function action({ request }: ActionFunctionArgs) {
             return json({
                 success: false,
                 errors: { general: "Respuesta inválida del servidor" },
-                values: { email, username, first_name, last_name, phone, company, role }
+                values: { email, username, first_name, last_name, phone, role, developer_type, person_type }
             }, { status: 500 });
         }
 
@@ -190,7 +296,7 @@ export async function action({ request }: ActionFunctionArgs) {
         return redirect(finalRedirectTo, { headers });
 
     } catch (error) {
-        console.error("Registration error:", error);
+        console.error("❌ Registration error:", error);
         console.log("=== REGISTER ACTION END (ERROR) ===");
 
         let errorMessage = "Error de conexión al servidor";
@@ -202,7 +308,10 @@ export async function action({ request }: ActionFunctionArgs) {
         return json({
             success: false,
             errors: { general: errorMessage },
-            values: { email, username, first_name, last_name, phone, company, role }
+            values: { 
+                email, username, first_name, last_name, phone, role,
+                developer_type, person_type, legal_name, document_type, document_number
+            }
         }, { status: 500 });
     }
 }
@@ -224,17 +333,21 @@ export default function Register() {
         email: actionData?.values?.email || "",
         username: actionData?.values?.username || "",
         phone: actionData?.values?.phone || "",
-        company: actionData?.values?.company || "",
         role: actionData?.values?.role || "owner",
         password: "",
-        passwordConfirm: ""
+        passwordConfirm: "",
+        developer_type: actionData?.values?.developer_type || "",
+        person_type: actionData?.values?.person_type || "",
+        legal_name: actionData?.values?.legal_name || "",
+        document_type: actionData?.values?.document_type || "",
+        document_number: actionData?.values?.document_number || "",
     });
 
     // ✅ NUEVO: Estado para validaciones en tiempo real
     const [touched, setTouched] = useState<Record<string, boolean>>({});
     const [clientErrors, setClientErrors] = useState<Record<string, string>>({});
 
-    // ✅ NUEVO: Validar campo individual
+    // ✅ NUEVO: Validar campo individual actualizado
     const validateField = (field: string, value: string): string => {
         switch (field) {
             case 'first_name':
@@ -270,17 +383,73 @@ export default function Register() {
                 if (value !== formData.password) return 'Las contraseñas no coinciden';
                 return '';
 
+            case 'developer_type':
+                if (formData.role === 'developer' && !value) {
+                    return 'El tipo de desarrollador es obligatorio';
+                }
+                return '';
+
+            case 'person_type':
+                if (formData.role === 'developer' && !value) {
+                    return 'El tipo de persona es obligatorio';
+                }
+                return '';
+
+            case 'legal_name':
+                // ✅ Solo obligatorio para persona jurídica
+                if (formData.role === 'developer' && formData.person_type === 'juridica' && !value.trim()) {
+                    return 'El nombre de la empresa es obligatorio';
+                }
+                if (formData.role === 'developer' && formData.person_type === 'juridica' && value.trim().length < 3) {
+                    return 'Debe tener al menos 3 caracteres';
+                }
+                return '';
+
+            case 'document_type':
+                if (formData.role === 'developer' && !value) {
+                    return 'El tipo de documento es obligatorio';
+                }
+                // Validar documento según tipo de persona
+                if (formData.role === 'developer' && formData.person_type === 'juridica' && value !== 'NIT') {
+                    return 'Personas jurídicas deben usar NIT';
+                }
+                if (formData.role === 'developer' && formData.person_type === 'natural' && value === 'NIT') {
+                    return 'Personas naturales no pueden usar NIT';
+                }
+                return '';
+
+            case 'document_number':
+                if (formData.role === 'developer' && !value) {
+                    return 'El número de documento es obligatorio';
+                }
+                if (formData.role === 'developer' && !/^\d+$/.test(value)) {
+                    return 'El documento debe contener solo números';
+                }
+                if (formData.role === 'developer' && value.length < 6) {
+                    return 'El documento debe tener al menos 6 dígitos';
+                }
+                return '';
+
             default:
                 return '';
         }
     };
 
-    // ✅ NUEVO: Manejar cambio con validación
+    // ✅ CORREGIDO: Manejar cambio con validación Y limpieza de errores
     const handleInputChange = (field: string, value: string) => {
         setFormData(prev => ({ ...prev, [field]: value }));
 
-        // Validar si el campo ya fue tocado
-        if (touched[field]) {
+        // ✅ CRÍTICO: Limpiar error del servidor cuando el usuario corrige el campo
+        if (actionData?.errors?.[field]) {
+            // Si hay un error del servidor, forzar revalidación
+            const error = validateField(field, value);
+            setClientErrors(prev => ({
+                ...prev,
+                [field]: error
+            }));
+            setTouched(prev => ({ ...prev, [field]: true }));
+        } else if (touched[field]) {
+            // Validar si el campo ya fue tocado
             const error = validateField(field, value);
             setClientErrors(prev => ({
                 ...prev,
@@ -372,27 +541,19 @@ export default function Register() {
 
                 {/* Formulario */}
                 <div className="bg-white rounded-2xl shadow-2xl p-8">
-                    {/* ✅ MEJORADO: Error general más atractivo */}
+                    {/* ✅ NUEVO: Mostrar errores generales si existen */}
                     {actionData?.errors?.general && (
-                        <div className="mb-6 bg-gradient-to-r from-red-50 to-rose-50 border-l-4 border-red-500 p-4 rounded-xl shadow-sm animate-shake">
+                        <div className="mb-6 bg-red-50 border-l-4 border-red-500 p-4 rounded animate-shake">
                             <div className="flex items-start">
                                 <div className="flex-shrink-0">
-                                    <svg className="h-6 w-6 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                    <svg className="h-5 w-5 text-red-500" fill="currentColor" viewBox="0 0 20 20">
+                                        <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
                                     </svg>
                                 </div>
                                 <div className="ml-3 flex-1">
                                     <h3 className="text-sm font-semibold text-red-800">Error en el registro</h3>
                                     <p className="text-sm text-red-700 mt-1">{actionData.errors.general}</p>
                                 </div>
-                                <button
-                                    onClick={() => window.location.reload()}
-                                    className="flex-shrink-0 ml-4 text-red-500 hover:text-red-700"
-                                >
-                                    <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                                    </svg>
-                                </button>
                             </div>
                         </div>
                     )}
@@ -575,22 +736,6 @@ export default function Register() {
                                         </p>
                                     )}
                                 </div>
-
-                                {/* Empresa */}
-                                <div>
-                                    <label htmlFor="company" className="block text-sm font-medium text-gray-700 mb-1">
-                                        Empresa <span className="text-gray-400 text-xs">(opcional)</span>
-                                    </label>
-                                    <input
-                                        id="company"
-                                        name="company"
-                                        type="text"
-                                        value={formData.company}
-                                        onChange={(e) => handleInputChange('company', e.target.value)}
-                                        className="w-full px-4 py-3 rounded-xl border-2 border-gray-300 focus:border-lateral-500 focus:ring-4 focus:ring-lateral-200 focus:outline-none transition-all duration-200"
-                                        placeholder="Nombre de tu empresa"
-                                    />
-                                </div>
                             </div>
                         </div>
 
@@ -607,7 +752,269 @@ export default function Register() {
                                 onChange={(role) => handleInputChange('role', role)}
                             />
                             <input type="hidden" name="role" value={formData.role} />
+                            
+                            {/* ✅ NUEVO: Error de rol cerca del selector */}
+                            {getError('role') && (
+                                <p className="text-sm text-red-600 flex items-center gap-1 animate-fade-in">
+                                    <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                                        <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                                    </svg>
+                                    {getError('role')}
+                                </p>
+                            )}
                         </div>
+
+                        {/* ✅ Campos específicos para DESARROLLADOR */}
+                        {formData.role === 'developer' && (
+                            <div className="space-y-4 bg-blue-50 p-6 rounded-xl border-2 border-blue-200">
+                                <h3 className="text-lg font-semibold text-blue-900 pb-2 border-b border-blue-200 flex items-center gap-2">
+                                    <svg className="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
+                                    </svg>
+                                    Información del Desarrollador
+                                </h3>
+
+                                {/* ✅ NUEVO: Mensaje de advertencia si hay errores */}
+                                {(getError('developer_type') || getError('person_type') || getError('document_type') || getError('document_number')) && (
+                                    <div className="bg-red-50 border-l-4 border-red-500 p-4 rounded">
+                                        <div className="flex">
+                                            <div className="flex-shrink-0">
+                                                <svg className="h-5 w-5 text-red-500" viewBox="0 0 20 20" fill="currentColor">
+                                                    <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+                                                </svg>
+                                            </div>
+                                            <div className="ml-3">
+                                                <p className="text-sm text-red-800 font-medium">
+                                                    Por favor, completa todos los campos obligatorios de desarrollador antes de continuar.
+                                                </p>
+                                            </div>
+                                        </div>
+                                    </div>
+                                )}
+
+                                {/* Tipo de Desarrollador y Tipo de Persona */}
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                    <div>
+                                        <label htmlFor="developer_type" className="block text-sm font-medium text-gray-700 mb-1">
+                                            Tipo de Desarrollador <span className="text-red-500">*</span>
+                                        </label>
+                                        <select
+                                            id="developer_type"
+                                            name="developer_type"
+                                            value={formData.developer_type}
+                                            onChange={(e) => {
+                                                handleInputChange('developer_type', e.target.value);
+                                                // ✅ NUEVO: Marcar como tocado inmediatamente
+                                                setTouched(prev => ({ ...prev, developer_type: true }));
+                                            }}
+                                            onBlur={() => handleBlur('developer_type')}
+                                            className={`w-full px-4 py-3 rounded-xl border-2 transition-all duration-200 ${
+                                                getError('developer_type')
+                                                    ? 'border-red-300 focus:border-red-500 focus:ring-red-200 bg-red-50'
+                                                    : touched.developer_type && formData.developer_type
+                                                        ? 'border-green-300 focus:border-green-500 focus:ring-green-200'
+                                                        : 'border-gray-300 focus:border-lateral-500 focus:ring-lateral-200'
+                                            } focus:ring-4 focus:outline-none`}
+                                            required
+                                        >
+                                            <option value="">Selecciona tipo</option>
+                                            <option value="constructora">Constructora</option>
+                                            <option value="fondo_inversion">Fondo de Inversión</option>
+                                            <option value="inversionista">Inversionista</option>
+                                            <option value="otro">Otro</option>
+                                        </select>
+                                        {getError('developer_type') && (
+                                            <p className="mt-1 text-sm text-red-600 flex items-center gap-1 animate-fade-in font-medium">
+                                                <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                                                    <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                                                </svg>
+                                                {getError('developer_type')}
+                                            </p>
+                                        )}
+                                        {/* ✅ NUEVO: Icono de éxito */}
+                                        {touched.developer_type && formData.developer_type && !getError('developer_type') && (
+                                            <p className="mt-1 text-sm text-green-600 flex items-center gap-1">
+                                                <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                                                    <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                                                </svg>
+                                                Seleccionado correctamente
+                                            </p>
+                                        )}
+                                    </div>
+
+                                    <div>
+                                        <label htmlFor="person_type" className="block text-sm font-medium text-gray-700 mb-1">
+                                            Tipo de Persona <span className="text-red-500">*</span>
+                                        </label>
+                                        <select
+                                            id="person_type"
+                                            name="person_type"
+                                            value={formData.person_type}
+                                            onChange={(e) => {
+                                                handleInputChange('person_type', e.target.value);
+                                                // ✅ NUEVO: Marcar como tocado inmediatamente
+                                                setTouched(prev => ({ ...prev, person_type: true }));
+                                            }}
+                                            onBlur={() => handleBlur('person_type')}
+                                            className={`w-full px-4 py-3 rounded-xl border-2 transition-all duration-200 ${
+                                                getError('person_type')
+                                                    ? 'border-red-300 focus:border-red-500 focus:ring-red-200 bg-red-50'
+                                                    : touched.person_type && formData.person_type
+                                                        ? 'border-green-300 focus:border-green-500 focus:ring-green-200'
+                                                        : 'border-gray-300 focus:border-lateral-500 focus:ring-lateral-200'
+                                            } focus:ring-4 focus:outline-none`}
+                                            required
+                                        >
+                                            <option value="">Selecciona tipo</option>
+                                            <option value="natural">Persona Natural</option>
+                                            <option value="juridica">Persona Jurídica</option>
+                                        </select>
+                                        {getError('person_type') && (
+                                            <p className="mt-1 text-sm text-red-600 flex items-center gap-1 animate-fade-in font-medium">
+                                                <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                                                    <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                                                </svg>
+                                                {getError('person_type')}
+                                            </p>
+                                        )}
+                                        {touched.person_type && formData.person_type && !getError('person_type') && (
+                                            <p className="mt-1 text-sm text-green-600 flex items-center gap-1">
+                                                <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                                                    <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                                                </svg>
+                                                Seleccionado correctamente
+                                            </p>
+                                        )}
+                                    </div>
+                                </div>
+
+                                {/* ✅ CORREGIDO: Nombre de Empresa SOLO para jurídica */}
+                                {formData.person_type === 'juridica' && (
+                                    <div>
+                                        <label htmlFor="legal_name" className="block text-sm font-medium text-gray-700 mb-1">
+                                            Nombre de la Empresa <span className="text-red-500">*</span>
+                                        </label>
+                                        <input
+                                            id="legal_name"
+                                            name="legal_name"
+                                            type="text"
+                                            value={formData.legal_name}
+                                            onChange={(e) => handleInputChange('legal_name', e.target.value)}
+                                            onBlur={() => handleBlur('legal_name')}
+                                            className={`w-full px-4 py-3 rounded-xl border-2 transition-all duration-200 ${
+                                                getError('legal_name')
+                                                    ? 'border-red-300 focus:border-red-500 focus:ring-red-200'
+                                                    : touched.legal_name && formData.legal_name
+                                                        ? 'border-green-300 focus:border-green-500 focus:ring-green-200'
+                                                        : 'border-gray-300 focus:border-lateral-500 focus:ring-lateral-200'
+                                            } focus:ring-4 focus:outline-none`}
+                                            placeholder="Nombre de tu empresa"
+                                            required
+                                        />
+                                        {getError('legal_name') && (
+                                            <p className="mt-1 text-sm text-red-600 flex items-center gap-1 animate-fade-in">
+                                                <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                                                    <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                                            </svg>
+                                            {getError('legal_name')}
+                                            </p>
+                                        )}
+                                    </div>
+                                )}
+
+                                {/* Tipo de Documento y Número */}
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                    <div>
+                                        <label htmlFor="document_type" className="block text-sm font-medium text-gray-700 mb-1">
+                                            Tipo de Documento <span className="text-red-500">*</span>
+                                        </label>
+                                        <select
+                                            id="document_type"
+                                            name="document_type"
+                                            value={formData.document_type}
+                                            onChange={(e) => handleInputChange('document_type', e.target.value)}
+                                            onBlur={() => handleBlur('document_type')}
+                                            className={`w-full px-4 py-3 rounded-xl border-2 transition-all duration-200 ${
+                                                getError('document_type')
+                                                    ? 'border-red-300 focus:border-red-500 focus:ring-red-200'
+                                                    : 'border-gray-300 focus:border-lateral-500 focus:ring-lateral-200'
+                                            } focus:ring-4 focus:outline-none`}
+                                            required
+                                        >
+                                            <option value="">Selecciona tipo</option>
+                                            {formData.person_type === 'juridica' ? (
+                                                <option value="NIT">NIT</option>
+                                            ) : (
+                                                <>
+                                                    <option value="CC">Cédula de Ciudadanía</option>
+                                                    <option value="CE">Cédula de Extranjería</option>
+                                                    <option value="PASSPORT">Pasaporte</option>
+                                                    <option value="TI">Tarjeta de Identidad</option>
+                                                </>
+                                            )}
+                                        </select>
+                                        {getError('document_type') && (
+                                            <p className="mt-1 text-sm text-red-600 flex items-center gap-1 animate-fade-in">
+                                                <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                                                    <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                                            </svg>
+                                            {getError('document_type')}
+                                            </p>
+                                        )}
+                                    </div>
+
+                                    <div>
+                                        <label htmlFor="document_number" className="block text-sm font-medium text-gray-700 mb-1">
+                                            Número de Documento <span className="text-red-500">*</span>
+                                        </label>
+                                        <input
+                                            id="document_number"
+                                            name="document_number"
+                                            type="text"
+                                            value={formData.document_number}
+                                            onChange={(e) => handleInputChange('document_number', e.target.value)}
+                                            onBlur={() => handleBlur('document_number')}
+                                            className={`w-full px-4 py-3 rounded-xl border-2 transition-all duration-200 ${
+                                                getError('document_number')
+                                                    ? 'border-red-300 focus:border-red-500 focus:ring-red-200'
+                                                    : touched.document_number && formData.document_number
+                                                        ? 'border-green-300 focus:border-green-500 focus:ring-green-200'
+                                                        : 'border-gray-300 focus:border-lateral-500 focus:ring-lateral-200'
+                                            } focus:ring-4 focus:outline-none`}
+                                            placeholder="Solo números"
+                                            required
+                                        />
+                                        {getError('document_number') && (
+                                            <p className="mt-1 text-sm text-red-600 flex items-center gap-1 animate-fade-in">
+                                                <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                                                    <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                                                </svg>
+                                                {getError('document_number')}
+                                            </p>
+                                        )}
+                                    </div>
+                                </div>
+
+                                {/* Info adicional */}
+                                <div className="bg-blue-100 border border-blue-300 rounded-lg p-3">
+                                    <p className="text-sm text-blue-800 flex items-start gap-2">
+                                        <svg className="w-5 h-5 flex-shrink-0 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
+                                            <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
+                                        </svg>
+                                        <span>
+                                            {formData.person_type === 'natural' ? (
+                                                <>Se usará tu nombre y apellido como identificación.</>
+                                            ) : (
+                                                <>
+                                                    Ingresa el nombre legal de tu empresa.
+                                                    <strong className="block mt-1">Personas jurídicas deben usar NIT.</strong>
+                                                </>
+                                            )}
+                                        </span>
+                                    </p>
+                                </div>
+                            </div>
+                        )}
 
                         {/* Seguridad */}
                         <div className="space-y-4">
@@ -623,15 +1030,44 @@ export default function Register() {
                                 <label htmlFor="username" className="block text-sm font-medium text-gray-700 mb-1">
                                     Nombre de usuario <span className="text-gray-400 text-xs">(opcional)</span>
                                 </label>
-                                <input
-                                    id="username"
-                                    name="username"
-                                    type="text"
-                                    value={formData.username}
-                                    onChange={(e) => handleInputChange('username', e.target.value)}
-                                    className="w-full px-4 py-3 rounded-xl border-2 border-gray-300 focus:border-lateral-500 focus:ring-4 focus:ring-lateral-200 focus:outline-none transition-all duration-200"
-                                    placeholder="usuario123"
-                                />
+                                <div className="relative">
+                                    <input
+                                        id="username"
+                                        name="username"
+                                        type="text"
+                                        value={formData.username}
+                                        onChange={(e) => handleInputChange('username', e.target.value)}
+                                        onBlur={() => handleBlur('username')}
+                                        className={`w-full px-4 py-3 rounded-xl border-2 transition-all duration-200 ${
+                                            getError('username')
+                                                ? 'border-red-300 focus:border-red-500 focus:ring-red-200 bg-red-50'
+                                                : touched.username && formData.username
+                                                    ? 'border-green-300 focus:border-green-500 focus:ring-green-200'
+                                                    : 'border-gray-300 focus:border-lateral-500 focus:ring-lateral-200'
+                                        } focus:ring-4 focus:outline-none`}
+                                        placeholder="usuario123 (opcional - se genera automático)"
+                                    />
+                                    {/* ✅ Icono de éxito */}
+                                    {touched.username && formData.username && !getError('username') && (
+                                        <div className="absolute inset-y-0 right-0 pr-3 flex items-center">
+                                            <svg className="h-5 w-5 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                                            </svg>
+                                        </div>
+                                    )}
+                                </div>
+                                {/* ✅ Mostrar error de username */}
+                                {getError('username') && (
+                                    <p className="mt-1 text-sm text-red-600 flex items-center gap-1 animate-fade-in font-medium">
+                                        <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                                            <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                                        </svg>
+                                        {getError('username')}
+                                    </p>
+                                )}
+                                <p className="mt-1 text-xs text-gray-500">
+                                    Si no lo ingresas, se generará uno automáticamente
+                                </p>
                             </div>
 
                             {/* Contraseñas */}
@@ -679,9 +1115,9 @@ export default function Register() {
                                         <p className="mt-1 text-sm text-red-600 flex items-center gap-1 animate-fade-in">
                                             <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
                                                 <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
-                                            </svg>
-                                            {getError('password')}
-                                        </p>
+                                        </svg>
+                                        {getError('password')}
+                                    </p>
                                     )}
                                 </div>
 
@@ -774,12 +1210,21 @@ export default function Register() {
                             )}
                         </button>
 
-                        {/* ✅ NUEVO: Indicador de progreso del formulario */}
-                        {!isFormValid() && (
-                            <div className="text-center">
-                                <p className="text-sm text-gray-500">
-                                    Completa todos los campos obligatorios para continuar
-                                </p>
+                        {/* ✅ MEJORADO: Indicador de errores más visible */}
+                        {!isFormValid() && Object.keys(clientErrors).length > 0 && (
+                            <div className="bg-orange-50 border-l-4 border-orange-400 p-4 rounded">
+                                <div className="flex">
+                                    <div className="flex-shrink-0">
+                                        <svg className="h-5 w-5 text-orange-400" viewBox="0 0 20 20" fill="currentColor">
+                                            <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
+                                        </svg>
+                                    </div>
+                                    <div className="ml-3">
+                                        <p className="text-sm text-orange-700">
+                                            Por favor, corrige los errores marcados en rojo antes de continuar
+                                        </p>
+                                    </div>
+                                </div>
                             </div>
                         )}
                     </Form>

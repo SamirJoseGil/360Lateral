@@ -1,263 +1,266 @@
 """
-Script para crear usuarios adicionales con roles específicos
+Script para crear usuarios adicionales en Lateral 360°
+Incluye: admin, propietario y desarrollador con datos de ejemplo
+ACTUALIZADO: Compatible con modelo User actualizado (sin campos eliminados)
 """
+
 import os
 import sys
-import time
+import django
 from pathlib import Path
 
-# Configurar Django
-backend_dir = Path(__file__).resolve().parent.parent
-sys.path.append(str(backend_dir))
-os.environ.setdefault("DJANGO_SETTINGS_MODULE", "config.settings")
+# Configurar el path de Django
+BASE_DIR = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(BASE_DIR))
 
-try:
-    import django
-    django.setup()
-except Exception as e:
-    print(f"[ERROR] ❌ Error configurando Django: {e}")
-    sys.exit(1)
+# Configurar Django settings
+os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'config.settings')
+django.setup()
 
+from django.core.exceptions import ValidationError
 from apps.users.models import User
-from django.db import connection, OperationalError
 
-def wait_for_db(max_retries=10):
-    """Esperar a que la base de datos esté lista"""
-    for i in range(max_retries):
-        try:
-            connection.ensure_connection()
-            print("[INFO] ✅ Conexión a base de datos establecida")
-            return True
-        except OperationalError:
-            print(f"[INFO] ⏳ Esperando base de datos... (intento {i+1}/{max_retries})")
-            time.sleep(2)
-    print("[ERROR] ❌ No se pudo conectar a la base de datos")
-    return False
+def print_separator():
+    print("=" * 60)
 
-def get_safe_user_data(base_data):
-    """Obtener datos de usuario seguros, filtrando campos que no existen"""
-    safe_data = {}
+def print_header():
+    print_separator()
+    print("🚀 LATERAL 360° - CREAR USUARIOS ADICIONALES")
+    print_separator()
+
+def print_user_model_info():
+    """Imprime información de los campos del modelo User para debugging"""
+    print("\n[DEBUG] 🔍 Información de campos del modelo User:")
     
-    # Obtener todos los campos del modelo User
-    user_fields = [field.name for field in User._meta.get_fields()]
+    # Obtener choices de los campos
+    field_choices = {
+        'role': User.ROLE_CHOICES,
+        'developer_type': User.DEVELOPER_TYPE_CHOICES,
+        'person_type': User.PERSON_TYPE_CHOICES,
+        'document_type': User.DOCUMENT_TYPE_CHOICES,
+    }
     
-    for key, value in base_data.items():
-        if key in user_fields:
-            safe_data[key] = value
-        else:
-            print(f"[WARNING] ⚠️  Campo '{key}' no existe en el modelo User, omitiendo...")
+    for field_name, choices in field_choices.items():
+        print(f"\n  📋 {field_name}:")
+        for value, label in choices:
+            print(f"     - '{value}': {label}")
     
-    return safe_data
+    print()
 
 def create_users():
-    """Crear usuarios con roles específicos"""
+    """Crear usuarios de ejemplo"""
     
-    # Verificar conexión antes de continuar
-    if not wait_for_db():
-        sys.exit(1)
+    print("[INFO] ✅ Conexión a base de datos establecida")
     
-    # ✅ Datos base de usuarios con campos válidos según DEPARTMENT_CHOICES
+    # Definición de usuarios a crear
     users_data = [
         {
             'email': 'admin@lateral360.com',
+            'username': 'admin',
             'first_name': 'Admin',
             'last_name': 'Sistema',
-            'role': 'admin',
             'password': 'admin123',
+            'role': 'admin',
             'is_staff': True,
             'is_superuser': True,
-            # ✅ CORREGIDO: Usar valor válido de DEPARTMENT_CHOICES
-            # Opciones: normativa, soporte_tecnico, gestion_usuarios, desarrollo, comercial, legal, general
-            'department': 'desarrollo',  # ✅ Cambiado de 'IT' a 'desarrollo'
-            'permissions_scope': 'full',
         },
         {
             'email': 'propietario@lateral360.com',
-            'first_name': 'María',
-            'last_name': 'Propietaria',
-            'role': 'owner',
+            'username': 'propietario',
+            'first_name': 'Juan',
+            'last_name': 'Propietario',
             'password': 'propietario123',
+            'role': 'owner',
             'phone': '+57 300 123 4567',
-            # Campos opcionales para owner (NO requeridos)
             'document_type': 'CC',
             'document_number': '12345678',
-            'address': 'Carrera 43A #16-25, Medellín',
+            'legal_name': 'Juan Propietario',
+            'person_type': 'natural',
         },
         {
             'email': 'desarrollador@lateral360.com',
-            'first_name': 'Carlos',
-            'last_name': 'Desarrollador',
-            'role': 'developer',
+            'username': 'desarrollador',
+            'first_name': 'María',
+            'last_name': 'Desarrolladora',
             'password': 'desarrollador123',
-            'phone': '+57 300 765 4321',
-            # ✅ CRÍTICO: Campo requerido para developers
-            'company_name': 'Constructora ABC S.A.S.',
-            'company_nit': '900123456-7',
-            'position': 'Gerente de Proyectos',
-            'experience_years': 8,
-            'focus_area': 'residential',
-        }
+            'role': 'developer',
+            'phone': '+57 301 234 5678',
+            # ✅ Campos obligatorios para developers
+            'developer_type': 'constructora',
+            'person_type': 'juridica',
+            'legal_name': 'Constructora ABC S.A.S.',
+            'document_type': 'NIT',
+            'document_number': '900123456',
+            # ✅ Campos de perfil de inversión
+            'ciudades_interes': ['Medellín', 'Bogotá'],
+            'usos_preferidos': ['residencial', 'comercial'],
+            'modelos_pago': ['contado', 'hitos'],
+            'volumen_ventas_min': 'entre_150_350',
+            'ticket_inversion_min': 'entre_150_350',
+            'perfil_completo': True,
+        },
     ]
     
-    print(f"[INFO] 🚀 Iniciando creación de {len(users_data)} usuarios...")
+    print(f"[INFO] 🚀 Iniciando creación de {len(users_data)} usuarios...\n")
     
-    for i, user_data in enumerate(users_data, 1):
+    created_count = 0
+    error_count = 0
+    
+    for idx, user_data in enumerate(users_data, 1):
         email = user_data['email']
-        print(f"\n[INFO] 👤 Procesando usuario {i}/{len(users_data)}: {email}")
-        
-        # Verificar si el usuario ya existe
-        if User.objects.filter(email=email).exists():
-            print(f"[INFO] ℹ️  Usuario {email} ya existe, omitiendo...")
-            continue
-        
-        # Generar un username único basado en el email
-        base_username = email.split('@')[0]
-        username = base_username
-        counter = 1
-        
-        while User.objects.filter(username=username).exists():
-            username = f"{base_username}{counter}"
-            counter += 1
-        
-        user_data['username'] = username
-        
-        # Extraer contraseña antes de crear el usuario
-        password = user_data.pop('password')
-        
-        # Filtrar datos seguros
-        safe_data = get_safe_user_data(user_data)
+        print(f"[INFO] 👤 Procesando usuario {idx}/{len(users_data)}: {email}")
         
         try:
-            print(f"[INFO] 🔧 Creando usuario {safe_data['role']} con datos: {list(safe_data.keys())}")
+            # Verificar si el usuario ya existe
+            if User.objects.filter(email=email).exists():
+                print(f"[WARNING] ⚠️  Usuario {email} ya existe, omitiendo...\n")
+                continue
             
-            # ✅ SEPARAR campos especiales antes de crear
-            is_staff = safe_data.pop('is_staff', False)
-            is_superuser = safe_data.pop('is_superuser', False)
+            # Extraer password antes de crear
+            password = user_data.pop('password')
+            
+            # ✅ Log de datos antes de crear
+            print(f"[DEBUG] 📋 Creando usuario con datos:")
+            print(f"  - email: {user_data.get('email')}")
+            print(f"  - role: {user_data.get('role')}")
+            if user_data.get('role') == 'developer':
+                print(f"  - developer_type: {user_data.get('developer_type')}")
+                print(f"  - person_type: {user_data.get('person_type')}")
+                print(f"  - legal_name: {user_data.get('legal_name')}")
             
             # Crear usuario según tipo
-            if is_superuser:
-                print(f"[INFO] 👑 Creando superusuario...")
+            if user_data.get('is_superuser'):
+                print("[INFO] 👑 Creando superusuario...")
                 user = User.objects.create_superuser(
-                    email=safe_data['email'],
-                    username=safe_data['username'],
+                    email=user_data['email'],
+                    username=user_data['username'],
                     password=password,
-                    **{k: v for k, v in safe_data.items() if k not in ['email', 'username']}
+                    first_name=user_data.get('first_name', ''),
+                    last_name=user_data.get('last_name', ''),
                 )
             else:
-                print(f"[INFO] 👤 Creando usuario regular...")
-                user = User.objects.create_user(
-                    email=safe_data['email'],
-                    username=safe_data['username'],
-                    password=password,
-                    **{k: v for k, v in safe_data.items() if k not in ['email', 'username']}
+                print("[INFO] 👤 Creando usuario regular...")
+                # ✅ Crear usuario con bypass de validación
+                user = User(
+                    email=user_data['email'],
+                    username=user_data['username'],
+                    first_name=user_data.get('first_name', ''),
+                    last_name=user_data.get('last_name', ''),
+                    role=user_data['role'],
+                    is_active=True,
                 )
-            
-            # Configurar campos adicionales
-            if is_staff:
-                user.is_staff = True
-            if is_superuser:
-                user.is_superuser = True
                 
-            # Asegurar que esté verificado
-            user.is_verified = True
-            user.save()
+                # Establecer contraseña
+                user.set_password(password)
+                
+                # ✅ Agregar campos según rol
+                if user_data['role'] == 'developer':
+                    user.developer_type = user_data.get('developer_type')
+                    user.person_type = user_data.get('person_type')
+                    user.legal_name = user_data.get('legal_name')
+                    user.document_type = user_data.get('document_type')
+                    user.document_number = user_data.get('document_number')
+                    user.phone = user_data.get('phone')
+                    # Perfil de inversión
+                    user.ciudades_interes = user_data.get('ciudades_interes', [])
+                    user.usos_preferidos = user_data.get('usos_preferidos', [])
+                    user.modelos_pago = user_data.get('modelos_pago', [])
+                    user.volumen_ventas_min = user_data.get('volumen_ventas_min')
+                    user.ticket_inversion_min = user_data.get('ticket_inversion_min')
+                    user.perfil_completo = user_data.get('perfil_completo', False)
+                
+                elif user_data['role'] == 'owner':
+                    user.person_type = user_data.get('person_type')
+                    user.legal_name = user_data.get('legal_name')
+                    user.document_type = user_data.get('document_type')
+                    user.document_number = user_data.get('document_number')
+                    user.phone = user_data.get('phone')
+                
+                # Guardar
+                user.save()
             
+            created_count += 1
+            
+            # Mostrar información del usuario creado
             print(f"[SUCCESS] ✅ Usuario {email} creado exitosamente")
             print(f"           - Username: {user.username}")
             print(f"           - Rol: {user.role}")
             print(f"           - Password: {password}")
             
-            # Mostrar campos específicos según rol
-            if user.role == 'owner':
-                print(f"           - Documento: {user.document_type} {user.document_number}")
-                print(f"           - Dirección: {user.address}")
-            elif user.role == 'developer':
-                print(f"           - Empresa: {user.company_name}")
-                print(f"           - NIT: {user.company_nit}")
-                print(f"           - Experiencia: {user.experience_years} años")
-            elif user.role == 'admin':
-                print(f"           - Departamento: {user.department}")
-                print(f"           - Alcance: {user.permissions_scope}")
+            # Mostrar detalles según rol
+            if user.role == 'developer':
+                print(f"           - Tipo: {user.get_developer_type_display()}")
+                print(f"           - Persona: {user.get_person_type_display()}")
+                print(f"           - Empresa: {user.legal_name}")
+                print(f"           - Documento: {user.get_document_type_display()} {user.document_number}")
+                print(f"           - Ciudades: {', '.join(user.ciudades_interes)}")
+                print(f"           - Usos: {', '.join(user.usos_preferidos)}")
+                print(f"           - Perfil completo: {'✅' if user.perfil_completo else '❌'}")
             
+            elif user.role == 'owner':
+                print(f"           - Documento: {user.get_document_type_display()} {user.document_number}")
+                print(f"           - Teléfono: {user.phone}")
+            
+            print()
+            
+        except ValidationError as e:
+            error_count += 1
+            print(f"[ERROR] ❌ Error de validación creando usuario {email}")
+            print(f"[ERROR] Detalles: {e.message_dict}")
+            print()
+        
         except Exception as e:
-            print(f"[ERROR] ❌ Error creando usuario {email}: {e}")
+            error_count += 1
+            print(f"[ERROR] ❌ Error creando usuario {email}: {str(e)}")
+            print(f"[DEBUG] Tipo de error: {type(e).__name__}")
             import traceback
             print(f"[DEBUG] Traceback: {traceback.format_exc()}")
-            
-            # Intentar obtener detalles del error
-            if hasattr(e, 'message_dict'):
-                print(f"[ERROR] Detalles de validación: {e.message_dict}")
-            
-            continue
+            print()
     
-    print(f"\n[COMPLETE] 🎉 Proceso de creación de usuarios finalizado")
+    print("[COMPLETE] 🎉 Proceso de creación de usuarios finalizado\n")
     
-    # Listar todos los usuarios creados
-    print(f"\n[INFO] 📋 Usuarios en el sistema:")
-    try:
-        users = User.objects.all().order_by('email')
-        if users.exists():
-            for user in users:
-                status = "✅ Activo" if user.is_active else "❌ Inactivo"
-                staff_status = " (Staff)" if user.is_staff else ""
-                super_status = " (Superuser)" if user.is_superuser else ""
-                print(f"  - {user.email} ({user.role}){staff_status}{super_status} - {status}")
-        else:
-            print("  No hay usuarios en el sistema")
-    except Exception as e:
-        print(f"[ERROR] ❌ Error listando usuarios: {e}")
-
-def get_field_choices_info():
-    """Obtener información sobre las opciones de campos del modelo"""
-    try:
-        print("\n[DEBUG] 🔍 Información de campos del modelo User:")
+    # Resumen final
+    print("[INFO] 📋 Resumen de operación:")
+    print(f"  - Usuarios creados exitosamente: {created_count}")
+    print(f"  - Errores: {error_count}")
+    print()
+    
+    # Listar todos los usuarios en el sistema
+    print("[INFO] 📋 Usuarios en el sistema:")
+    all_users = User.objects.all().order_by('email')
+    for user in all_users:
+        status_flags = []
+        if user.is_staff:
+            status_flags.append("Staff")
+        if user.is_superuser:
+            status_flags.append("Superuser")
         
-        # Obtener choices de campos específicos
-        field_info = {}
+        status = ' '.join([f"({flag})" for flag in status_flags])
+        active = "✅ Activo" if user.is_active else "❌ Inactivo"
         
-        for field in User._meta.get_fields():
-            if hasattr(field, 'choices') and field.choices:
-                field_info[field.name] = {
-                    'choices': [choice[0] for choice in field.choices],
-                    'labels': [choice[1] for choice in field.choices]
-                }
-        
-        if field_info:
-            for field_name, info in field_info.items():
-                print(f"\n  📋 {field_name}:")
-                for choice, label in zip(info['choices'], info['labels']):
-                    print(f"     - '{choice}': {label}")
-        else:
-            print("  No se encontraron campos con choices definidas")
-            
-    except Exception as e:
-        print(f"[ERROR] Error obteniendo info de campos: {e}")
+        print(f"  - {user.email} ({user.role}) {status} - {active}")
+    
+    print()
 
 def main():
     """Función principal"""
+    print_header()
+    print_user_model_info()
+    
     try:
-        print("=" * 60)
-        print("🚀 LATERAL 360° - CREAR USUARIOS ADICIONALES")
-        print("=" * 60)
-        
-        # Mostrar información de debug en caso de errores
-        get_field_choices_info()
-        
         create_users()
         
-        print("\n" + "=" * 60)
+        print_separator()
         print("✅ Script completado exitosamente")
         print("⚠️  IMPORTANTE: Cambiar las contraseñas en producción")
-        print("=" * 60)
+        print_separator()
         
-    except KeyboardInterrupt:
-        print("\n[INFO] ⚠️  Script interrumpido por el usuario")
-        sys.exit(0)
     except Exception as e:
-        print(f"\n[ERROR] ❌ Error inesperado: {e}")
+        print(f"\n[CRITICAL] ❌ Error crítico: {str(e)}")
         import traceback
         print(f"[DEBUG] Traceback completo:\n{traceback.format_exc()}")
+        print_separator()
         sys.exit(1)
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     main()

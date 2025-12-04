@@ -21,6 +21,8 @@ from .serializers import (
 from .filters import LoteFilter
 from .permissions import IsOwnerOrAdmin
 from .services import LotesService, TratamientosService
+from django.db.models import Prefetch, Q
+from apps.common.cache import CacheService, cache_result
 
 User = get_user_model()
 logger = logging.getLogger(__name__)
@@ -83,21 +85,70 @@ class LoteDetailView(generics.RetrieveUpdateDestroyAPIView):
         logger.info(f"Lote archivado: {instance.id}")
 
 
-class AvailableLotesView(generics.ListAPIView):
-    """Lotes disponibles para desarrolladores"""
-    serializer_class = LoteSerializer
+class AvailableLotesView(APIView):
+    """
+    Vista para obtener lotes disponibles (verificados y activos)
+    """
     permission_classes = [IsAuthenticated]
-    filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
-    filterset_class = LoteFilter
-    search_fields = ['cbml', 'matricula', 'direccion', 'barrio', 'nombre']
-    ordering_fields = ['created_at', 'area', 'estrato']
-    ordering = ['-created_at']
     
-    def get_queryset(self):
-        return Lote.objects.filter(
-            status='active',
-            is_verified=True
-        ).select_related('owner')
+    def get(self, request):
+        """Obtener lotes disponibles con filtros"""
+        try:
+            # ✅ CRÍTICO: Filtrar solo lotes activos y verificados
+            queryset = Lote.objects.select_related('owner').filter(
+                status='active',
+                is_verified=True
+            )
+            
+            # ✅ LOGGING
+            total_count = queryset.count()
+            logger.info(f"[AvailableLotes] Total lotes disponibles: {total_count}")
+            
+            # Aplicar filtros adicionales
+            ciudad = request.query_params.get('ciudad')
+            if ciudad:
+                queryset = queryset.filter(ciudad__iexact=ciudad)
+                logger.info(f"[AvailableLotes] Filtrado por ciudad '{ciudad}': {queryset.count()} lotes")
+            
+            uso_suelo = request.query_params.get('uso_suelo')
+            if uso_suelo:
+                queryset = queryset.filter(uso_suelo__icontains=uso_suelo)
+            
+            area_min = request.query_params.get('area_min')
+            if area_min:
+                queryset = queryset.filter(area__gte=float(area_min))
+            
+            area_max = request.query_params.get('area_max')
+            if area_max:
+                queryset = queryset.filter(area__lte=float(area_max))
+            
+            # ✅ NUEVO: Match con perfil de inversión
+            match_profile = request.query_params.get('match_profile') == 'true'
+            if match_profile and hasattr(request.user, 'ciudades_interes'):
+                ciudades_interes = request.user.ciudades_interes or []
+                if ciudades_interes:
+                    queryset = queryset.filter(ciudad__in=ciudades_interes)
+            
+            # ✅ LOGGING FINAL
+            final_count = queryset.count()
+            logger.info(f"[AvailableLotes] Lotes después de filtros: {final_count}")
+            
+            # Serializar
+            serializer = LoteSerializer(queryset, many=True)
+            
+            return Response({
+                'success': True,
+                'count': final_count,
+                'lotes': serializer.data  # ✅ Asegurar que sea 'lotes'
+            })
+            
+        except Exception as e:
+            logger.error(f"[AvailableLotes] Error: {str(e)}")
+            return Response({
+                'success': False,
+                'error': str(e),
+                'lotes': []
+            }, status=500)
 
 
 # =============================================================================
@@ -211,31 +262,61 @@ class LoteVerificationView(APIView):
     
     def post(self, request, pk):
         """
-        Verificar o rechazar lote
-        Body: { "action": "verify|reject", "reason": "..." }
+        Verificar, rechazar, archivar o reactivar lote
+        Body: { 
+            "action": "verify|reject|archive|reactivate", 
+            "reason": "..." (requerido para reject)
+        }
         """
         try:
             lote = get_object_or_404(Lote, pk=pk)
             action = request.data.get('action')
             
             if action == 'verify':
-                lote.is_verified = True
-                lote.status = 'active'
-                message = f'Lote {lote.nombre} verificado'
+                lote.verify(verified_by=request.user)
+                message = f'Lote {lote.nombre} verificado y activado'
+                
+                # ✅ Notificación
+                try:
+                    from apps.notifications.services import NotificationService
+                    NotificationService.notify_lote_aprobado(lote)
+                except ImportError:
+                    logger.warning("NotificationService no disponible")
                 
             elif action == 'reject':
-                lote.is_verified = False
-                lote.status = 'archived'
-                lote.metadatos['rejection_reason'] = request.data.get('reason', '')
+                reason = request.data.get('reason')
+                if not reason:
+                    return Response({
+                        'success': False,
+                        'error': 'Debe proporcionar una razón para el rechazo'
+                    }, status=status.HTTP_400_BAD_REQUEST)
+                
+                lote.reject(reason=reason, rejected_by=request.user)
                 message = f'Lote {lote.nombre} rechazado'
+                
+                # ✅ Notificación
+                try:
+                    from apps.notifications.services import NotificationService
+                    NotificationService.notify_lote_rechazado(lote, reason)
+                except ImportError:
+                    logger.warning("NotificationService no disponible")
+                
+            elif action == 'archive':
+                # ✅ NUEVO: Soporte para archivar
+                lote.soft_delete()
+                message = f'Lote {lote.nombre} archivado'
+                
+            elif action == 'reactivate':
+                # ✅ NUEVO: Soporte para reactivar
+                lote.reactivate()
+                message = f'Lote {lote.nombre} reactivado'
                 
             else:
                 return Response({
                     'success': False,
-                    'error': 'Acción inválida. Use verify o reject'
+                    'error': 'Acción inválida. Use verify, reject, archive o reactivate'
                 }, status=status.HTTP_400_BAD_REQUEST)
             
-            lote.save()
             logger.info(f"✅ {message} por {request.user.email}")
             
             return Response({
@@ -385,3 +466,273 @@ def user_lote_stats(request, user_id=None):
         return Response({
             'error': 'Usuario no encontrado'
         }, status=status.HTTP_404_NOT_FOUND)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def lotes_disponibles(request):
+    """
+    Lista lotes disponibles con cache y optimización de queries.
+    ✅ OPTIMIZADO: select_related + prefetch_related
+    """
+    # Generar clave de cache
+    cache_key = CacheService.generate_key(
+        'lotes_list',
+        request.GET.get('ciudad', ''),
+        request.GET.get('uso_suelo', ''),
+        request.GET.get('area_min', ''),
+        request.GET.get('area_max', ''),
+        request.GET.get('match_profile', ''),
+        request.GET.get('page', '1'),
+    )
+    
+    # Intentar obtener del cache
+    cached_data = CacheService.get(cache_key, cache_name='search')
+    if cached_data:
+        logger.info("📦 Returning cached lotes list")
+        return Response(cached_data)
+    
+    # ✅ OPTIMIZADO: Query con select_related y prefetch_related
+    queryset = Lote.objects.filter(
+        status='active',
+        is_verified=True
+    ).select_related(
+        'owner'  # ✅ JOIN con User en una sola query
+    ).prefetch_related(
+        Prefetch(
+            'documentos',
+            queryset=Document.objects.filter(
+                metadata__status='validado'
+            ).only('id', 'tipo', 'archivo', 'lote_id')
+        )
+    ).only(
+        # ✅ Solo campos necesarios
+        'id', 'cbml', 'nombre', 'direccion', 'barrio', 
+        'area', 'uso_suelo', 'tratamiento_pot', 'estrato',
+        'owner_id', 'created_at', 'updated_at'
+    )
+    
+    # Aplicar filtros
+    # ✅ NUEVO: Filtro por ciudad
+    ciudad = request.GET.get('ciudad')
+    if ciudad:
+        # Asumimos que la ciudad está en el campo 'direccion' o 'barrio'
+        queryset = queryset.filter(
+            Q(direccion__icontains=ciudad) | Q(barrio__icontains=ciudad)
+        )
+    
+    # Filtro por área
+    area_min = request.GET.get('area_min')
+    area_max = request.GET.get('area_max')
+    if area_min:
+        queryset = queryset.filter(area__gte=float(area_min))
+    if area_max:
+        queryset = queryset.filter(area__lte=float(area_max))
+    
+    # Filtro por estrato
+    estrato = request.GET.get('estrato')
+    if estrato:
+        queryset = queryset.filter(estrato=int(estrato))
+    
+    # ✅ NUEVO: Filtro por uso de suelo
+    uso_suelo = request.GET.get('uso_suelo')
+    if uso_suelo:
+        queryset = queryset.filter(uso_suelo__icontains=uso_suelo)
+    
+    # ✅ NUEVO: Filtro por tratamiento POT
+    tratamiento = request.GET.get('tratamiento')
+    if tratamiento:
+        queryset = queryset.filter(tratamiento_pot__icontains=tratamiento)
+    
+    # Filtro por barrio
+    barrio = request.GET.get('barrio')
+    if barrio:
+        queryset = queryset.filter(barrio__icontains=barrio)
+    
+    # ✅ NUEVO: Coincidencia con perfil del developer
+    match_profile = request.GET.get('match_profile') == 'true'
+    if match_profile and request.user.role == 'developer':
+        user = request.user
+        
+        # Filtrar por ciudades de interés
+        if user.ciudades_interes and len(user.ciudades_interes) > 0:
+            ciudad_filters = Q()
+            for ciudad in user.ciudades_interes:
+                ciudad_filters |= Q(direccion__icontains=ciudad) | Q(barrio__icontains=ciudad)
+            queryset = queryset.filter(ciudad_filters)
+        
+        # Filtrar por usos preferidos
+        if user.usos_preferidos and len(user.usos_preferidos) > 0:
+            uso_filters = Q()
+            for uso in user.usos_preferidos:
+                uso_filters |= Q(uso_suelo__icontains=uso)
+            queryset = queryset.filter(uso_filters)
+    
+    # Ordenamiento
+    orden = request.GET.get('orden', '-created_at')
+    queryset = queryset.order_by(orden)
+    
+    # Paginación
+    paginator = PageNumberPagination()
+    paginator.page_size = int(request.GET.get('page_size', 20))
+    
+    paginated_lotes = paginator.paginate_queryset(queryset, request)
+    serializer = LoteSerializer(paginated_lotes, many=True)
+    
+    # Calcular match score si aplica
+    if request.GET.get('match_profile') == 'true' and request.user.role == 'developer':
+        for lote_data in serializer.data:
+            lote_data['match_score'] = calcular_match_score(lote_data, request.user)
+    
+    response_data = {
+        'success': True,
+        'lotes': serializer.data,
+        'count': paginator.page.paginator.count,
+        'next': paginator.get_next_link(),
+        'previous': paginator.get_previous_link(),
+    }
+    
+    # Guardar en cache por 2 minutos
+    CacheService.set(cache_key, response_data, timeout=120, cache_name='search')
+    logger.info("💾 Lotes list cached")
+    
+    return Response(response_data)
+
+def calcular_match_score(lote_data, user):
+    """
+    Calcula un score de coincidencia entre el lote y el perfil del developer.
+    Retorna un porcentaje (0-100).
+    """
+    score = 0
+    total_criterios = 0
+    
+    # Criterio 1: Ciudad (30%)
+    if user.ciudades_interes and len(user.ciudades_interes) > 0:
+        total_criterios += 30
+        direccion = lote_data.get('direccion', '').lower()
+        barrio = lote_data.get('barrio', '').lower()
+        
+        for ciudad in user.ciudades_interes:
+            if ciudad.lower() in direccion or ciudad.lower() in barrio:
+                score += 30
+                break
+    
+    # Criterio 2: Uso de suelo (30%)
+    if user.usos_preferidos and len(user.usos_preferidos) > 0:
+        total_criterios += 30
+        uso_lote = lote_data.get('uso_suelo', '').lower()
+        
+        for uso in user.usos_preferidos:
+            if uso.lower() in uso_lote:
+                score += 30
+                break
+    
+    # Criterio 3: Volumen de ventas (20%)
+    # TODO: Implementar cuando tengamos precios estimados
+    total_criterios += 20
+    
+    # Criterio 4: Ticket de inversión (20%)
+    # TODO: Implementar cuando tengamos precios
+    total_criterios += 20
+    
+    # Normalizar score
+    if total_criterios > 0:
+        return int((score / total_criterios) * 100)
+    
+    return 0
+
+from rest_framework import viewsets, status
+from rest_framework.decorators import action
+from rest_framework.response import Response
+from rest_framework.permissions import IsAuthenticated
+from django.db import transaction
+import logging
+
+logger = logging.getLogger(__name__)
+
+class LoteViewSet(viewsets.ModelViewSet):
+    """Gestión de lotes"""
+    serializer_class = LoteSerializer
+    permission_classes = [IsAuthenticated]
+    
+    def get_queryset(self):
+        user = self.request.user
+        
+        if user.is_admin:
+            return Lote.objects.all()
+        elif user.is_owner:
+            return Lote.objects.filter(owner=user)
+        elif user.is_developer:
+            return Lote.objects.filter(status='active', is_verified=True)
+        
+        return Lote.objects.none()
+    
+    def update(self, request, pk=None):
+        """
+        Actualizar un lote (admin only)
+        PUT/PATCH /api/lotes/{id}/
+        """
+        try:
+            lote = self.get_object()
+            logger.info(f"[Lotes] Admin {request.user.email} updating lote {pk}")
+            
+            # ✅ CORRECCIÓN: Obtener datos del request
+            data = request.data.copy()
+            
+            # ✅ Validar campos numéricos opcionales
+            if 'area' in data and data['area']:
+                try:
+                    data['area'] = float(data['area'])
+                except (ValueError, TypeError):
+                    return Response({
+                        'error': 'El área debe ser un número válido'
+                    }, status=status.HTTP_400_BAD_REQUEST)
+            
+            if 'estrato' in data and data['estrato']:
+                try:
+                    data['estrato'] = int(data['estrato'])
+                except (ValueError, TypeError):
+                    return Response({
+                        'error': 'El estrato debe ser un número válido'
+                    }, status=status.HTTP_400_BAD_REQUEST)
+            
+            if 'valor' in data and data['valor']:
+                try:
+                    data['valor'] = float(data['valor'])
+                except (ValueError, TypeError):
+                    return Response({
+                        'error': 'El valor debe ser un número válido'
+                    }, status=status.HTTP_400_BAD_REQUEST)
+            
+            # ✅ Convertir string vacío a None para campos opcionales
+            optional_fields = [
+                'cbml', 'matricula', 'codigo_catastral', 'barrio', 
+                'descripcion', 'tratamiento_pot', 'uso_suelo', 
+                'clasificacion_suelo', 'forma_pago'
+            ]
+            
+            for field in optional_fields:
+                if field in data and data[field] == '':
+                    data[field] = None
+            
+            # ✅ Serializar y validar
+            serializer = self.get_serializer(lote, data=data, partial=True)
+            serializer.is_valid(raise_exception=True)
+            
+            # ✅ Guardar cambios
+            with transaction.atomic():
+                updated_lote = serializer.save()
+                logger.info(f"[Lotes] Lote {pk} updated successfully")
+            
+            return Response({
+                'success': True,
+                'message': 'Lote actualizado exitosamente',
+                'lote': self.get_serializer(updated_lote).data
+            }, status=status.HTTP_200_OK)
+            
+        except Exception as e:
+            logger.error(f"[Lotes] Error updating lote {pk}: {str(e)}")
+            return Response({
+                'error': 'Error al actualizar lote',
+                'detail': str(e)
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)

@@ -273,11 +273,21 @@ export default function LoteDocumentos() {
                     Volver al lote
                 </Link>
                 <h1 className="text-3xl font-bold text-gray-900">Documentos del Lote</h1>
-                <p className="mt-1 text-sm text-gray-600">{lote.nombre} - {lote.direccion}</p>
+                <div className="mt-2 flex items-center gap-4 text-sm text-gray-600">
+                    <span className="font-medium">{lote.nombre}</span>
+                    {lote.ciudad && (
+                        <>
+                            <span>•</span>
+                            <span>{lote.ciudad}</span>
+                        </>
+                    )}
+                    <span>•</span>
+                    <span>{lote.direccion}</span>
+                </div>
             </div>
 
             {/* ✅ CORREGIDO: Mensaje de éxito */}
-            {actionData && "success" in actionData && actionData.success && "message" in actionData && actionData.message && (
+            {actionData && "success" in actionData && actionData.success && actionData.message && (
                 <div className="mb-4 bg-green-50 border-l-4 border-green-400 p-4 rounded-md">
                     <div className="flex">
                         <div className="flex-shrink-0">
@@ -290,27 +300,21 @@ export default function LoteDocumentos() {
                         </div>
                     </div>
                 </div>
-            )
-            }
-
-            {/* ✅ CORREGIDO: Mensaje de error */}
-            {
-                actionData && "error" in actionData && actionData.error && (
-                    <div className="mb-4 bg-red-50 border-l-4 border-red-400 p-4 rounded-md">
-                        <div className="flex">
-                            <div className="flex-shrink-0">
-                                <svg className="h-5 w-5 text-red-400" viewBox="0 0 20 20" fill="currentColor">
-                                    <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
-                                </svg>
-                            </div>
-                            <div className="ml-3">
-                                <p className="text-sm text-red-700">{actionData.error}</p>
-                            </div>
+            )}
+            {actionData && "error" in actionData && actionData.error && (
+                <div className="mb-4 bg-red-50 border-l-4 border-red-400 p-4 rounded-md">
+                    <div className="flex">
+                        <div className="flex-shrink-0">
+                            <svg className="h-5 w-5 text-red-400" viewBox="0 0 20 20" fill="currentColor">
+                                <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+                            </svg>
+                        </div>
+                        <div className="ml-3">
+                            <p className="text-sm text-red-700">{actionData.error}</p>
                         </div>
                     </div>
-                )
-            }
-
+                </div>
+            )}
             {/* Formulario de subida */}
             {isUploadFormVisible && (
                 <div className="mb-8 bg-white shadow-sm rounded-lg border border-gray-200">
@@ -548,39 +552,6 @@ export default function LoteDocumentos() {
                                             </svg>
                                             Descargar
                                         </a>
-
-                                        {/* Botón de eliminar */}
-                                        <deleteFetcher.Form method="post">
-                                            <input type="hidden" name="intent" value="delete" />
-                                            <input type="hidden" name="documentId" value={document.id} />
-                                            <button
-                                                type="submit"
-                                                disabled={isDeleting}
-                                                className="inline-flex items-center px-3 py-2 border border-red-300 shadow-sm text-xs font-medium rounded-md text-red-700 bg-red-50 hover:bg-red-100 transition-colors disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500"
-                                                onClick={(e) => {
-                                                    if (!confirm('¿Estás seguro de que quieres eliminar este documento?')) {
-                                                        e.preventDefault();
-                                                    }
-                                                }}
-                                            >
-                                                {isDeleting ? (
-                                                    <>
-                                                        <svg className="animate-spin w-4 h-4 mr-1.5" fill="none" viewBox="0 0 24 24">
-                                                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                                                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                                                        </svg>
-                                                        Eliminando...
-                                                    </>
-                                                ) : (
-                                                    <>
-                                                        <svg className="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                                                        </svg>
-                                                        Eliminar
-                                                    </>
-                                                )}
-                                            </button>
-                                        </deleteFetcher.Form>
                                     </div>
                                 </div>
                             </div>

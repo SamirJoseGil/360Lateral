@@ -712,12 +712,13 @@ const result = await consultarPorMatricula(request, "123-456");
 ```
 
 #### `consultarPorCBML(request, cbml)`
-Busca lote por código CBML.
+Busca lote por código CBML (11 dígitos).
 
 ```typescript
-const result = await consultarPorCBML(request, "01-01-0001-0001-000");
+const result = await consultarPorCBML(request, "05001000000");
 
 // Returns: MapGisResponseDetalle con datos catastrales
+// CBML debe ser de 11 dígitos numéricos (MapGIS Medellín)
 ```
 
 #### `consultarPorDireccion(request, direccion)`
@@ -730,10 +731,9 @@ const result = await consultarPorDireccion(request, "Calle 123 #45-67");
 ```
 
 ### Notas Importantes
-
-- Estos endpoints son **públicos** (no requieren autenticación)
-- Los datos provienen directamente del sistema catastral
-- La respuesta puede variar según disponibilidad del servicio MapGIS
+- **CBML**: Código de 11 dígitos numéricos (ej: `05001000000`)
+- **Validación**: El sistema valida automáticamente el formato
+- **Fuente**: MapGIS Alcaldía de Medellín
 
 ---
 

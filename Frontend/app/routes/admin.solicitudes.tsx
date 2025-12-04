@@ -50,10 +50,34 @@ export async function loader({ request }: LoaderFunctionArgs) {
 
         const data = await response.json();
 
-        // ✅ CORREGIDO: Extraer el array de results si viene paginado
-        const solicitudes = Array.isArray(data) ? data : (data.results || []);
+        // ✅ NUEVO: Logging detallado para debug
+        console.log("[Admin Solicitudes] Raw response type:", typeof data);
+        console.log("[Admin Solicitudes] Is array?", Array.isArray(data));
+        console.log("[Admin Solicitudes] Data keys:", Object.keys(data));
+        console.log("[Admin Solicitudes] Data:", JSON.stringify(data, null, 2));
 
-        console.log(`[Admin Solicitudes] Loaded ${solicitudes.length} solicitudes`);
+        // ✅ MEJORADO: Extraer el array correctamente
+        let solicitudes: any[] = [];
+        
+        if (Array.isArray(data)) {
+            // Si es array directo
+            solicitudes = data;
+            console.log("[Admin Solicitudes] Array directo:", solicitudes.length);
+        } else if (data.results && Array.isArray(data.results)) {
+            // Si es paginado (DRF)
+            solicitudes = data.results;
+            console.log("[Admin Solicitudes] Array en results:", solicitudes.length);
+        } else if (data.solicitudes && Array.isArray(data.solicitudes)) {
+            // Si está en data.solicitudes
+            solicitudes = data.solicitudes;
+            console.log("[Admin Solicitudes] Array en solicitudes:", solicitudes.length);
+        } else {
+            // Ultimo recurso: ver si data tiene elementos
+            console.warn("[Admin Solicitudes] Formato desconocido, intentando extraer...");
+            console.log("[Admin Solicitudes] Data structure:", data);
+        }
+
+        console.log(`[Admin Solicitudes] Final count: ${solicitudes.length} solicitudes`);
         if (solicitudes.length > 0) {
             console.log("[Admin Solicitudes] First solicitud:", solicitudes[0]);
         }
@@ -73,7 +97,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
         return json<LoaderData>({
             user,
             view: solicitudId ? 'detail' : 'list',
-            solicitudes,  // ✅ Ahora es un array limpio
+            solicitudes,
             selectedSolicitud,
             error: undefined
         }, {
@@ -81,7 +105,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
         });
 
     } catch (error) {
-        console.error("Error loading solicitudes:", error);
+        console.error("[Admin Solicitudes] Catch error:", error);
         return json<LoaderData>({
             user,
             view: 'list',
@@ -212,9 +236,11 @@ function ListView({
     error?: string,
     onSelectSolicitud: (sol: any) => void
 }) {
-    // ✅ NUEVO: Log para debugging
-    console.log("[ListView] Rendering with solicitudes count:", solicitudes.length);
-    console.log("[ListView] Solicitudes array:", solicitudes);
+    // ✅ MEJORADO: Log más detallado
+    console.log("[ListView] Rendering");
+    console.log("[ListView] Solicitudes count:", solicitudes.length);
+    console.log("[ListView] Solicitudes is array?", Array.isArray(solicitudes));
+    console.log("[ListView] First 3 solicitudes:", solicitudes.slice(0, 3));
 
     const getStatusBadge = (estado: string) => {
         const badges: Record<string, string> = {
@@ -237,7 +263,7 @@ function ListView({
                 </div>
             )}
 
-            {/* ✅ CORREGIDO: Verificar que solicitudes sea un array y tenga elementos */}
+            {/* ✅ CORREGIDO: Verificar correctamente */}
             {Array.isArray(solicitudes) && solicitudes.length > 0 ? (
                 <div className="bg-white rounded-lg shadow overflow-hidden">
                     <table className="min-w-full divide-y divide-gray-200">
@@ -291,14 +317,8 @@ function ListView({
                     </svg>
                     <h3 className="mt-4 text-lg font-medium text-gray-900">No hay solicitudes</h3>
                     <p className="text-sm text-gray-500 mt-2">
-                        No se encontraron solicitudes en el sistema
+                        {error ? error : "No se encontraron solicitudes en el sistema"}
                     </p>
-                    {/* ✅ DEBUG INFO */}
-                    {process.env.NODE_ENV === 'development' && (
-                        <pre className="mt-4 text-xs text-left bg-gray-100 p-4 rounded overflow-auto">
-                            {JSON.stringify({ solicitudes, isArray: Array.isArray(solicitudes) }, null, 2)}
-                        </pre>
-                    )}
                 </div>
             )}
         </div>

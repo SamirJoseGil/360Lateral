@@ -1,205 +1,210 @@
-// Este archivo ahora usa los endpoints correctos según la documentación de lotes
+import { fetchWithAuth } from "~/utils/auth.server";
 import { API_URL } from "~/utils/env.server";
 
-// ✅ TIPOS CORREGIDOS para las respuestas de MapGIS
-export interface MapGisResponseDetalle {
-  success: boolean;
-  encontrado: boolean;
-  data?: {
-    cbml?: string;
-    matricula?: string;
-    direccion?: string;
-    barrio?: string;
-    area?: number; // ✅ CORREGIDO: 'area' en lugar de 'area_lote'
-    area_lote?: number; // Mantener por compatibilidad
-    area_terreno?: number;
-    area_construida?: number;
-    estrato?: number;
-    clasificacion_suelo?: string; // ✅ CORREGIDO
-    uso_suelo?: string; // ✅ CORREGIDO
-    tratamiento_pot?: string;
-    restricciones?: any[]; // ✅ CORREGIDO: 'restricciones' en lugar de 'restricciones_ambientales'
-    restricciones_ambientales?: any[]; // Mantener por compatibilidad
-    [key: string]: any;
+/**
+ * Tipos de datos de MapGIS
+ */
+export interface MapGISData {
+  cbml: string;
+  area_lote?: string;
+  area_lote_m2?: number;
+  clasificacion_suelo?: string;
+  es_urbano?: boolean;
+  uso_suelo?: {
+    categoria_uso?: string;
+    subcategoria_uso?: string;
+    codigo_subcategoria?: string;
+    porcentaje?: number;
   };
-  cbml_obtenido?: boolean;
-  busqueda_origen?: string;
-  message?: string;
-  errors?: any;
+  aprovechamiento_urbano?: {
+    tratamiento?: string;
+    codigo_tratamiento?: string;
+    densidad_habitacional_max?: number;
+    indice_construccion_max?: string;
+    altura_normativa?: string;
+    identificador?: string;
+  };
+  restricciones_ambientales?: {
+    amenaza_riesgo?: string;
+    retiros_rios?: string;
+  };
+  casos_pot?: any;
+  casos_pot_text?: string;
+  geometria?: any;
+  fuente: string;
+  fecha_consulta: string;
 }
 
-export interface MapGisResponseSearch {
+export interface MapGISHealthCheck {
+  status: 'ok' | 'degraded' | 'error';
+  session_initialized: boolean;
+  base_url: string;
+  online: boolean;
+  timestamp: string;
+}
+
+/**
+ * Consultar información completa de un lote por CBML
+ */
+export async function consultarMapGIS(
+  request: Request,
+  cbml: string
+): Promise<{ success: boolean; data?: MapGISData; error?: string }> {
+  try {
+    // ✅ CORREGIDO: Validar 11 dígitos
+    if (!cbml || cbml.length !== 11 || !/^\d{11}$/.test(cbml)) {
+      return {
+        success: false,
+        error: "CBML inválido. Debe tener exactamente 11 dígitos numéricos para MapGIS Medellín"
+      };
+    }
+
+    console.log(`[MapGIS] Consultando CBML (11 dígitos): ${cbml}`);
+
+    const { res, setCookieHeaders } = await fetchWithAuth(
+      request,
+      `${API_URL}/api/mapgis/consulta/cbml/${cbml}/`,
+      { method: "GET" }
+    );
+
+    if (!res.ok) {
+      const errorData = await res.json().catch(() => ({}));
+      console.error(`[MapGIS] Error: ${res.status}`, errorData);
+      return {
+        success: false,
+        error: errorData.mensaje || `Error ${res.status}`,
+      };
+    }
+
+    const responseData = await res.json();
+
+    return {
+      success: true,
+      data: responseData.data || responseData.datos,
+    };
+  } catch (error) {
+    console.error("[MapGIS] Error en consulta:", error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Error desconocido al consultar MapGIS"
+    };
+  }
+}
+
+/**
+ * Consultar solo restricciones ambientales
+ */
+export async function consultarRestricciones(
+  request: Request,
+  cbml: string
+): Promise<{
   success: boolean;
-  encontrado: boolean;
-  resultados?: any[];
-  message?: string;
-}
-
-/**
- * ✅ BÚSQUEDA POR MATRÍCULA COMPLETAMENTE CORREGIDA
- */
-export async function consultarPorMatricula(request: Request, matricula: string): Promise<MapGisResponseDetalle> {
+  data?: {
+    cbml: string;
+    amenaza_riesgo?: string;
+    retiros_rios?: string;
+    fecha_consulta: string;
+  };
+  error?: string;
+}> {
   try {
-    // ✅ VALIDACIÓN MEJORADA
-    if (!matricula || typeof matricula !== 'string') {
-      console.error(`[MapGIS] Matrícula inválida: ${typeof matricula}`, matricula);
+    console.log(`[MapGIS] Consultando restricciones: ${cbml}`);
+
+    const { res } = await fetchWithAuth(
+      request,
+      `${API_URL}/api/mapgis/consulta/restricciones/${cbml}/`,
+      { method: "GET" }
+    );
+
+    if (!res.ok) {
+      const errorData = await res.json().catch(() => ({}));
       return {
         success: false,
-        encontrado: false,
-        message: 'Matrícula inválida'
+        error: errorData.mensaje || "Error en consulta",
       };
     }
-    
-    // Limpiar matrícula
-    const matriculaLimpia = matricula.toString().trim().replace(/[^0-9]/g, '');
-    
-    if (!matriculaLimpia) {
-      return {
-        success: false,
-        encontrado: false,
-        message: 'Matrícula debe contener números'
-      };
-    }
-    
-    console.log(`[MapGIS] Consultando por Matrícula: ${matriculaLimpia}`);
-    
-    // ✅ USAR ENDPOINT PÚBLICO CORRECTO
-    const endpoint = `${API_URL}/api/lotes/public/matricula/`;
-    console.log(`[MapGIS] Endpoint: ${endpoint}`);
-    
-    const response = await fetch(endpoint, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ matricula: matriculaLimpia }),
-    });
-    
-    console.log(`[MapGIS] Response status: ${response.status}`);
-    
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error(`[MapGIS] Error response: ${response.status} - ${errorText}`);
-      return {
-        success: false,
-        encontrado: false,
-        message: `Error ${response.status}: ${errorText}`,
-      };
-    }
-    
-    const data = await response.json();
-    console.log(`[MapGIS] Response data:`, {
-      success: data.success,
-      encontrado: data.encontrado,
-      cbml_obtenido: data.cbml_obtenido,
-      has_data: !!data.data
-    });
-    
+
+    const responseData = await res.json();
+
     return {
-      success: data.success || false,
-      encontrado: data.encontrado || false,
-      data: data.data,
-      cbml_obtenido: data.cbml_obtenido,
-      busqueda_origen: 'matricula',
-      message: data.message
+      success: true,
+      data: responseData.data || responseData.datos,
     };
-    
   } catch (error) {
-    console.error('[MapGIS] Error en búsqueda por matrícula:', error);
+    console.error("[MapGIS] Error:", error);
     return {
       success: false,
-      encontrado: false,
-      message: 'Error de conexión con MapGIS'
+      error: error instanceof Error ? error.message : "Error desconocido",
     };
   }
 }
 
 /**
- * Buscar lote en MapGIS por CBML - USANDO ENDPOINT PÚBLICO
+ * Health check del servicio MapGIS
  */
-export async function consultarPorCBML(request: Request, cbml: string): Promise<MapGisResponseDetalle> {
+export async function mapgisHealthCheck(
+  request: Request
+): Promise<MapGISHealthCheck> {
   try {
-    console.log(`[MapGIS] Consultando por CBML: ${cbml}`);
-    
-    // ✅ USAR ENDPOINT PÚBLICO (sin auth)
-    const response = await fetch(`${API_URL}/api/lotes/scrap/cbml/`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ cbml }),
+    const response = await fetch(`${API_URL}/api/mapgis/health/`, {
+      method: "GET",
     });
-    
-    const data = await response.json();
-    
+
     if (!response.ok) {
-      console.error(`[MapGIS] Error response:`, data);
-      return {
-        success: false,
-        encontrado: false,
-        message: data.message || 'Error al buscar en MapGIS',
-        errors: data.errors
-      };
+      throw new Error(`Health check failed: ${response.status}`);
     }
-    
-    console.log(`[MapGIS] Resultado CBML ${cbml}:`, data);
-    return {
-      success: data.success || false,
-      encontrado: data.encontrado || data.success || false,
-      data: data.data || data.datos,
-      message: data.message
-    };
-    
+
+    return await response.json();
   } catch (error) {
-    console.error('[MapGIS] Error en búsqueda:', error);
+    console.error("[MapGIS] Health check error:", error);
     return {
-      success: false,
-      encontrado: false,
-      message: 'Error de conexión con MapGIS'
+      status: "error",
+      session_initialized: false,
+      base_url: "",
+      online: false,
+      timestamp: new Date().toISOString(),
     };
   }
 }
 
 /**
- * Buscar lote en MapGIS por Dirección - USANDO ENDPOINT PÚBLICO
+ * Limpiar cache de MapGIS (solo admin)
  */
-export async function consultarPorDireccion(request: Request, direccion: string): Promise<MapGisResponseSearch> {
+export async function limpiarCacheMapGIS(
+  request: Request,
+  cbml?: string
+): Promise<{ success: boolean; mensaje?: string; error?: string }> {
   try {
-    console.log(`[MapGIS] Consultando por Dirección: ${direccion}`);
-    
-    // ✅ USAR ENDPOINT PÚBLICO (sin auth)
-    const response = await fetch(`${API_URL}/api/lotes/public/direccion/`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ direccion }),
-    });
-    
-    const data = await response.json();
-    
-    if (!response.ok) {
-      console.error(`[MapGIS] Error response:`, data);
+    const { res } = await fetchWithAuth(
+      request,
+      `${API_URL}/api/mapgis/cache/clear/`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ cbml }),
+      }
+    );
+
+    if (!res.ok) {
+      const errorData = await res.json().catch(() => ({}));
       return {
         success: false,
-        encontrado: false,
-        message: data.message || 'Error al buscar en MapGIS'
+        error: errorData.error || "Error limpiando cache",
       };
     }
-    
+
+    const data = await res.json();
     return {
-      success: data.success || false,
-      encontrado: data.encontrado || false,
-      resultados: data.resultados || [],
-      message: data.message
+      success: true,
+      mensaje: data.mensaje,
     };
-    
   } catch (error) {
-    console.error('[MapGIS] Error en búsqueda:', error);
+    console.error("[MapGIS] Error limpiando cache:", error);
     return {
       success: false,
-      encontrado: false,
-      message: 'Error de conexión con MapGIS'
+      error: error instanceof Error ? error.message : "Error desconocido",
     };
   }
 }

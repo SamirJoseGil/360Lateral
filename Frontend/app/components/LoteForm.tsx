@@ -81,17 +81,22 @@ export default function LoteForm({ mapGisData, initialValues, onSubmit, isEditin
                 {/* CBML */}
                 <div className="mb-4">
                     <label className="block text-gray-700 text-sm font-bold mb-2" htmlFor="cbml">
-                        CBML
+                        CBML (11 dígitos) {/* ✅ CORREGIDO: Indicar 11 dígitos */}
                     </label>
                     <input
                         type="text"
                         name="cbml"
                         id="cbml"
+                        maxLength={11}  {/* ✅ CORREGIDO: 11 caracteres (antes era 14) */}
                         value={formData.cbml}
                         onChange={handleChange}
                         className="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline"
-                        readOnly={!!mapGisData} // Si viene de MapGIS, no se puede editar
+                        readOnly={!!mapGisData}
+                        placeholder="05001000000"  {/* ✅ CORREGIDO: Ejemplo de 11 dígitos */}
                     />
+                    <p className="text-xs text-gray-500 mt-1">
+                        Código de identificación catastral de MapGIS Medellín
+                    </p>
                 </div>
 
                 {/* Área */}

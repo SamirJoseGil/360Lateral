@@ -6,503 +6,201 @@ from rest_framework import serializers
 from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError as DjangoValidationError
 from drf_yasg.utils import swagger_serializer_method
-import logging
 
 from .models import User, UserProfile, UserRequest
+import logging
 
 logger = logging.getLogger(__name__)
 
 
 class UserSimpleSerializer(serializers.ModelSerializer):
-    """
-    Serializer simplificado para incluir información básica de usuario.
-    Usado en relaciones anidadas para evitar recursión.
-    """
+    """Serializer simplificado para referencias"""
     full_name = serializers.SerializerMethodField()
     
     class Meta:
         model = User
-        fields = ['id', 'username', 'email', 'full_name', 'role']
-        read_only_fields = fields
+        fields = ['id', 'email', 'username', 'first_name', 'last_name', 'full_name', 'role']
     
     def get_full_name(self, obj):
-        """Retorna nombre completo del usuario"""
         return obj.get_full_name()
 
 
 class UserSerializer(serializers.ModelSerializer):
-    """
-    Serializador completo para el modelo User.
-    Incluye todos los campos y campos calculados.
-    """
+    """Serializer completo para el modelo User"""
     full_name = serializers.SerializerMethodField()
-    role_fields = serializers.SerializerMethodField()
+    role_display = serializers.CharField(source='get_role_display', read_only=True)
     
     class Meta:
         model = User
         fields = [
             'id', 'email', 'username', 'first_name', 'last_name', 'full_name',
-            'phone', 'company', 'role', 'is_verified', 'is_active',
-            'created_at', 'updated_at', 'role_fields'
+            'phone', 'role', 'role_display', 'is_active', 'is_verified',
+            'created_at', 'updated_at', 'last_login',
+            # ✅ CAMPOS DE DESARROLLADOR
+            'developer_type', 'person_type', 'legal_name',
+            'document_type', 'document_number',
+            # ✅ NUEVO: Campo de primera sesión
+            'first_login_completed',
         ]
-        read_only_fields = ['id', 'created_at', 'updated_at', 'is_verified', 'is_active']
+        read_only_fields = ['id', 'created_at', 'updated_at', 'last_login']
     
-    @swagger_serializer_method(serializer_or_field=serializers.CharField)
-    def get_full_name(self, instance):
+    def get_full_name(self, obj):
         """Retorna el nombre completo del usuario"""
-        return instance.get_full_name()
-    
-    def get_role_fields(self, instance):
-        """
-        Retorna campos específicos según el rol del usuario.
-        Solo incluye campos relevantes para evitar exponer información innecesaria.
-        """
-        if instance.role == 'owner':
-            return {
-                'document_type': instance.document_type,
-                'document_number': instance.document_number,
-                'address': instance.address,
-                'id_verification_file': instance.id_verification_file.url if instance.id_verification_file else None,
-                'lots_count': instance.lots_count
-            }
-        elif instance.role == 'developer':
-            return {
-                'company_name': instance.company_name,
-                'company_nit': instance.company_nit,
-                'position': instance.position,
-                'experience_years': instance.experience_years,
-                'portfolio_url': instance.portfolio_url,
-                'focus_area': instance.focus_area,
-                'focus_area_display': instance.get_focus_area_display() if instance.focus_area else None
-            }
-        elif instance.role == 'admin':
-            return {
-                'department': instance.department,
-                'department_display': instance.get_department_display() if instance.department else None,
-                'permissions_scope': instance.permissions_scope,
-                'permissions_scope_display': instance.get_permissions_scope_display() if instance.permissions_scope else None
-            }
-        return {}
+        return obj.get_full_name()
 
 
 class UpdateProfileSerializer(serializers.ModelSerializer):
-    """
-    Serializador para actualizar perfil del usuario según su rol.
-    Valida que solo se actualicen campos permitidos para cada rol.
-    """
+    """Serializer para actualización de perfil"""
     
     class Meta:
         model = User
         fields = [
-            'first_name', 'last_name', 'phone', 'company',
-            # Campos para owner
-            'document_type', 'document_number', 'address', 'id_verification_file',
-            # Campos para developer
-            'company_name', 'company_nit', 'position', 'experience_years', 
-            'portfolio_url', 'focus_area',
-            # Campos para admin
-            'department', 'permissions_scope'
+            'first_name', 'last_name', 'phone',
+            # ✅ ELIMINADO: 'company'
+            # Campos específicos según rol
+            'developer_type', 'person_type', 'legal_name',
+            'document_type', 'document_number',
         ]
     
     def validate(self, attrs):
-        """
-        Validar campos según el rol del usuario.
-        Solo permite actualizar campos relevantes para su rol.
-        """
-        user = self.context.get('request').user if 'request' in self.context else self.instance
+        """Validar según el rol del usuario"""
+        user = self.instance
         
-        if not user:
-            raise serializers.ValidationError("No se puede determinar el usuario")
-        
-        # Campos permitidos para todos
-        allowed_fields = ['first_name', 'last_name', 'phone', 'company']
-        
-        # Agregar campos específicos según rol
-        role_fields = {
-            'owner': ['document_type', 'document_number', 'address', 'id_verification_file'],
-            'developer': ['company_name', 'company_nit', 'position', 'experience_years', 'portfolio_url', 'focus_area'],
-            'admin': ['department', 'permissions_scope']
-        }
-        
-        allowed_fields.extend(role_fields.get(user.role, []))
-        
-        # Filtrar campos no permitidos
-        disallowed = set(attrs.keys()) - set(allowed_fields)
-        if disallowed:
-            logger.warning(
-                f"User {user.email} attempted to update disallowed fields: {disallowed}"
-            )
-            raise serializers.ValidationError({
-                field: f"No puedes actualizar este campo con tu rol ({user.role})"
-                for field in disallowed
-            })
-        
-        # Validaciones específicas por rol
-        if user.role == 'owner':
-            if 'document_type' in attrs and not attrs.get('document_number'):
-                raise serializers.ValidationError({
-                    'document_number': 'Requerido cuando se especifica tipo de documento'
-                })
-        
-        elif user.role == 'developer':
-            if 'experience_years' in attrs:
-                years = attrs['experience_years']
-                if years is not None and (years < 0 or years > 50):
+        # Validar campos de desarrollador si el rol es developer
+        if user.role == 'developer':
+            if 'person_type' in attrs:
+                person_type = attrs['person_type']
+                
+                # legal_name obligatorio para jurídica
+                if person_type == 'juridica' and not attrs.get('legal_name'):
                     raise serializers.ValidationError({
-                        'experience_years': 'Debe estar entre 0 y 50 años'
+                        'legal_name': 'El nombre de la empresa es obligatorio para persona jurídica'
+                    })
+                
+                # Validar documento según tipo de persona
+                document_type = attrs.get('document_type', user.document_type)
+                if person_type == 'juridica' and document_type != 'NIT':
+                    raise serializers.ValidationError({
+                        'document_type': 'Personas jurídicas deben usar NIT'
+                    })
+                if person_type == 'natural' and document_type == 'NIT':
+                    raise serializers.ValidationError({
+                        'document_type': 'Personas naturales no pueden usar NIT'
                     })
         
-        # ✅ SOLO validar documentos si el usuario está actualizando perfil y es owner
-        if user.role == 'owner' and (attrs.get('document_type') or attrs.get('document_number')):
-            if not attrs.get('document_type') or not attrs.get('document_number'):
-                raise serializers.ValidationError({
-                    'document_type': 'Requerido para propietarios',
-                    'document_number': 'Requerido para propietarios'
-                })
-        
         return attrs
-    
-    def update(self, instance, validated_data):
-        """Actualizar solo los campos validados"""
-        for attr, value in validated_data.items():
-            setattr(instance, attr, value)
-        
-        try:
-            instance.full_clean()
-            instance.save()
-            logger.info(f"Profile updated for user: {instance.email}")
-        except DjangoValidationError as e:
-            logger.error(f"Validation error updating profile: {e}")
-            raise serializers.ValidationError(e.message_dict)
-        
-        return instance
 
 
 class UserProfileSerializer(serializers.ModelSerializer):
-    """
-    Serializador para el perfil de usuario.
-    Maneja configuraciones y preferencias personales.
-    """
+    """Serializer para el perfil de usuario"""
     user = UserSimpleSerializer(read_only=True)
     
     class Meta:
         model = UserProfile
-        fields = [
-            'user', 'avatar', 'bio', 'location', 'website', 'linkedin',
-            'email_notifications', 'sms_notifications',
-            'language', 'timezone', 'created_at', 'updated_at'
-        ]
-        read_only_fields = ['user', 'created_at', 'updated_at']
-    
-    def validate_bio(self, value):
-        """Validar longitud de biografía"""
-        if value and len(value) > 500:
-            raise serializers.ValidationError("La biografía no puede exceder 500 caracteres")
-        return value
+        fields = '__all__'
 
 
 class UserRequestSerializer(serializers.ModelSerializer):
-    """
-    Serializer para UserRequest con información básica.
-    ✅ MEJORADO: Incluye información de lote
-    """
-    status_display = serializers.CharField(source='get_status_display', read_only=True)
+    """Serializer básico para UserRequest"""
+    user_name = serializers.CharField(source='user.get_full_name', read_only=True)
     request_type_display = serializers.CharField(source='get_request_type_display', read_only=True)
-    priority_display = serializers.CharField(source='get_priority_display', read_only=True)
-    user_info = UserSimpleSerializer(source='user', read_only=True)
-    
-    # ✅ NUEVO: Información del lote
-    lote_info = serializers.SerializerMethodField()
-
-    # ✅ NUEVO: Información de revisión (para que aparezca en listados)
-    reviewer_info = UserSimpleSerializer(source='reviewer', read_only=True)
-    review_notes = serializers.CharField(read_only=True)
+    status_display = serializers.CharField(source='get_status_display', read_only=True)
     
     class Meta:
         model = UserRequest
         fields = [
-            'id', 'user', 'user_info', 'lote', 'lote_info',
-            'request_type', 'request_type_display', 
-            'title', 'status', 'status_display',
-            'priority', 'priority_display',
-            'created_at', 'updated_at', 'resolved_at',
-            'is_resolved', 'is_pending',
-            # campos de revisión añadidos
-            'reviewer', 'reviewer_info', 'review_notes'
+            'id', 'user', 'user_name', 'request_type', 'request_type_display',
+            'title', 'description', 'status', 'status_display',
+            'created_at', 'updated_at'
         ]
-        read_only_fields = ['id', 'user', 'created_at', 'updated_at', 'resolved_at']
-    
-    def get_lote_info(self, obj):
-        """Información básica del lote si existe"""
-        if obj.lote:
-            return {
-                'id': str(obj.lote.id),
-                'nombre': obj.lote.nombre,
-                'direccion': obj.lote.direccion,
-                'status': obj.lote.status
-            }
-        return None
+        read_only_fields = ['user', 'created_at', 'updated_at']
 
 
 class UserRequestDetailSerializer(serializers.ModelSerializer):
-    """
-    Serializer detallado para UserRequest.
-    ✅ MEJORADO: Incluye toda la información
-    """
-    status_display = serializers.CharField(source='get_status_display', read_only=True)
+    """Serializer detallado para UserRequest con información completa"""
+    user_name = serializers.CharField(source='user.get_full_name', read_only=True)
     request_type_display = serializers.CharField(source='get_request_type_display', read_only=True)
-    priority_display = serializers.CharField(source='get_priority_display', read_only=True)
-    user_info = UserSimpleSerializer(source='user', read_only=True)
-    reviewer_info = UserSimpleSerializer(source='reviewer', read_only=True)
-    lote_info = serializers.SerializerMethodField()
-    response_time_display = serializers.SerializerMethodField()
+    status_display = serializers.CharField(source='get_status_display', read_only=True)
+    reviewer_name = serializers.CharField(source='reviewer.get_full_name', read_only=True, allow_null=True)
     
     class Meta:
         model = UserRequest
         fields = [
-            'id', 'user', 'user_info', 'lote', 'lote_info',
-            'request_type', 'request_type_display', 
+            'id', 'user', 'user_name', 'request_type', 'request_type_display',
             'title', 'description', 'status', 'status_display',
-            'priority', 'priority_display', 'reference_id',
-            'metadata', 'reviewer', 'reviewer_info', 'review_notes', 
-            'created_at', 'updated_at', 'resolved_at',
-            'is_resolved', 'is_pending', 'response_time_display'
+            'reference_id', 'metadata',
+            'reviewer', 'reviewer_name', 'review_notes',
+            'created_at', 'updated_at'
         ]
-        read_only_fields = ['id', 'user', 'created_at', 'updated_at', 'resolved_at']
-    
-    # ✅ NUEVO: Override to_representation para logging detallado
-    def to_representation(self, instance):
-        """Serializar con logging para debug"""
-        ret = super().to_representation(instance)
-        
-        # Log solo para la primera solicitud (evitar spam)
-        if not hasattr(self, '_logged_first'):
-            logger.info(f"[UserRequestDetailSerializer] Serializing request {instance.id}")
-            logger.info(f"  - Has reviewer: {instance.reviewer is not None}")
-            logger.info(f"  - Review notes: {instance.review_notes}")
-            logger.info(f"  - Serialized reviewer_info: {ret.get('reviewer_info')}")
-            logger.info(f"  - Serialized review_notes: {ret.get('review_notes')}")
-            self.__class__._logged_first = True
-        
-        return ret
-    
-    def get_lote_info(self, obj):
-        """Información completa del lote si existe"""
-        if obj.lote:
-            return {
-                'id': str(obj.lote.id),
-                'nombre': obj.lote.nombre,
-                'direccion': obj.lote.direccion,
-                'cbml': obj.lote.cbml,
-                'area': float(obj.lote.area) if obj.lote.area else None,
-                'status': obj.lote.status,
-                'status_display': obj.lote.get_status_display()
-            }
-        return None
-    
-    def get_response_time_display(self, obj):
-        """Tiempo de respuesta en formato legible"""
-        response_time = obj.response_time
-        if response_time:
-            days = response_time.days
-            hours = response_time.seconds // 3600
-            if days > 0:
-                return f"{days} día{'s' if days != 1 else ''}, {hours} hora{'s' if hours != 1 else ''}"
-            return f"{hours} hora{'s' if hours != 1 else ''}"
-        return None
+        read_only_fields = ['user', 'created_at', 'updated_at']
 
 
 class UserRequestCreateSerializer(serializers.ModelSerializer):
-    """
-    Serializer para crear nuevas solicitudes de usuario.
-    ✅ MEJORADO: Incluye lote y prioridad
-    """
+    """Serializer para crear UserRequest"""
+    
     class Meta:
         model = UserRequest
         fields = [
-            'request_type', 'title', 'description', 
-            'lote', 'priority', 'reference_id', 'metadata'
+            'request_type', 'title', 'description',
+            'reference_id', 'metadata'
         ]
     
-    def validate_request_type(self, value):
-        """✅ MEJORADO: Validar con mensaje claro"""
-        valid_types = [choice[0] for choice in UserRequest.REQUEST_TYPE_CHOICES]
-        
-        # ✅ NUEVO: Mapear valores antiguos a nuevos
-        old_to_new_mapping = {
-            'support': 'soporte_tecnico',
-            'analysis': 'analisis_urbanistico',
-            'general': 'consulta_general',
-            'validation': 'validacion_documentos',
-            'correction': 'correccion_datos',
-        }
-        
-        # Si viene un valor antiguo, mapearlo
-        if value in old_to_new_mapping:
-            mapped_value = old_to_new_mapping[value]
-            logger.warning(
-                f"⚠️ Request type '{value}' está deprecated. "
-                f"Usando '{mapped_value}' en su lugar."
-            )
-            return mapped_value
-        
-        # Validar que sea un tipo válido
-        if value not in valid_types:
-            raise serializers.ValidationError(
-                f"❌ Tipo de solicitud inválido: '{value}'. "
-                f"Los tipos válidos son: {', '.join(valid_types)}"
-            )
-        
-        return value
-    
-    def validate_title(self, value):
-        """Validar título de solicitud"""
-        if len(value) < 5:
-            raise serializers.ValidationError("El título debe tener al menos 5 caracteres")
-        return value
-    
-    def validate_description(self, value):
-        """Validar descripción de solicitud"""
-        if len(value) < 20:
-            raise serializers.ValidationError("La descripción debe tener al menos 20 caracteres")
-        return value
-    
-    def validate_lote(self, value):
-        """Validar que el lote exista y pertenezca al usuario"""
-        if value:
-            request = self.context.get('request')
-            if request and request.user:
-                # Verificar que el lote pertenezca al usuario (excepto admins)
-                if not request.user.is_admin and value.owner != request.user:
-                    raise serializers.ValidationError(
-                        "No tienes permiso para crear solicitudes sobre este lote"
-                    )
-        return value
-    
     def create(self, validated_data):
-        """Crear solicitud asignando el usuario del contexto"""
+        """Crear solicitud con usuario del contexto"""
         user = self.context['request'].user
         validated_data['user'] = user
-        
-        # ✅ NUEVO: Auto-asignar prioridad según tipo
-        if validated_data.get('request_type') == 'analisis_urbanistico':
-            validated_data.setdefault('priority', 'high')
-        
-        request = UserRequest.objects.create(**validated_data)
-        logger.info(f"New user request created: {request.id} by {user.email}")
-        
-        return request
+        return super().create(validated_data)
 
 
 class UserRequestUpdateSerializer(serializers.ModelSerializer):
-    """
-    Serializer para actualizar solicitudes existentes.
-    Solo permite actualizar campos específicos.
-    """
+    """Serializer para actualizar UserRequest (admin)"""
+    
     class Meta:
         model = UserRequest
-        fields = ['description', 'metadata']
+        fields = ['status', 'reviewer', 'review_notes']
     
-    def update(self, instance, validated_data):
-        """Actualizar solicitud con logging"""
-        old_description = instance.description
-        
-        for attr, value in validated_data.items():
-            setattr(instance, attr, value)
-        
-        instance.save()
-        
-        if old_description != instance.description:
-            logger.info(f"UserRequest {instance.id} updated by {self.context['request'].user.email}")
-        
-        return instance
+    def validate(self, attrs):
+        """Validar que el reviewer sea admin"""
+        if 'reviewer' in attrs:
+            reviewer = attrs['reviewer']
+            if reviewer.role not in ['admin']:
+                raise serializers.ValidationError({
+                    'reviewer': 'Solo administradores pueden revisar solicitudes'
+                })
+        return attrs
 
 
 class RequestStatusSummarySerializer(serializers.Serializer):
-    """
-    Serializer para resumen de estados de solicitudes.
-    Usado para dashboard y estadísticas.
-    """
-    total = serializers.IntegerField(read_only=True)
-    pending = serializers.IntegerField(read_only=True)
-    in_review = serializers.IntegerField(read_only=True, required=False)
-    approved = serializers.IntegerField(read_only=True)
-    rejected = serializers.IntegerField(read_only=True)
-    completed = serializers.IntegerField(read_only=True, required=False)
-    by_type = serializers.DictField(
-        child=serializers.IntegerField(),
-        read_only=True
-    )
+    """Serializer para resumen de estados de solicitudes"""
+    total = serializers.IntegerField()
+    pending = serializers.IntegerField()
+    approved = serializers.IntegerField()
+    rejected = serializers.IntegerField()
+    by_type = serializers.DictField()
 
 
+# ✅ NUEVO: Serializers para recuperación de contraseña
 class PasswordResetRequestSerializer(serializers.Serializer):
-    """
-    Serializer para solicitar recuperación de contraseña.
-    Solo requiere el email del usuario.
-    """
+    """Serializer para solicitud de reset de contraseña"""
     email = serializers.EmailField(required=True)
     
     def validate_email(self, value):
-        """Validar que el email existe en el sistema"""
-        email = value.lower().strip()
-        
-        if not User.objects.filter(email=email).exists():
-            # ✅ Por seguridad, no revelar si el email existe o no
-            # Retornar el mismo mensaje para evitar enumeration attacks
-            logger.warning(f"Password reset requested for non-existent email: {email}")
-        
-        return email
+        """Normalizar email"""
+        return value.lower().strip()
 
 
 class PasswordResetConfirmSerializer(serializers.Serializer):
-    """
-    Serializer para confirmar el reseteo de contraseña con token.
-    """
-    token = serializers.CharField(required=True, max_length=255)
+    """Serializer para confirmar reset de contraseña"""
+    token = serializers.CharField(required=True)
     new_password = serializers.CharField(
         required=True,
         write_only=True,
-        min_length=8,
-        style={'input_type': 'password'}
+        validators=[validate_password]
     )
     confirm_password = serializers.CharField(
         required=True,
-        write_only=True,
-        min_length=8,
-        style={'input_type': 'password'}
+        write_only=True
     )
-    
-    def validate_token(self, value):
-        """Validar que el token existe y es válido"""
-        from .models import PasswordResetToken
-        
-        try:
-            token_obj = PasswordResetToken.objects.get(token=value)
-            
-            if not token_obj.is_valid():
-                if token_obj.is_used:
-                    raise serializers.ValidationError("Este token ya ha sido utilizado")
-                else:
-                    raise serializers.ValidationError("Este token ha expirado")
-            
-            # Guardar el objeto token en el contexto para usarlo después
-            self.context['token_obj'] = token_obj
-            return value
-            
-        except PasswordResetToken.DoesNotExist:
-            raise serializers.ValidationError("Token inválido")
-    
-    def validate_new_password(self, value):
-        """Validar la nueva contraseña con los validadores de Django"""
-        from django.contrib.auth.password_validation import validate_password
-        from django.core.exceptions import ValidationError as DjangoValidationError
-        
-        try:
-            validate_password(value)
-        except DjangoValidationError as e:
-            raise serializers.ValidationError(list(e.messages))
-        
-        return value
     
     def validate(self, attrs):
         """Validar que las contraseñas coincidan"""
@@ -510,170 +208,190 @@ class PasswordResetConfirmSerializer(serializers.Serializer):
             raise serializers.ValidationError({
                 'confirm_password': 'Las contraseñas no coinciden'
             })
-        
         return attrs
 
 
+# ✅ NUEVO: Serializer para registro de usuarios
 class UserRegistrationSerializer(serializers.ModelSerializer):
-    """
-    ✅ MEJORADO: Serializer para registro/creación de usuarios
-    Maneja password correctamente y validación según rol
-    """
+    """Serializer para registro de nuevos usuarios por admin"""
     password = serializers.CharField(
         write_only=True,
         required=True,
-        min_length=8,
-        style={'input_type': 'password'}
+        validators=[validate_password]
     )
-    password_confirm = serializers.CharField(
-        write_only=True,
-        required=False,  # ✅ Opcional para admin que crea usuarios
-        min_length=8,
-        style={'input_type': 'password'}
-    )
-    
-    # ✅ NUEVO: Campos opcionales según rol
-    department = serializers.CharField(required=False, allow_blank=True)
-    permissions_scope = serializers.CharField(required=False, allow_blank=True)
-    company_name = serializers.CharField(required=False, allow_blank=True)
-    company_nit = serializers.CharField(required=False, allow_blank=True)
     
     class Meta:
         model = User
         fields = [
-            'email', 'username', 'password', 'password_confirm',
-            'first_name', 'last_name', 'phone', 'company', 'role',
-            # ✅ Campos específicos por rol
-            'department', 'permissions_scope',  # Admin
-            'company_name', 'company_nit', 'position', 'experience_years',  # Developer
-            'document_type', 'document_number', 'address'  # Owner
+            'email', 'username', 'password', 'first_name', 'last_name',
+            'phone', 'role',
+            # ✅ ELIMINADO: 'company'
+            # Campos de desarrollador
+            'developer_type', 'person_type', 'legal_name',
+            'document_type', 'document_number',
         ]
     
-    def validate_email(self, value):
-        """✅ Validar email único (case-insensitive)"""
-        email = value.lower().strip()
-        
-        if User.objects.filter(email__iexact=email).exists():
-            raise serializers.ValidationError(
-                f"Ya existe un usuario registrado con el email: {email}"
-            )
-        
-        return email
-    
-    def validate_phone(self, value):
-        """✅ Validar teléfono único si se proporciona"""
-        if value:
-            phone = value.strip()
-            
-            # Validar formato básico
-            import re
-            if not re.match(r'^[+]?[\d\s\-\(\)]{10,}$', phone):
-                raise serializers.ValidationError(
-                    "Formato de teléfono inválido. Debe tener al menos 10 dígitos."
-                )
-            
-            # Validar duplicados
-            if User.objects.filter(phone=phone).exists():
-                raise serializers.ValidationError(
-                    f"Ya existe un usuario registrado con el teléfono: {phone}"
-                )
-        
-        return value
-    
-    def validate_username(self, value):
-        """✅ Generar username automático si no se proporciona"""
-        if not value:
-            # Generar username desde email
-            email = self.initial_data.get('email', '')
-            base_username = email.split('@')[0] if email else 'user'
-            
-            # Asegurar unicidad
-            username = base_username
-            counter = 1
-            while User.objects.filter(username__iexact=username).exists():
-                username = f"{base_username}{counter}"
-                counter += 1
-            
-            return username
-        
-        username = value.strip()
-        
-        if User.objects.filter(username__iexact=username).exists():
-            raise serializers.ValidationError(
-                f"El nombre de usuario '{username}' ya está en uso"
-            )
-        
-        return username
-    
-    def validate_password(self, value):
-        """Validar fortaleza de contraseña"""
-        from django.contrib.auth.password_validation import validate_password
-        from django.core.exceptions import ValidationError as DjangoValidationError
-        
-        try:
-            validate_password(value)
-        except DjangoValidationError as e:
-            raise serializers.ValidationError(list(e.messages))
-        
-        return value
-    
-    def validate(self, attrs):
-        """✅ MEJORADO: Validaciones cruzadas según rol"""
-        # Verificar que las contraseñas coincidan (si se proporciona confirmación)
-        password_confirm = attrs.pop('password_confirm', None)
-        
-        if password_confirm and attrs['password'] != password_confirm:
-            raise serializers.ValidationError({
-                'password_confirm': 'Las contraseñas no coinciden'
-            })
-        
-        # ✅ Validaciones específicas por rol
-        role = attrs.get('role')
-        
-        if role == 'admin':
-            # Admin requiere department
-            if not attrs.get('department'):
-                attrs['department'] = 'general'  # ✅ Valor por defecto
-                logger.info("Admin created without department, using 'general'")
-        
-        elif role == 'developer':
-            # Developer requiere company_name
-            if not attrs.get('company_name'):
-                raise serializers.ValidationError({
-                    'company_name': 'Requerido para desarrolladores'
-                })
-        
-        # ✅ Owner NO requiere campos obligatorios en creación
-        
-        return attrs
-    
     def create(self, validated_data):
-        """✅ CORREGIDO: Crear usuario con contraseña hasheada correctamente"""
-        # ✅ CRÍTICO: Extraer password ANTES de crear el usuario
+        """Crear usuario con contraseña encriptada"""
         password = validated_data.pop('password')
         
-        try:
-            # ✅ CORREGIDO: Usar create_user en lugar de objects.create
-            # Esto asegura que la contraseña se hashee correctamente ANTES de cualquier validación
-            from django.contrib.auth import get_user_model
-            User = get_user_model()
-            
-            # ✅ Extraer campos requeridos
-            email = validated_data.pop('email')
-            username = validated_data.pop('username', None) or email.split('@')[0]
-            
-            # ✅ Crear usuario con método correcto que hashea password
-            user = User.objects.create_user(
-                email=email,
-                username=username,
-                password=password,
-                **validated_data
+        # ✅ Si es persona natural, usar first_name + last_name como legal_name
+        if validated_data.get('role') == 'developer' and validated_data.get('person_type') == 'natural':
+            if not validated_data.get('legal_name'):
+                validated_data['legal_name'] = f"{validated_data.get('first_name', '')} {validated_data.get('last_name', '')}".strip()
+        
+        user = User(**validated_data)
+        user.set_password(password)
+        user._skip_company_validation = True
+        user.save(update_fields=None)
+        
+        return user
+
+
+# ✅ NUEVO: Serializers para verificación
+class VerificationCodeSerializer(serializers.Serializer):
+    """Serializer para solicitar código de verificación"""
+    code_type = serializers.ChoiceField(
+        choices=['email', 'whatsapp', 'sms'],
+        default='email'
+    )
+
+
+class VerifyCodeSerializer(serializers.Serializer):
+    """Serializer para verificar código"""
+    code = serializers.CharField(required=True, min_length=6, max_length=6)
+    code_type = serializers.ChoiceField(
+        choices=['email', 'whatsapp', 'sms'],
+        default='email'
+    )
+
+
+# ✅ NUEVO: Serializer para promoción a admin
+class PromoteToAdminSerializer(serializers.Serializer):
+    """Serializer para ascender usuario a administrador"""
+    user_id = serializers.UUIDField(required=True)
+    department = serializers.CharField(required=True, max_length=100)
+    permissions_scope = serializers.ChoiceField(
+        choices=['limited', 'full'],
+        default='limited'
+    )
+
+
+class PerfilInversionSerializer(serializers.Serializer):
+    """
+    Serializer para el perfil de inversión del desarrollador
+    """
+    ciudades_interes = serializers.ListField(
+        child=serializers.CharField(max_length=100),
+        required=True,
+        allow_empty=False,
+        help_text="Lista de ciudades de interés"
+    )
+    
+    usos_preferidos = serializers.ListField(
+        child=serializers.CharField(max_length=50),
+        required=True,
+        allow_empty=False,
+        help_text="Tipos de uso de suelo preferidos"
+    )
+    
+    modelos_pago = serializers.ListField(
+        child=serializers.CharField(max_length=50),
+        required=True,
+        allow_empty=False,
+        help_text="Modelos de pago aceptados"
+    )
+    
+    volumen_ventas_min = serializers.ChoiceField(
+        choices=[
+            ('menos_150', 'Menos de $150.000 millones'),
+            ('entre_150_350', 'Entre $150.000 y $350.000 millones'),
+            ('mas_350', 'Más de $350.000 millones'),
+        ],
+        required=True,
+        help_text="Volumen mínimo de ventas esperado"
+    )
+    
+    ticket_inversion_min = serializers.ChoiceField(
+        choices=[
+            ('menos_150', 'Menos de $150.000 millones'),
+            ('entre_150_350', 'Entre $150.000 y $350.000 millones'),
+            ('mas_350', 'Más de $350.000 millones'),
+        ],
+        required=False,
+        allow_null=True,
+        allow_blank=True,
+        help_text="Ticket mínimo de inversión (opcional)"
+    )
+    
+    def validate_ciudades_interes(self, value):
+        """Validar que las ciudades sean válidas"""
+        ciudades_validas = [
+            'medellin', 'bogota', 'cali', 'barranquilla', 'cartagena',
+            'cucuta', 'bucaramanga', 'pereira', 'santa_marta', 'ibague',
+            'pasto', 'manizales', 'neiva', 'villavicencio', 'armenia',
+            'valledupar', 'monteria', 'sincelejo', 'popayan', 'tunja'
+        ]
+        
+        for ciudad in value:
+            if ciudad not in ciudades_validas:
+                raise serializers.ValidationError(f"Ciudad no válida: {ciudad}")
+        
+        return value
+    
+    def validate_usos_preferidos(self, value):
+        """Validar que los usos sean válidos"""
+        usos_validos = ['residencial', 'comercial', 'industrial', 'logistico']
+        
+        for uso in value:
+            if uso not in usos_validos:
+                raise serializers.ValidationError(f"Uso de suelo no válido: {uso}")
+        
+        return value
+    
+    def validate_modelos_pago(self, value):
+        """Validar que los modelos de pago sean válidos"""
+        modelos_validos = ['contado', 'aporte', 'hitos']
+        
+        for modelo in value:
+            if modelo not in modelos_validos:
+                raise serializers.ValidationError(f"Modelo de pago no válido: {modelo}")
+        
+        return value
+    
+    # ✅ NUEVO: Implementar método update
+    def update(self, instance, validated_data):
+        """
+        Actualizar perfil de inversión del usuario.
+        """
+        # Actualizar campos del usuario
+        instance.ciudades_interes = validated_data.get('ciudades_interes', instance.ciudades_interes)
+        instance.usos_preferidos = validated_data.get('usos_preferidos', instance.usos_preferidos)
+        instance.modelos_pago = validated_data.get('modelos_pago', instance.modelos_pago)
+        instance.volumen_ventas_min = validated_data.get('volumen_ventas_min', instance.volumen_ventas_min)
+        
+        # Ticket de inversión es opcional
+        if 'ticket_inversion_min' in validated_data:
+            ticket = validated_data.get('ticket_inversion_min')
+            instance.ticket_inversion_min = ticket if ticket else None
+        
+        # ✅ CORREGIDO: Calcular si el perfil está completo
+        campos_obligatorios = [
+            bool(instance.ciudades_interes and len(instance.ciudades_interes) > 0),
+            bool(instance.usos_preferidos and len(instance.usos_preferidos) > 0),
+            bool(instance.modelos_pago and len(instance.modelos_pago) > 0),
+            bool(instance.volumen_ventas_min and instance.volumen_ventas_min.strip())
+        ]
+        
+        # Solo para fondos e inversionistas requiere ticket
+        if instance.developer_type in ['fondo_inversion', 'inversionista']:
+            campos_obligatorios.append(
+                bool(instance.ticket_inversion_min and instance.ticket_inversion_min.strip())
             )
-            
-            logger.info(f"✅ New user created: {user.email} (role: {user.role})")
-            
-            return user
-            
-        except Exception as e:
-            logger.error(f"❌ Error creating user: {str(e)}")
-            raise
+        
+        instance.perfil_completo = all(campos_obligatorios)
+        
+        # Guardar cambios
+        instance.save()
+        
+        return instance

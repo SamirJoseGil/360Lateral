@@ -94,6 +94,7 @@ urlpatterns = [
     path('api/documents/', include('apps.documents.urls')),
     path('api/solicitudes/', include('apps.solicitudes.urls')),
     path('api/investment-criteria/', include('apps.investment_criteria.urls')),
+    path('api/analisis/', include('apps.analisis.urls')),  # ✅ NUEVO
     
     # Notificaciones
     path('api/notifications/', include('apps.notifications.urls')),
@@ -108,6 +109,9 @@ urlpatterns = [
     
     # Debug endpoint
     path('api/debug/', debug_api_info, name='api_debug'),
+    
+    # ✅ NUEVO: MapGIS
+    path('api/mapgis/', include('apps.mapgis.urls')),
 ]
 
 # Static and media files in development

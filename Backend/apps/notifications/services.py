@@ -166,3 +166,124 @@ class NotificationService:
         )
         logger.info(f"Marked {updated} notifications as read for {user.email}")
         return updated
+    
+    # ✅ NUEVO: Notificaciones para Análisis Urbanístico
+    
+    @staticmethod
+    def notify_nueva_solicitud_analisis(analisis):
+        """
+        Notifica a los admins sobre una nueva solicitud de análisis
+        """
+        from apps.users.models import User
+        
+        try:
+            # Notificar a todos los admins
+            admins = User.objects.filter(role='admin', is_active=True)
+            
+            for admin in admins:
+                NotificationService.create_notification(
+                    user=admin,
+                    type='analisis_solicitado',
+                    title='Nueva Solicitud de Análisis',
+                    message=f"Nueva solicitud de análisis {analisis.get_tipo_analisis_display()} "
+                            f"para el lote {analisis.lote.nombre} por {analisis.solicitante.get_full_name()}",
+                    priority='high',
+                    action_url=f'/admin/analisis/{analisis.id}',
+                    data={
+                        'analisis_id': str(analisis.id),
+                        'tipo': analisis.tipo_analisis,
+                        'lote_id': str(analisis.lote.id),
+                        'solicitante': analisis.solicitante.email
+                    }
+                )
+            
+            logger.info(f"✅ Admins notificados sobre nueva solicitud de análisis {analisis.id}")
+            
+        except Exception as e:
+            logger.error(f"Error notificando nueva solicitud de análisis: {str(e)}")
+    
+    @staticmethod
+    def notify_analisis_completado(analisis):
+        """
+        Notifica al propietario que su análisis está completado
+        """
+        try:
+            NotificationService.create_notification(
+                user=analisis.solicitante,
+                type='analisis_completado',
+                title='¡Análisis Completado! 🎉',
+                message=f"Tu análisis {analisis.get_tipo_analisis_display()} "
+                        f"para el lote {analisis.lote.nombre} está listo para revisar.",
+                priority='high',
+                action_url=f'/owner/analisis/{analisis.id}',
+                data={
+                    'analisis_id': str(analisis.id),
+                    'tipo': analisis.tipo_analisis,
+                    'lote_id': str(analisis.lote.id),
+                    'fecha_completado': analisis.fecha_completado.isoformat() if analisis.fecha_completado else None
+                }
+            )
+            
+            logger.info(f"✅ Propietario notificado: análisis {analisis.id} completado")
+            
+        except Exception as e:
+            logger.error(f"Error notificando análisis completado: {str(e)}")
+    
+    @staticmethod
+    def notify_analisis_rechazado(analisis, motivo):
+        """
+        Notifica al propietario que su análisis fue rechazado
+        """
+        try:
+            NotificationService.create_notification(
+                user=analisis.solicitante,
+                type='analisis_rechazado',
+                title='Análisis Rechazado',
+                message=f"Tu solicitud de análisis {analisis.get_tipo_analisis_display()} "
+                        f"para el lote {analisis.lote.nombre} fue rechazada.\n\n"
+                        f"Motivo: {motivo}",
+                priority='high',
+                action_url=f'/owner/analisis/{analisis.id}',
+                data={
+                    'analisis_id': str(analisis.id),
+                    'tipo': analisis.tipo_analisis,
+                    'lote_id': str(analisis.lote.id),
+                    'motivo': motivo
+                }
+            )
+            
+            logger.info(f"✅ Propietario notificado: análisis {analisis.id} rechazado")
+            
+        except Exception as e:
+            logger.error(f"Error notificando análisis rechazado: {str(e)}")
+    
+    @staticmethod
+    def notify_lote_recomendado(user, lote, match_reasons):
+        """
+        ✅ NUEVO: Notificar recomendación de lote
+        
+        Args:
+            user: Usuario developer
+            lote: Lote que coincide
+            match_reasons: String con razones del match
+        """
+        from .models import Notification
+        
+        notification = Notification.objects.create(
+            user=user,
+            tipo='lote_recomendado',
+            titulo=f'🎯 Nuevo lote recomendado: {lote.nombre or lote.cbml}',
+            mensaje=f'Encontramos un lote que coincide con tu perfil por: {match_reasons}.',
+            link=f'/developer/lote/{lote.id}',
+            metadata={
+                'lote_id': str(lote.id),
+                'lote_nombre': lote.nombre,
+                'lote_direccion': lote.direccion,
+                'lote_area': str(lote.area),
+                'match_reasons': match_reasons,
+                'accion': 'ver_lote'
+            }
+        )
+        
+        logger.info(f"✅ Notificación de recomendación creada para {user.email}")
+        return notification

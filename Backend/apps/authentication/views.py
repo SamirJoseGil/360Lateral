@@ -8,6 +8,7 @@ from rest_framework.response import Response
 from rest_framework_simplejwt.tokens import RefreshToken
 from django.contrib.auth import get_user_model
 import logging
+from django_ratelimit.decorators import ratelimit
 
 User = get_user_model()
 
@@ -26,9 +27,11 @@ logger = logging.getLogger(__name__)
 
 @api_view(['POST'])
 @permission_classes([AllowAny])
+@ratelimit(key='ip', rate='5/15m', method='POST', block=True)  # ✅ NUEVO: 5 intentos cada 15 min
 def login_view(request):
     """
     Login de usuario con JWT
+    ✅ NUEVO: Rate limited a 5 intentos cada 15 minutos
     
     Request body:
     {
@@ -129,61 +132,70 @@ def login_view(request):
 
 @api_view(['POST'])
 @permission_classes([AllowAny])
+@ratelimit(key='ip', rate='3/1h', method='POST', block=True)  # ✅ NUEVO: 3 registros por hora
 def register_view(request):
     """
     Registro de nuevo usuario
-    
-    Request body:
-    {
-        "email": "newuser@example.com",
-        "username": "newuser",
-        "password": "SecurePassword123!",
-        "password_confirm": "SecurePassword123!",
-        "first_name": "John",
-        "last_name": "Doe",
-        "role": "owner",
-        "phone": "+57 300 123 4567",
-        "company": "Example Corp"
-    }
+    ✅ NUEVO: Rate limited a 3 registros por hora por IP
     """
     logger.info("=" * 60)
     logger.info("📝 REGISTRATION REQUEST RECEIVED")
     logger.info(f"   Remote Address: {request.META.get('REMOTE_ADDR')}")
     logger.info(f"   Data keys: {list(request.data.keys())}")
     logger.info(f"   Role: {request.data.get('role', 'Not provided')}")
+    
+    # ✅ CRÍTICO: Log de campos de desarrollador
+    if request.data.get('role') == 'developer':
+        logger.info(f"👨‍💻 Developer registration:")
+        logger.info(f"  - developer_type: {request.data.get('developer_type')}")
+        logger.info(f"  - person_type: {request.data.get('person_type')}")
+        logger.info(f"  - legal_name: {request.data.get('legal_name')}")
+        logger.info(f"  - document_type: {request.data.get('document_type')}")
+        logger.info(f"  - document_number: {request.data.get('document_number')}")
     logger.info("=" * 60)
     
     try:
-        # Prepare registration data
+        # ✅ NO eliminar campos, el serializer los necesita
         registration_data = request.data.copy()
-        
-        # Ensure company field has a default value
-        if 'company' not in registration_data or not registration_data.get('company'):
-            registration_data['company'] = ""
-            
-        # Log the role to understand the validation context
-        user_role = registration_data.get('role', '')
-        logger.info(f"🔍 Registering user with role: {user_role}")
-            
+
+        # ✅ Log del serializer antes de validar
+        logger.info(f"🔧 Creating serializer with data keys: {list(registration_data.keys())}")
+
         serializer = RegisterSerializer(data=registration_data)
-        
+
         if not serializer.is_valid():
             logger.error(f"❌ Registration validation failed: {serializer.errors}")
+            
+            # ✅ MEJORADO: Formatear errores para el frontend
+            formatted_errors = {}
+            for field, errors in serializer.errors.items():
+                if isinstance(errors, list):
+                    formatted_errors[field] = errors[0] if errors else 'Error de validación'
+                else:
+                    formatted_errors[field] = str(errors)
+            
+            # ✅ Mensaje específico según el error
+            error_message = 'Datos de registro inválidos'
+            if 'username' in formatted_errors:
+                error_message = 'El nombre de usuario ya está en uso. Intenta con otro o déjalo vacío para generar uno automático.'
+            elif 'email' in formatted_errors:
+                error_message = 'El email ya está registrado. Intenta con otro o inicia sesión.'
+            
             return Response({
                 'success': False,
-                'message': 'Datos de registro inválidos',
-                'errors': serializer.errors
+                'message': error_message,
+                'errors': formatted_errors
             }, status=status.HTTP_400_BAD_REQUEST)
-        
+
         # Crear usuario
         logger.info("🔧 Creating user with serializer...")
         user = serializer.save()
-        
+
         # Generar tokens
         refresh = RefreshToken.for_user(user)
-        
+
         logger.info(f"✅ New user registered: {user.email} (role: {user.role})")
-        
+
         return Response({
             'success': True,
             'message': 'Usuario registrado exitosamente',
@@ -193,12 +205,13 @@ def register_view(request):
                 'user': UserSerializer(user).data
             }
         }, status=status.HTTP_201_CREATED)
-        
+
     except Exception as e:
         logger.error(f"💥 Registration error: {str(e)}", exc_info=True)
         return Response({
             'success': False,
-            'message': 'Error interno del servidor'
+            'message': 'Error interno del servidor',
+            'errors': {'general': str(e)}
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 

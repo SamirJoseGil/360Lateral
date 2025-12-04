@@ -5,6 +5,7 @@ import { getUser } from "~/utils/auth.server";
 import { getLoteById, verifyLote, rejectLote, archiveLote, reactivateLote } from "~/services/lotes.server";
 import { getUserById } from "~/services/users.server";
 import LoteStatusManager from "~/components/admin/LoteStatusManager";
+import { MapView } from "~/components/MapView";
 
 export async function loader({ request, params }: LoaderFunctionArgs) {
     // Verificar que el usuario esté autenticado y sea admin
@@ -143,80 +144,240 @@ export default function LoteDetailsPage() {
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                 {/* Información principal */}
                 <div className="lg:col-span-2 space-y-6">
+                    {/* ✅ SECCIÓN 1: Información Básica */}
                     <div className="bg-white shadow rounded-lg p-6">
-                        <h2 className="text-xl font-semibold mb-4">Información Básica</h2>
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <h2 className="text-xl font-semibold mb-4 flex items-center gap-2">
+                            <svg className="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                            </svg>
+                            Información Básica
+                        </h2>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                            {/* Nombre */}
                             <div>
-                                <label className="block text-sm font-medium text-gray-700">Nombre</label>
-                                <div className="mt-1 text-lg">{lote.nombre}</div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">Nombre del Lote</label>
+                                <div className="mt-1 text-lg font-semibold">{lote.nombre}</div>
                             </div>
+
+                            {/* ✅ Matrícula Inmobiliaria */}
                             <div>
-                                <label className="block text-sm font-medium text-gray-700">CBML</label>
-                                <div className="mt-1 text-lg font-mono">{lote.cbml}</div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">Matrícula Inmobiliaria</label>
+                                <div className="mt-1 text-lg font-mono">
+                                    {lote.matricula ? (
+                                        <span className="text-gray-900">{lote.matricula}</span>
+                                    ) : (
+                                        <span className="text-gray-400 italic">No especificada</span>
+                                    )}
+                                </div>
                             </div>
+
+                            {/* ✅ Ciudad */}
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">Ciudad</label>
+                                <div className="mt-1 text-lg">
+                                    {lote.ciudad ? (
+                                        <span className="text-gray-900">{lote.ciudad}</span>
+                                    ) : (
+                                        <span className="text-gray-400 italic">No especificada</span>
+                                    )}
+                                </div>
+                            </div>
+
+                            {/* ✅ Dirección */}
                             <div className="md:col-span-2">
-                                <label className="block text-sm font-medium text-gray-700">Dirección</label>
-                                <div className="mt-1 text-lg">{lote.direccion}</div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">
+                                    Dirección de Ubicación
+                                </label>
+                                <div className="mt-1 text-lg flex items-start gap-2">
+                                    <svg className="w-5 h-5 text-gray-400 mt-1 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+                                    </svg>
+                                    <span className="text-gray-900">{lote.direccion}</span>
+                                </div>
                             </div>
-                            {lote.area && (
-                                <div>
-                                    <label className="block text-sm font-medium text-gray-700">Área (m²)</label>
-                                    <div className="mt-1 text-lg">{lote.area.toLocaleString()}</div>
+
+                            {/* ✅ Área */}
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">Área del Lote</label>
+                                <div className="mt-1 text-lg">
+                                    {lote.area ? (
+                                        <span className="font-semibold text-blue-600">
+                                            {lote.area.toLocaleString('es-CO')} m²
+                                        </span>
+                                    ) : (
+                                        <span className="text-gray-400 italic">No especificada</span>
+                                    )}
                                 </div>
-                            )}
-                            {lote.matricula && (
-                                <div>
-                                    <label className="block text-sm font-medium text-gray-700">Matrícula</label>
-                                    <div className="mt-1 text-lg">{lote.matricula}</div>
+                            </div>
+
+                            {/* CBML */}
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">CBML</label>
+                                <div className="mt-1 text-lg font-mono">
+                                    {lote.cbml || <span className="text-gray-400 italic">No especificado</span>}
                                 </div>
-                            )}
+                            </div>
+
+                            {/* Código Catastral */}
                             {lote.codigo_catastral && (
                                 <div>
-                                    <label className="block text-sm font-medium text-gray-700">Código Catastral</label>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">Código Catastral</label>
                                     <div className="mt-1 text-lg font-mono">{lote.codigo_catastral}</div>
                                 </div>
                             )}
+
+                            {/* Barrio */}
                             {lote.barrio && (
                                 <div>
-                                    <label className="block text-sm font-medium text-gray-700">Barrio</label>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">Barrio</label>
                                     <div className="mt-1 text-lg">{lote.barrio}</div>
                                 </div>
                             )}
+
+                            {/* Estrato */}
                             {lote.estrato && (
                                 <div>
-                                    <label className="block text-sm font-medium text-gray-700">Estrato</label>
-                                    <div className="mt-1 text-lg">{lote.estrato}</div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">Estrato</label>
+                                    <div className="mt-1">
+                                        <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-gray-100 text-gray-800">
+                                            Estrato {lote.estrato}
+                                        </span>
+                                    </div>
                                 </div>
                             )}
+
+                            {/* Descripción */}
                             {lote.descripcion && (
                                 <div className="md:col-span-2">
-                                    <label className="block text-sm font-medium text-gray-700">Descripción</label>
-                                    <div className="mt-1 text-lg">{lote.descripcion}</div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">Descripción</label>
+                                    <div className="mt-1 text-gray-900 bg-gray-50 p-3 rounded-lg">
+                                        {lote.descripcion}
+                                    </div>
                                 </div>
                             )}
                         </div>
                     </div>
 
-                    {/* Información POT */}
+                    {/* ✅ SECCIÓN 2: Información Comercial */}
+                    {(lote.valor || lote.forma_pago || lote.es_comisionista) && (
+                        <div className="bg-white shadow rounded-lg p-6 border-l-4 border-green-500">
+                            <h2 className="text-xl font-semibold mb-4 flex items-center gap-2">
+                                <svg className="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                </svg>
+                                Información Comercial
+                            </h2>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                {/* ✅ Valor del Lote */}
+                                {lote.valor && (
+                                    <div className="bg-green-50 p-4 rounded-lg">
+                                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                                            Valor del Lote
+                                        </label>
+                                        <div className="mt-1 text-2xl font-bold text-green-600">
+                                            {new Intl.NumberFormat('es-CO', {
+                                                style: 'currency',
+                                                currency: 'COP',
+                                                minimumFractionDigits: 0
+                                            }).format(lote.valor)}
+                                        </div>
+                                    </div>
+                                )}
+
+                                {/* ✅ Forma de Pago */}
+                                {lote.forma_pago && (
+                                    <div className="bg-blue-50 p-4 rounded-lg">
+                                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                                            Forma de Pago
+                                        </label>
+                                        <div className="mt-1 text-lg font-semibold text-blue-900">
+                                            {lote.forma_pago === 'contado' ? '💵 De Contado' :
+                                             lote.forma_pago === 'financiado' ? '🏦 Financiado' :
+                                             lote.forma_pago === 'permuta' ? '🔄 Permuta' :
+                                             lote.forma_pago === 'mixto' ? '🔀 Mixto' : lote.forma_pago}
+                                        </div>
+                                    </div>
+                                )}
+
+                                {/* ✅ Comisionista y Carta de Autorización */}
+                                {lote.es_comisionista && (
+                                    <div className="md:col-span-2 bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+                                        <div className="flex items-start gap-3">
+                                            <div className="flex-shrink-0 mt-1">
+                                                <svg className="w-6 h-6 text-yellow-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                                                </svg>
+                                            </div>
+                                            <div className="flex-1">
+                                                <label className="block text-sm font-medium text-yellow-900 mb-2">
+                                                    Tipo de Registro
+                                                </label>
+                                                <div className="flex items-center gap-3 mb-3">
+                                                    <span className="inline-flex items-center px-3 py-1.5 bg-yellow-100 text-yellow-800 rounded-full text-sm font-semibold">
+                                                        👤 Registrado por Comisionista
+                                                    </span>
+                                                </div>
+                                                
+                                                {/* ✅ Carta de Autorización */}
+                                                <div className="mt-3">
+                                                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                                                        Carta de Autorización
+                                                    </label>
+                                                    {lote.carta_autorizacion ? (
+                                                        <a
+                                                            href={lote.carta_autorizacion}
+                                                            target="_blank"
+                                                            rel="noopener noreferrer"
+                                                            className="inline-flex items-center gap-2 px-4 py-2 bg-white border-2 border-yellow-400 text-yellow-900 rounded-lg hover:bg-yellow-50 transition-colors duration-200 font-medium"
+                                                        >
+                                                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                                            </svg>
+                                                            <span>Descargar Carta de Autorización</span>
+                                                        </a>
+                                                    ) : (
+                                                        <div className="inline-flex items-center gap-2 px-4 py-2 bg-red-50 border border-red-200 text-red-700 rounded-lg">
+                                                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                                                            </svg>
+                                                            <span className="font-medium">⚠️ No se ha adjuntado carta de autorización</span>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    )}
+
+                    {/* ✅ SECCIÓN 3: Información POT */}
                     {(lote.tratamiento_pot || lote.uso_suelo || lote.clasificacion_suelo) && (
                         <div className="bg-white shadow rounded-lg p-6">
-                            <h2 className="text-xl font-semibold mb-4">Información POT</h2>
+                            <h2 className="text-xl font-semibold mb-4 flex items-center gap-2">
+                                <svg className="w-6 h-6 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" />
+                                </svg>
+                                Plan de Ordenamiento Territorial (POT)
+                            </h2>
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                 {lote.tratamiento_pot && (
                                     <div>
-                                        <label className="block text-sm font-medium text-gray-700">Tratamiento POT</label>
+                                        <label className="block text-sm font-medium text-gray-700 mb-1">Tratamiento POT</label>
                                         <div className="mt-1 text-lg">{lote.tratamiento_pot}</div>
                                     </div>
                                 )}
                                 {lote.uso_suelo && (
                                     <div>
-                                        <label className="block text-sm font-medium text-gray-700">Uso de Suelo</label>
+                                        <label className="block text-sm font-medium text-gray-700 mb-1">Uso de Suelo</label>
                                         <div className="mt-1 text-lg">{lote.uso_suelo}</div>
                                     </div>
                                 )}
                                 {lote.clasificacion_suelo && (
-                                    <div>
-                                        <label className="block text-sm font-medium text-gray-700">Clasificación de Suelo</label>
+                                    <div className="md:col-span-2">
+                                        <label className="block text-sm font-medium text-gray-700 mb-1">Clasificación de Suelo</label>
                                         <div className="mt-1 text-lg">{lote.clasificacion_suelo}</div>
                                     </div>
                                 )}
@@ -224,24 +385,23 @@ export default function LoteDetailsPage() {
                         </div>
                     )}
 
-                    {/* Coordenadas */}
-                    {(lote.latitud || lote.longitud) && (
+                    {/* ✅ NUEVA SECCIÓN: Ubicación */}
+                    {(lote.latitud && lote.longitud) && (
                         <div className="bg-white shadow rounded-lg p-6">
-                            <h2 className="text-xl font-semibold mb-4">Ubicación</h2>
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                {lote.latitud && (
-                                    <div>
-                                        <label className="block text-sm font-medium text-gray-700">Latitud</label>
-                                        <div className="mt-1 text-lg font-mono">{lote.latitud}</div>
-                                    </div>
-                                )}
-                                {lote.longitud && (
-                                    <div>
-                                        <label className="block text-sm font-medium text-gray-700">Longitud</label>
-                                        <div className="mt-1 text-lg font-mono">{lote.longitud}</div>
-                                    </div>
-                                )}
-                            </div>
+                            <h2 className="text-xl font-semibold mb-4 flex items-center gap-2">
+                                <svg className="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+                                </svg>
+                                Ubicación
+                            </h2>
+                            <MapView
+                                latitud={lote.latitud}
+                                longitud={lote.longitud}
+                                direccion={lote.direccion}
+                                nombre={lote.nombre}
+                                height="300px"
+                            />
                         </div>
                     )}
                 </div>

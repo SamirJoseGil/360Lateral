@@ -473,12 +473,12 @@ Authorization: Bearer <access_token>
 ### 4. Búsqueda por CBML (Pública)
 **Endpoint**: `POST /api/lotes/public/cbml/`  
 **Autenticación**: No requerida  
-**Descripción**: Busca lote en MapGIS por CBML
+**Descripción**: Busca lote en MapGIS por CBML (11 dígitos)
 
 **Request Body**:
 ```json
 {
-    "cbml": "01010010010010"
+    "cbml": "05001000000"
 }
 ```
 
@@ -487,7 +487,7 @@ Authorization: Bearer <access_token>
 {
     "success": true,
     "data": {
-        "cbml": "01010010010010",
+        "cbml": "05001000000",
         "direccion": "Carrera 43A #1-50",
         "area": 500.00,
         "barrio": "El Poblado",
@@ -501,6 +501,16 @@ Authorization: Bearer <access_token>
     }
 }
 ```
+
+**Response 400 Bad Request**:
+```json
+{
+    "error": "CBML inválido",
+    "mensaje": "El CBML debe tener exactamente 11 dígitos numéricos"
+}
+```
+
+**Nota**: MapGIS Medellín requiere exactamente **11 dígitos** numéricos para el CBML.
 
 ---
 

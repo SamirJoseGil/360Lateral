@@ -417,13 +417,16 @@ export default function AdminLotes() {
                                     Lote
                                 </th>
                                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                    Ciudad
+                                </th>
+                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                                     CBML
                                 </th>
                                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                                     Propietario
                                 </th>
                                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                    Área (m²)
+                                    Valor
                                 </th>
                                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                                     Estado
@@ -445,6 +448,10 @@ export default function AdminLotes() {
                                                 {lote.direccion}
                                             </div>
                                         </div>
+                                    </td>
+                                    {/* ✅ NUEVA COLUMNA: Ciudad */}
+                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                        {lote.ciudad || 'N/A'}
                                     </td>
                                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                                         {lote.cbml || 'N/A'}
@@ -484,8 +491,20 @@ export default function AdminLotes() {
                                             <span className="text-sm text-gray-500 italic">Sin propietario asignado</span>
                                         )}
                                     </td>
-                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                                        {lote.area ? lote.area.toLocaleString() : 'N/A'}
+                                    {/* ✅ NUEVA COLUMNA: Valor */}
+                                    <td className="px-6 py-4 whitespace-nowrap">
+                                        {lote.valor ? (
+                                            <div className="text-sm font-semibold text-green-600">
+                                                {new Intl.NumberFormat('es-CO', {
+                                                    style: 'currency',
+                                                    currency: 'COP',
+                                                    minimumFractionDigits: 0,
+                                                    notation: 'compact'
+                                                }).format(lote.valor)}
+                                            </div>
+                                        ) : (
+                                            <span className="text-sm text-gray-400">N/A</span>
+                                        )}
                                     </td>
                                     <td className="px-6 py-4 whitespace-nowrap">
                                         {getStatusBadge(lote)}

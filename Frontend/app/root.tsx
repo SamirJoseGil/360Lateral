@@ -12,6 +12,7 @@ import type { LinksFunction, LoaderFunctionArgs } from "@remix-run/node";
 import { json } from "@remix-run/node";
 
 import "./tailwind.css";
+import leafletStyles from '~/styles/leaflet.css?url';
 import { getUser } from "~/utils/auth.server";
 import Navbar from "./components/navbar";
 import Footer from "./components/footer";
@@ -62,6 +63,16 @@ export function Layout({ children }: { children: React.ReactNode }) {
     </html>
   );
 }
+
+export const links: LinksFunction = () => [
+  { rel: 'stylesheet', href: leafletStyles },
+  {
+    rel: "stylesheet",
+    href: "https://unpkg.com/leaflet@1.9.4/dist/leaflet.css",
+    integrity: "sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=",
+    crossOrigin: "anonymous"
+  },
+];
 
 export default function App() {
   const { user } = useLoaderData<typeof loader>();
