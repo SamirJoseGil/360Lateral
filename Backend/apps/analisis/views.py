@@ -58,8 +58,8 @@ class AnalisisUrbanisticoViewSet(viewsets.ModelViewSet):
         if user.is_staff:
             return queryset
         
-        # Owner solo ve los suyos
-        return queryset.filter(solicitante=user)
+        # ✅ SIMPLIFICADO: Propietarios y desarrolladores ven sus propios análisis
+        return queryset.filter(solicitante=user).distinct()
     
     def perform_create(self, serializer):
         """Crear análisis con el usuario actual"""
@@ -75,7 +75,8 @@ class AnalisisUrbanisticoViewSet(viewsets.ModelViewSet):
     @action(detail=False, methods=['get'])
     def mis_analisis(self, request):
         """Obtener análisis del usuario actual"""
-        analisis = self.get_queryset().filter(solicitante=request.user)
+        # ✅ MODIFICADO: Ya incluye análisis como desarrollador gracias a get_queryset()
+        analisis = self.get_queryset()
         
         page = self.paginate_queryset(analisis)
         if page is not None:

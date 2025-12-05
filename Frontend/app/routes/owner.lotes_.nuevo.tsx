@@ -115,7 +115,24 @@ export async function action({ request }: ActionFunctionArgs) {
 }
 
 export default function NuevoLote() {
-  
+  const actionData = useActionData<typeof action>();
+  const navigation = useNavigation();
+  const isSubmitting = navigation.state === "submitting";
+
+  // Estado para coordenadas del mapa
+  const [latitud, setLatitud] = useState<number>(
+    actionData?.values?.latitud ? parseFloat(actionData.values.latitud) : 0
+  );
+  const [longitud, setLongitud] = useState<number>(
+    actionData?.values?.longitud ? parseFloat(actionData.values.longitud) : 0
+  );
+
+  // Handler para actualizar coordenadas desde LocationPicker
+  function handleLocationSelect(lat: number, lng: number) {
+    setLatitud(lat);
+    setLongitud(lng);
+  }
+
   return (
     <div className="max-w-4xl mx-auto p-6">
       {/* Header */}
@@ -308,18 +325,15 @@ export default function NuevoLote() {
             </svg>
             Ubicación en el Mapa <span className="text-red-500">*</span>
           </h3>
-          
-          <LocationPicker
-            initialLat={latitud}
-            initialLng={longitud}
-            onLocationSelect={handleLocationSelect}
-            height="400px"
-          />
-          
-          {/* Campos ocultos para enviar coordenadas */}
-          <input type="hidden" name="latitud" value={latitud} />
-          <input type="hidden" name="longitud" value={longitud} />
-          
+
+          {/* Valor fijo para latitud y longitud */}
+          <input type="hidden" name="latitud" value={6.244203} />
+          <input type="hidden" name="longitud" value={-75.5812119} />
+
+          <div className="text-gray-700 text-sm mt-2">
+            Ubicación fija: Medellín, Colombia (lat: 6.244203, lng: -75.5812119)
+          </div>
+
           {actionData?.errors?.ubicacion && (
             <p className="mt-2 text-sm text-red-600">{actionData.errors.ubicacion}</p>
           )}

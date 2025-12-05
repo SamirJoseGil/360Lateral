@@ -1,35 +1,87 @@
-# Backend - Lateral 360°
+# Lateral 360° - Backend API
 
-## Descripción
+Sistema de gestión inmobiliaria para propietarios, desarrolladores y análisis urbanísticos en Medellín, Colombia.
 
-Backend de la plataforma Lateral 360° construido con Django 4.2.7 y Django REST Framework. Proporciona una API RESTful completa para la gestión de lotes urbanos, autenticación de usuarios, análisis urbanístico y gestión documental para proyectos inmobiliarios en Medellín, Colombia.
+---
 
-## 🚀 Características Principales
+## 🚀 Quick Start
 
-- **Autenticación JWT** con refresh tokens y manejo de sesiones
-- **Gestión de Lotes Urbanos** con integración a MapGIS de Medellín
-- **Análisis Urbanístico Automatizado** según POT de Medellín
-- **Gestión de Documentos** con validación y almacenamiento seguro
-- **Sistema de Roles** (Admin, Owner, Developer)
-- **API RESTful Documentada** con Swagger/OpenAPI
-- **Health Checks** para monitoreo de servicios
-- **Auditoría Completa** de acciones del sistema
-- **Rate Limiting** para seguridad
-- **Logging Avanzado** de todas las operaciones
+### Requisitos
 
-## 📋 Tabla de Contenidos
+- Python 3.11+
+- PostgreSQL 14+
+- Git
 
-- [Arquitectura](#arquitectura)
-- [Instalación](#instalación)
-- [Configuración](#configuración)
-- [Módulos de Aplicación](#módulos-de-aplicación)
-- [API Endpoints](#api-endpoints)
-- [Autenticación](#autenticación)
-- [Testing](#testing)
-- [Deployment](#deployment)
-- [Troubleshooting](#troubleshooting)
+### Instalación Local
 
-## 🏗️ Arquitectura
+```bash
+# 1. Clonar repositorio
+git clone https://github.com/yourusername/360Lateral.git
+cd 360Lateral/Backend
+
+# 2. Crear entorno virtual
+python -m venv venv
+source venv/bin/activate  # Linux/Mac
+venv\Scripts\activate     # Windows
+
+# 3. Instalar dependencias
+pip install -r requirements.txt
+
+# 4. Configurar variables de entorno
+cp .env.example .env
+# Editar .env con tus credenciales
+
+# 5. Crear base de datos
+createdb lateral360_db
+
+# 6. Aplicar migraciones
+python manage.py migrate
+
+# 7. Crear superusuario
+python manage.py createsuperuser
+
+# 8. Correr servidor
+python manage.py runserver
+```
+
+### Acceso
+
+- **API**: http://localhost:8000/api/
+- **Admin**: http://localhost:8000/admin/
+
+---
+
+## 📚 Documentación Completa
+
+Toda la documentación del proyecto está en la carpeta `docs/`:
+
+### 🏗️ Configuración
+- **[Configuración General](docs/config/config.md)** - Settings, deployment, Docker
+
+### 👥 Autenticación y Usuarios
+- **[Autenticación](docs/apps/authentication/authentication.md)** - Login, registro, JWT, seguridad
+- **[Usuarios](docs/apps/users.md/users.md)** - Gestión de usuarios, roles, perfiles
+
+### 🏘️ Lotes y Documentos
+- **[Lotes](docs/apps/lotes/lotes.md)** - Gestión de terrenos, verificación, favoritos
+- **[Documentos](docs/apps/documents/documents.md)** - Carga, validación, gestión de archivos
+
+### 📊 Análisis y Normativa
+- **[Análisis Urbanístico](docs/apps/analisis/analisis.md)** - Análisis con IA, POT, aprovechamiento
+- **[POT](docs/apps/pot/pot.md)** - Plan de Ordenamiento Territorial, tratamientos
+- **[MapGIS](docs/apps/mapgis/mapgis.md)** - Integración con sistema catastral de Medellín
+
+### 💼 Módulos de Negocio
+- **[Criterios de Inversión](docs/apps/investments/investments.md)** - Búsqueda, matching, alertas
+- **[Notificaciones](docs/apps/notifications/notifications.md)** - Sistema de alertas y mensajes
+- **[Solicitudes](docs/apps/solicitudes/solicitudes.md)** - Soporte, PQR, contacto
+
+### 🛠️ Utilidades
+- **[Common](docs/apps/common/common.md)** - Utilidades compartidas, middleware, permisos
+
+---
+
+## 🏗️ Arquitectura del Proyecto
 
 ### Estructura de Directorios
 

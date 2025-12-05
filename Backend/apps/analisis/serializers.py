@@ -76,13 +76,43 @@ class AnalisisCreateSerializer(serializers.ModelSerializer):
         ]
     
     def validate_lote(self, value):
-        """Validar que el lote pertenezca al usuario"""
+        """
+        Validar que el lote sea accesible:
+        - Propietarios: Solo sus propios lotes
+        - Desarrolladores: Cualquier lote (sin restricciones)
+        - Admins: Cualquier lote
+        """
         request = self.context.get('request')
         if request and request.user:
-            if value.owner != request.user:
+            user = request.user
+            
+            # ✅ Si es propietario, solo puede solicitar análisis de sus lotes
+            if user.role == 'owner':
+                if value.owner != user:
+                    logger.warning(f"❌ Propietario {user.email} intentó analizar lote de otro propietario")
+                    raise serializers.ValidationError(
+                        "Solo puedes solicitar análisis para tus propios lotes"
+                    )
+                logger.info(f"✅ Propietario {user.email} solicitando análisis de su lote {value.nombre}")
+                return value
+            
+            # ✅ Si es desarrollador, puede analizar CUALQUIER lote (sin restricciones)
+            elif user.role == 'developer':
+                logger.info(f"✅ Desarrollador {user.email} solicitando análisis del lote {value.nombre}")
+                return value
+            
+            # ✅ Admins pueden analizar cualquier lote
+            elif user.is_staff:
+                logger.info(f"✅ Admin {user.email} solicitando análisis del lote {value.nombre}")
+                return value
+            
+            # ✅ Otros roles no pueden solicitar análisis
+            else:
+                logger.warning(f"❌ Usuario con role '{user.role}' intentó solicitar análisis")
                 raise serializers.ValidationError(
-                    "Solo puedes solicitar análisis para tus propios lotes"
+                    "No tienes permisos para solicitar análisis"
                 )
+        
         return value
     
     def create(self, validated_data):

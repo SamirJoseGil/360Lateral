@@ -5,10 +5,10 @@ import { useState, useEffect } from "react";
 import { getUser } from "~/utils/auth.server";
 import { searchLotes, addLoteToFavorites, removeLoteFromFavorites, getAllLotes, getMisLotes, getAvailableLotes } from "~/services/lotes.server";
 import { getNormativaPorCBML } from "~/services/pot.server";
-import POTInfo from "~/components/POTInfo";
+import POTInfo from "~/components/lotes/POTInfo";
 import { API_URL } from "~/utils/env.server";
 import { fetchWithAuth } from "~/utils/auth.server";
-import { StaticMapPreview } from "~/components/MapView";
+import { StaticMapPreview } from "~/components/lotes/MapView";
 
 export async function loader({ request }: LoaderFunctionArgs) {
     const user = await getUser(request);

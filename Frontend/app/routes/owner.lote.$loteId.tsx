@@ -5,10 +5,10 @@ import { getUser } from "~/utils/auth.server";
 import { getLoteById } from "~/services/lotes.server";
 import { getNormativaPorCBML } from "~/services/pot.server";
 import { getLoteDocuments, type Document } from "~/services/documents.server";
-import DocumentStatusIndicator from "~/components/DocumentStatusIndicator";
-import RequiredDocumentsNotice from "~/components/RequiredDocumentsNotice";
-import POTInfo from "~/components/POTInfo";
-import { MapView } from "~/components/MapView";
+import DocumentStatusIndicator from "~/components/lotes/DocumentStatusIndicator";
+import RequiredDocumentsNotice from "~/components/lotes/RequiredDocumentsNotice";
+import POTInfo from "~/components/lotes/POTInfo";
+import { MapView } from "~/components/lotes/MapView";
 
 export async function loader({ request, params }: LoaderFunctionArgs) {
     // Verificar que el usuario esté autenticado y sea propietario

@@ -5,7 +5,7 @@ import { getUser } from "~/utils/auth.server";
 import { getLoteById, verifyLote, rejectLote, archiveLote, reactivateLote } from "~/services/lotes.server";
 import { getUserById } from "~/services/users.server";
 import LoteStatusManager from "~/components/admin/LoteStatusManager";
-import { MapView } from "~/components/MapView";
+import { MapView } from "~/components/lotes/MapView";
 
 export async function loader({ request, params }: LoaderFunctionArgs) {
     // Verificar que el usuario esté autenticado y sea admin

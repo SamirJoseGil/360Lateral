@@ -3,7 +3,7 @@ import { Outlet, useLoaderData } from "@remix-run/react";
 import type { LoaderFunctionArgs } from "@remix-run/node";
 import { usePageView } from "~/hooks/useStats";
 import { getUser } from "~/utils/auth.server";
-import Sidebar from "~/components/sidebar";
+import Sidebar from "~/components/layout/sidebar";
 
 // Loader para verificar autenticación y rol de administrador
 export async function loader({ request }: LoaderFunctionArgs) {
@@ -55,12 +55,6 @@ export default function AdminLayout() {
         { to: "/admin/investments", label: "Gestión de Investigaciónes", icon: "chart-bar" },
         { to: "/admin/analisis", label: "Gestión de Análisis Urbanístico", icon: "bell" },
     ];
-
-    // Registrar vista de página cuando el componente se monta
-    usePageView('admin_panel_view', {
-        user_id: user.id,
-        role: user.role
-    }, [user.id, user.role]);
 
     return (
         <div className="flex h-screen bg-gray-100">

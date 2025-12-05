@@ -6,7 +6,7 @@ import { useState } from "react";
 import { getLoteById, checkLoteIsFavorite, toggleLoteFavorite } from "~/services/lotes.server";
 import { getNormativaPorCBML } from "~/services/pot.server";
 import { useNavigate } from "@remix-run/react";
-import { MapView } from "~/components/MapView";
+import { MapView } from "~/components/lotes/MapView";
 
 type LoaderData = {
     lote: any;

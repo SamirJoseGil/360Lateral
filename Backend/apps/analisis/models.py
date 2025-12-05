@@ -139,12 +139,21 @@ class AnalisisUrbanistico(models.Model):
         """Validaciones del modelo"""
         super().clean()
         
-        # Validar que el solicitante sea el dueño del lote
+        # ✅ SIMPLIFICADO: Solo validar que propietarios analicen sus lotes
         if self.lote and self.solicitante:
-            if self.lote.owner != self.solicitante:
-                raise ValidationError({
-                    'lote': 'Solo el propietario del lote puede solicitar análisis'
-                })
+            user = self.solicitante
+            
+            # Propietarios solo pueden solicitar análisis de sus lotes
+            if user.role == 'owner':
+                if self.lote.owner != user:
+                    raise ValidationError({
+                        'lote': 'Solo puedes solicitar análisis para tus propios lotes'
+                    })
+            
+            # ✅ ELIMINADO: Validaciones de desarrollador
+            # Desarrolladores pueden analizar CUALQUIER lote
+            
+            # Admins pueden analizar cualquier lote (sin restricciones)
     
     def save(self, *args, **kwargs):
         """Override save para logging y actualizar fechas"""

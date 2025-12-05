@@ -14,6 +14,9 @@ from .views import (
     LotePendingVerificationListView,
     listar_tratamientos,
     user_lote_stats,
+    manage_lote_developers,
+    list_lote_developers,
+    list_available_developers,
 )
 
 app_name = 'lotes'
@@ -40,4 +43,9 @@ urlpatterns = [
     
     # Router (favoritos)
     path('', include(router.urls)),
+    
+    # ✅ NUEVO: Gestión de desarrolladores
+    path('<uuid:lote_id>/developers/', list_lote_developers, name='lote-developers-list'),
+    path('<uuid:lote_id>/developers/manage/', manage_lote_developers, name='lote-developers-manage'),
+    path('available-developers/', list_available_developers, name='available-developers'),
 ]

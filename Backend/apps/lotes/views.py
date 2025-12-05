@@ -7,12 +7,15 @@ from rest_framework.decorators import api_view, permission_classes, action
 from rest_framework.permissions import IsAuthenticated, IsAdminUser, AllowAny
 from rest_framework.response import Response
 from rest_framework.views import APIView
+from rest_framework.pagination import PageNumberPagination
 from django_filters.rest_framework import DjangoFilterBackend
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from django.contrib.auth import get_user_model
 import logging
 import uuid
+
+from apps.documents.models import Document
 
 from .models import Lote, Favorite, Tratamiento
 from .serializers import (
@@ -736,3 +739,189 @@ class LoteViewSet(viewsets.ModelViewSet):
                 'error': 'Error al actualizar lote',
                 'detail': str(e)
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+# ✅ NUEVO: Vista para gestionar desarrolladores de un lote
+@api_view(['POST', 'DELETE'])
+@permission_classes([IsAuthenticated])
+def manage_lote_developers(request, lote_id):
+    """
+    Gestionar desarrolladores de un lote (solo propietario)
+    
+    POST: Agregar desarrollador
+    DELETE: Remover desarrollador
+    
+    Body: { "desarrollador_id": "uuid" }
+    """
+    from apps.lotes.serializers import LoteDesarrolladoresSerializer
+    from apps.users.models import User
+    
+    try:
+        lote = get_object_or_404(Lote, id=lote_id)
+        
+        # ✅ CRÍTICO: Solo el propietario puede gestionar desarrolladores
+        if lote.owner != request.user and not request.user.is_staff:
+            return Response({
+                'success': False,
+                'error': 'Solo el propietario del lote puede gestionar desarrolladores'
+            }, status=status.HTTP_403_FORBIDDEN)
+        
+        # Validar datos
+        serializer = LoteDesarrolladoresSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response({
+                'success': False,
+                'errors': serializer.errors
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        desarrollador_id = serializer.validated_data['desarrollador_id']
+        desarrollador = User.objects.get(id=desarrollador_id)
+        
+        if request.method == 'POST':
+            # ✅ Agregar desarrollador
+            if lote.desarrolladores.filter(id=desarrollador.id).exists():
+                return Response({
+                    'success': False,
+                    'message': 'Este desarrollador ya tiene acceso al lote'
+                }, status=status.HTTP_400_BAD_REQUEST)
+            
+            lote.desarrolladores.add(desarrollador)
+            logger.info(f"✅ Desarrollador {desarrollador.email} agregado al lote {lote.id}")
+            
+            return Response({
+                'success': True,
+                'message': f'Desarrollador {desarrollador.email} agregado exitosamente',
+                'desarrolladores': [
+                    {
+                        'id': str(d.id),
+                        'email': d.email,
+                        'nombre': d.get_full_name()
+                    }
+                    for d in lote.desarrolladores.all()
+                ]
+            })
+        
+        elif request.method == 'DELETE':
+            # ✅ Remover desarrollador
+            if not lote.desarrolladores.filter(id=desarrollador.id).exists():
+                return Response({
+                    'success': False,
+                    'message': 'Este desarrollador no tiene acceso al lote'
+                }, status=status.HTTP_400_BAD_REQUEST)
+            
+            lote.desarrolladores.remove(desarrollador)
+            logger.info(f"✅ Desarrollador {desarrollador.email} removido del lote {lote.id}")
+            
+            return Response({
+                'success': True,
+                'message': f'Desarrollador {desarrollador.email} removido exitosamente',
+                'desarrolladores': [
+                    {
+                        'id': str(d.id),
+                        'email': d.email,
+                        'nombre': d.get_full_name()
+                    }
+                    for d in lote.desarrolladores.all()
+                ]
+            })
+            
+    except User.DoesNotExist:
+        return Response({
+            'success': False,
+            'error': 'Desarrollador no encontrado'
+        }, status=status.HTTP_404_NOT_FOUND)
+    except Exception as e:
+        logger.error(f"❌ Error gestionando desarrolladores: {str(e)}", exc_info=True)
+        return Response({
+            'success': False,
+            'error': 'Error interno del servidor'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def list_lote_developers(request, lote_id):
+    """
+    Listar desarrolladores de un lote
+    GET /api/lotes/{lote_id}/developers/
+    """
+    try:
+        lote = get_object_or_404(Lote, id=lote_id)
+        
+        # ✅ Solo propietario o admin pueden ver
+        if lote.owner != request.user and not request.user.is_staff:
+            return Response({
+                'success': False,
+                'error': 'Sin permisos para ver desarrolladores de este lote'
+            }, status=status.HTTP_403_FORBIDDEN)
+        
+        desarrolladores = lote.desarrolladores.all()
+        
+        return Response({
+            'success': True,
+            'desarrolladores': [
+                {
+                    'id': str(d.id),
+                    'email': d.email,
+                    'nombre': d.get_full_name(),
+                    'developer_type': d.developer_type,
+                    'legal_name': d.legal_name
+                }
+                for d in desarrolladores
+            ],
+            'count': desarrolladores.count()
+        })
+        
+    except Exception as e:
+        logger.error(f"❌ Error listando desarrolladores: {str(e)}")
+        return Response({
+            'success': False,
+            'error': 'Error interno del servidor'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+# ✅ NUEVO: Vista para listar todos los desarrolladores disponibles (para propietarios)
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def list_available_developers(request):
+    """
+    Listar todos los desarrolladores activos (para que propietarios puedan asignarlos)
+    GET /api/lotes/available-developers/
+    """
+    from apps.users.models import User
+    
+    try:
+        # Solo propietarios y admins pueden ver esta lista
+        if request.user.role not in ['owner', 'admin']:
+            return Response({
+                'success': False,
+                'error': 'Solo propietarios pueden ver desarrolladores disponibles'
+            }, status=status.HTTP_403_FORBIDDEN)
+        
+        desarrolladores = User.objects.filter(
+            role='developer',
+            is_active=True
+        ).order_by('legal_name', 'email')
+        
+        return Response({
+            'success': True,
+            'desarrolladores': [
+                {
+                    'id': str(d.id),
+                    'email': d.email,
+                    'nombre': d.get_full_name(),
+                    'legal_name': d.legal_name,
+                    'developer_type': d.developer_type,
+                    'person_type': d.person_type
+                }
+                for d in desarrolladores
+            ],
+            'count': desarrolladores.count()
+        })
+        
+    except Exception as e:
+        logger.error(f"❌ Error listando desarrolladores disponibles: {str(e)}")
+        return Response({
+            'success': False,
+            'error': 'Error interno del servidor'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)

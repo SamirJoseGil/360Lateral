@@ -1,7 +1,7 @@
 import { json, redirect, LoaderFunctionArgs, ActionFunctionArgs } from "@remix-run/node";   
-import { useLoaderData, useActionData, Form, Link, useNavigate, useNavigation, useSubmit } from "@remix-run/react"; // ✅ CRÍTICO: Agregar useSubmit
-import React, { useState } from "react"; // ✅ CRÍTICO: Agregar import de React
-import { requireUser, getUser } from "~/utils/auth.server"; // ✅ CRÍTICO: Agregar getUser
+import { useLoaderData, useActionData, Form, Link, useNavigate, useNavigation, useSubmit } from "@remix-run/react";
+import React, { useState } from "react";
+import { requireUser, getUser } from "~/utils/auth.server";
 import { getLoteById, updateLote, verifyLote, rejectLote, archiveLote, reactivateLote, deleteLote } from "~/services/lotes.server";
 import LoteStatusManager from "~/components/admin/LoteStatusManager";
 
@@ -21,7 +21,6 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
         console.log(`Obteniendo detalles del lote ${loteId}`);
         const { lote, headers } = await getLoteById(request, loteId);
         
-        // ✅ CRÍTICO: Log para verificar datos
         console.log("[admin.lotes.$id.editar] Lote data:", {
             id: lote.id,
             nombre: lote.nombre,

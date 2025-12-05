@@ -12,12 +12,12 @@ import type { LinksFunction, LoaderFunctionArgs } from "@remix-run/node";
 import { json } from "@remix-run/node";
 
 import "./tailwind.css";
-import leafletStyles from '~/styles/leaflet.css?url';
+import leafletStyles from "leaflet/dist/leaflet.css";
 import { getUser } from "~/utils/auth.server";
-import Navbar from "./components/navbar";
-import Footer from "./components/footer";
+import Navbar from "./components/layout/navbar";
+import Footer from "./components/layout/footer";
 import { NotificationProvider } from "~/contexts/NotificationContext";
-import NotificationBell from "~/components/NotificationBell";
+import NotificationBell from "~/components/layout/NotificationBell";
 
 // CRÍTICO: Loader SIN timestamp para evitar revalidaciones infinitas
 export async function loader({ request }: LoaderFunctionArgs) {

@@ -246,6 +246,16 @@ class Lote(models.Model):
         help_text="Carta de autorización del propietario (requerida si es comisionista)"
     )
     
+    # ✅ NUEVO: Relación con desarrolladores
+    desarrolladores = models.ManyToManyField(
+        'users.User',
+        related_name='lotes_as_developer',
+        blank=True,
+        limit_choices_to={'role': 'developer'},
+        verbose_name='Desarrolladores Autorizados',
+        help_text='Desarrolladores que tienen acceso a este lote'
+    )
+    
     class Meta:
         db_table = 'lotes'
         verbose_name = "Lote"

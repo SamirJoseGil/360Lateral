@@ -1,4 +1,3 @@
-// filepath: c:\Users\samir\Documents\GitHub\360Lateral\Frontend\app\services\common.server.ts
 import { fetchWithAuth } from "~/utils/auth.server";
 
 const API_URL = process.env.API_URL || "http://localhost:8000";

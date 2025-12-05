@@ -22,6 +22,8 @@ class LoteSimpleSerializer(serializers.ModelSerializer):
 class LoteSerializer(serializers.ModelSerializer):
     """Serializer completo para lotes"""
     owner_name = serializers.SerializerMethodField()
+    # ✅ NUEVO: Incluir desarrolladores
+    desarrolladores_info = serializers.SerializerMethodField()
     
     class Meta:
         model = Lote
@@ -51,6 +53,7 @@ class LoteSerializer(serializers.ModelSerializer):
             'is_verified',
             'created_at',
             'updated_at',
+            'desarrolladores_info',  # ✅ NUEVO
         ]
     
     def get_owner_name(self, obj):
@@ -106,6 +109,20 @@ class LoteSerializer(serializers.ModelSerializer):
             })
         
         return data
+    
+    def get_desarrolladores_info(self, obj):
+        """✅ NUEVO: Obtener info de desarrolladores asignados"""
+        desarrolladores = obj.desarrolladores.all()
+        return [
+            {
+                'id': str(d.id),
+                'email': d.email,
+                'nombre': d.get_full_name(),
+                'legal_name': d.legal_name,
+                'developer_type': d.developer_type
+            }
+            for d in desarrolladores
+        ]
 
 
 class LoteCreateSerializer(serializers.ModelSerializer):
@@ -236,3 +253,30 @@ class MapGISResponseSerializer(serializers.Serializer):
     mensaje = serializers.CharField(required=False)
     data = serializers.DictField(required=False)
     error = serializers.CharField(required=False)
+
+
+# ✅ NUEVO: Serializer para gestionar desarrolladores de un lote
+class LoteDesarrolladoresSerializer(serializers.Serializer):
+    """
+    Serializer para agregar/remover desarrolladores de un lote
+    """
+    desarrollador_id = serializers.UUIDField(required=True)
+    
+    def validate_desarrollador_id(self, value):
+        """Validar que el desarrollador existe y tiene role='developer'"""
+        from apps.users.models import User
+        
+        try:
+            desarrollador = User.objects.get(id=value)
+            
+            if desarrollador.role != 'developer':
+                raise serializers.ValidationError(
+                    "El usuario especificado no es un desarrollador"
+                )
+            
+            return value
+            
+        except User.DoesNotExist:
+            raise serializers.ValidationError(
+                "Desarrollador no encontrado"
+            )

@@ -5,7 +5,7 @@ import { useState, useEffect } from "react";
 import type { LoaderFunctionArgs } from "@remix-run/node";
 import { getUser } from "~/utils/auth.server";
 import { getMisLotes } from "~/services/lotes.server";
-import LoteCard from "~/components/LoteCard";
+import LoteCard from "~/components/lotes/LoteCard";
 
 // Loader para cargar los datos usando el servicio actualizado
 export async function loader({ request }: LoaderFunctionArgs) {

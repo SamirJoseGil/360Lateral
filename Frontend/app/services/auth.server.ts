@@ -1,4 +1,3 @@
-// filepath: c:\Users\samir\Documents\GitHub\360Lateral\Frontend\app\services\auth.server.ts
 import { fetchWithAuth } from "~/utils/auth.server";
 import { API_URL } from "~/utils/env.server";
 import { getSession, destroySession } from "~/utils/session.server";
