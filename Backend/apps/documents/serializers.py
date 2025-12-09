@@ -1,6 +1,5 @@
 """
 Serializadores para documentos
-✅ CORREGIDO: Título opcional, validaciones mejoradas
 """
 from rest_framework import serializers
 from django.conf import settings

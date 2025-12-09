@@ -1,9 +1,5 @@
 """
 Modelos para la gestión de documentos en el sistema.
-✅ CORREGIDO según roadmap:
-- Tamaño máximo configurado
-- Campo título mantenido pero opcional
-- Relación con Lote mejorada
 """
 from django.db import models
 from django.conf import settings

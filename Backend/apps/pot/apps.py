@@ -1,3 +1,8 @@
+"""
+Módulo POT - Punto de Operación de Trabajo
+"""
+
+
 from django.apps import AppConfig
 
 class PotConfig(AppConfig):

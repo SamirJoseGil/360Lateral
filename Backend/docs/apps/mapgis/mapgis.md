@@ -34,46 +34,6 @@ El módulo de **MapGIS Scraper** integra el sistema Lateral 360° con el portal 
 
 ### Estructura de Capas
 
-Searched codebase for "Perfecto, sigamos con el de mapgis #file:mapgis.md #codebase ", 14 results
-
-Voy a crear la documentación completa del módulo de MapGIS.
-
-# Módulo de MapGIS Scraper
-
-## 📋 Tabla de Contenidos
-
-- [Descripción General](#descripción-general)
-- [Arquitectura](#arquitectura)
-- [Modelos](#modelos)
-- [Servicios](#servicios)
-- [Vistas (Views)](#vistas-views)
-- [Serializers](#serializers)
-- [URLs](#urls)
-- [Sistema de Cache](#sistema-de-cache)
-- [Consultas Disponibles](#consultas-disponibles)
-- [Ejemplos de Uso](#ejemplos-de-uso)
-
----
-
-## Descripción General
-
-El módulo de **MapGIS Scraper** integra el sistema Lateral 360° con el portal MapGIS de la Alcaldía de Medellín, permitiendo la consulta automática de información catastral y urbanística de lotes mediante su CBML (Código Base Manzana Lote).
-
-### Características Principales
-
-- 🗺️ **Integración con MapGIS**: Consulta directa al sistema oficial de Medellín
-- 📊 **Múltiples Consultas**: Clasificación de suelo, usos, aprovechamientos, restricciones
-- 💾 **Sistema de Cache**: Almacenamiento temporal de consultas (24 horas)
-- 🔄 **Gestión de Sesión**: Manejo automático de cookies y headers
-- ⚡ **Optimizado**: Consultas paralelas y retry automático
-- 🔍 **Validación de CBML**: Soporte para formato de 11 dígitos
-
----
-
-## Arquitectura
-
-### Estructura de Capas
-
 ```
 ┌─────────────────────────────────────┐
 │         Frontend / API              │
@@ -1117,8 +1077,3 @@ logger.error("[MapGIS] ❌ Error: {error}")
 - [ ] **Histórico**: Guardar cambios históricos de lotes
 
 ---
-
-**Última actualización**: 2024-01-15
-
-
-Made changes.

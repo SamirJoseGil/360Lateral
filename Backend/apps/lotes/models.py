@@ -1,6 +1,5 @@
 """
 Modelos para el módulo de lotes
-Define Lote, LoteDocument, LoteHistory, Favorite, Tratamiento
 """
 from django.db import models
 from django.contrib.auth import get_user_model

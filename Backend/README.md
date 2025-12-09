@@ -838,7 +838,7 @@ En producción se configuran automáticamente:
 
 ## 📝 Licencia
 
-Copyright © 2024 Lateral 360°. Todos los derechos reservados.
+Copyright © 2025 Lateral 360°. Todos los derechos reservados.
 
 ---
 

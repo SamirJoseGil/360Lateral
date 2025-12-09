@@ -1,6 +1,5 @@
 """
 Vistas consolidadas para el módulo de lotes
-Organizado por secciones: CRUD, Favoritos, Verificación, Estadísticas
 """
 from rest_framework import generics, viewsets, status, filters
 from rest_framework.decorators import api_view, permission_classes, action

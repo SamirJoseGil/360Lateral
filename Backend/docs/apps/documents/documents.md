@@ -936,7 +936,3 @@ Maneja correctamente Docker vs desarrollo local.
 - [ ] OCR para extraer texto de PDFs
 - [ ] Firma digital de documentos
 - [ ] Compresión automática de archivos grandes
-
----
-
-**Última actualización**: 2024-01-15

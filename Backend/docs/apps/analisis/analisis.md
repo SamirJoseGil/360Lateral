@@ -784,7 +784,88 @@ graph TD
     E -->|No: Manual| K[Admin escribe análisis]
     K --> L{completar}
     L --> I
-```
+´´´
 
 ### Estados del Análisis
 
+El ciclo de vida de un análisis urbanístico está definido por el campo `estado` en el modelo `AnalisisUrbanistico`. Los posibles estados son:
+
+| Estado        | Descripción                                                                 |
+|---------------|-----------------------------------------------------------------------------|
+| `pendiente`   | Análisis solicitado, esperando ser tomado por un admin.                     |
+| `en_proceso`  | Un admin ha iniciado el análisis, está en desarrollo (manual o IA).         |
+| `completado`  | El análisis ha sido finalizado y aprobado (manual o por IA).                |
+| `rechazado`   | El análisis fue rechazado por el admin (por falta de información, etc.).    |
+
+#### Transiciones de Estado
+
+- **pendiente → en_proceso**: Cuando un admin inicia el proceso.
+- **en_proceso → completado**: Cuando el análisis es aprobado y finalizado.
+- **en_proceso → rechazado**: Cuando el análisis es rechazado por el admin.
+- **pendiente → rechazado**: Puede ser rechazado directamente si no cumple requisitos.
+
+---
+
+## Ejemplos de Uso
+
+### Solicitar un análisis (Propietario o Desarrollador)
+
+```bash
+POST /api/analisis/
+Content-Type: application/json
+
+{
+    "lote": "lote-uuid",
+    "tipo_analisis": "maximo_potencial",
+    "incluir_vis": true,
+    "comentarios_solicitante": "¿Cuál es el máximo aprovechamiento permitido?"
+}
+```
+
+### Iniciar proceso (Admin)
+
+```bash
+POST /api/analisis/{id}/iniciar_proceso/
+```
+
+### Generar análisis con IA (Admin)
+
+```bash
+POST /api/analisis/{id}/generar_ia/
+```
+
+### Aprobar análisis generado por IA (Admin)
+
+```bash
+POST /api/analisis/{id}/aprobar_ia/
+Content-Type: application/json
+
+{
+    "respuesta_ia": "# Análisis editado...",
+    "notas_revision": "Ajusté los parámetros de IC",
+    "metadata": {
+        "modelo": "gemini-2.5-flash",
+        "tokens_usados": 3542,
+        "tiempo_respuesta": 4.23
+    }
+}
+```
+
+### Rechazar análisis (Admin)
+
+```bash
+POST /api/analisis/{id}/rechazar/
+Content-Type: application/json
+
+{
+    "motivo": "Faltan documentos del lote"
+}
+```
+
+---
+
+## Referencias
+
+- [Documentación oficial Django REST Framework](https://www.django-rest-framework.org/)
+- [Google Gemini API](https://ai.google.dev/)
+- [Plan de Ordenamiento Territorial de Medellín](https://www.medellin.gov.co/pot/)

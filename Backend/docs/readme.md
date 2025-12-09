@@ -991,8 +991,5 @@ Este proyecto es propiedad de Lateral 360°. Todos los derechos reservados.
 
 ---
 
-**Última actualización**: 2024-01-15
+**Última actualización**: 2025-12-04
 **Versión**: 1.0.0
-
-
-Made changes.

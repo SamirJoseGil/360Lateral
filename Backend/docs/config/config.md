@@ -23,31 +23,6 @@ El directorio `config/` contiene toda la configuración del proyecto Django, inc
 
 ### Estructura de Archivos
 
-# Configuración del Proyecto (Config)
-
-## 📋 Tabla de Contenidos
-
-- [Descripción General](#descripción-general)
-- [Estructura de Settings](#estructura-de-settings)
-- [Variables de Entorno](#variables-de-entorno)
-- [Configuración de Base de Datos](#configuración-de-base-de-datos)
-- [Configuración de JWT](#configuración-de-jwt)
-- [Configuración de CORS](#configuración-de-cors)
-- [Configuración de Media y Static](#configuración-de-media-y-static)
-- [Apps Instaladas](#apps-instaladas)
-- [Middleware](#middleware)
-- [URLs Principales](#urls-principales)
-- [WSGI y ASGI](#wsgi-y-asgi)
-- [Deployment](#deployment)
-
----
-
-## Descripción General
-
-El directorio `config/` contiene toda la configuración del proyecto Django, incluyendo settings, URLs principales, y configuración de WSGI/ASGI.
-
-### Estructura de Archivos
-
 ```
 config/
 ├── __init__.py
@@ -953,10 +928,3 @@ python manage.py runserver 0.0.0.0:8000
 ```
 
 ---
-
-**Última actualización**: 2024-01-15
-
-
-Made changes.
-
-Similar code found with 4 license types

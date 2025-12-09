@@ -1,6 +1,5 @@
 """
 Vistas de verificación de lotes
-✅ CORREGIDO: Usar métodos del modelo
 """
 from rest_framework import generics, status
 from rest_framework.permissions import IsAuthenticated, IsAdminUser

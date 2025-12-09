@@ -804,6 +804,3 @@ Content-Type: application/json
 ```
 
 ---
-
-## Estructura de Carpetas
-
